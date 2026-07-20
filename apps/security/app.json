@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "Emberly Security",
+    "slug": "emberly-security",
+    "version": "2.0.0",
+    "scheme": "com.emberly.security",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.emberly.security",
+      "appleTeamId": "T49DUB6KRJ",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Emberly Security uses the camera to scan resident and guest passes and to capture entry-log photos.",
+        "NSPhotoLibraryUsageDescription": "Emberly Security attaches photos from your library to property-map annotations.",
+        "NSLocationWhenInUseUsageDescription": "Emberly Security uses your location to show accurate day/night security-camera coverage on the property map.",
+        "NSLocalNetworkUsageDescription": "Emberly Security connects to on-site UniFi Protect cameras over the local network."
+      }
+    },
+    "android": {
+      "package": "com.emberly.security",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon-foreground.png",
+        "backgroundColor": "#FCF8F0"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-camera",
+      "expo-location",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "buildReactNativeFromSource": true
+          }
+        }
+      ],
+      "@sentry/react-native/expo"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9368fa44-ec83-45ee-88d2-e769b915ff26"
+      }
+    },
+    "owner": "buildwithsora"
+  }
+}

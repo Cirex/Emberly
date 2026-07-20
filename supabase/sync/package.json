@@ -1,0 +1,34 @@
+{
+  "name": "@emberly/sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ResMan + MLGW sync worker — scrapes the property-management and utility-billing sources into the emberly-web Supabase project. Runs as a long-lived Coolify cron worker.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "bun --bun tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "sync:dev": "bun run src/dev-sync.ts",
+    "sync:units": "bun run src/run-units.ts",
+    "sync:test": "bun --env-file=.env run src/run-units.ts",
+    "sync:available-units": "bun --env-file=.env run src/run-available-units.ts",
+    "sync:unit-info": "bun --env-file=.env run src/run-unit-info.ts",
+    "sync:delinquency": "bun --env-file=.env run src/run-delinquency.ts",
+    "sync:work-orders": "bun --env-file=.env run src/run-work-orders.ts",
+    "sync:unit-details": "bun --env-file=.env run src/run-unit-details.ts",
+    "sync:lease-details": "bun --env-file=.env run src/run-lease-details.ts",
+    "sync:mlgw-bills": "bun --env-file=.env run src/run-mlgw-bills.ts",
+    "sync:mlgw-payments": "bun --env-file=.env run src/run-mlgw-payments.ts",
+    "sync:all": "bun --env-file=.env run src/run-units.ts && bun --env-file=.env run src/run-unit-info.ts && bun --env-file=.env run src/run-available-units.ts && bun --env-file=.env run src/run-delinquency.ts && bun --env-file=.env run src/run-work-orders.ts && bun --env-file=.env run src/run-unit-details.ts && bun --env-file=.env run src/run-lease-details.ts && bun --env-file=.env run src/run-mlgw-bills.ts && bun --env-file=.env run src/run-mlgw-payments.ts"
+  },
+  "dependencies": {
+    "@emberly/core": "workspace:*",
+    "@supabase/supabase-js": "^2.110.2"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "@types/node": "^26.1.1",
+    "typescript": "^6.0.3"
+  }
+}

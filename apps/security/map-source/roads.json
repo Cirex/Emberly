@@ -1,0 +1,544 @@
+{
+ "source": "Map.pdf + ground-truth corrections",
+ "generated": "generate-overhead.mjs",
+ "pdf_page": {
+  "w": 1191,
+  "h": 842
+ },
+ "canvas_px": {
+  "w": 5347,
+  "h": 2903
+ },
+ "orientation": "north = +x (right)",
+ "count": 33,
+ "roads": [
+  {
+   "name": null,
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 224,
+    "y0": 618,
+    "x1": 231.4,
+    "y1": 663
+   },
+   "px": {
+    "x0": 934.8,
+    "y0": 2213.6,
+    "x1": 968.8,
+    "y1": 2420.6
+   }
+  },
+  {
+   "name": null,
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 280.9,
+    "y0": 519,
+    "x1": 288.3,
+    "y1": 551
+   },
+   "px": {
+    "x0": 1196.5,
+    "y0": 1758.2,
+    "x1": 1230.6,
+    "y1": 1905.4
+   }
+  },
+  {
+   "name": null,
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 621.1,
+    "y0": 597,
+    "x1": 628.5,
+    "y1": 617.5
+   },
+   "px": {
+    "x0": 2761.5,
+    "y0": 2117,
+    "x1": 2795.5,
+    "y1": 2211.3
+   }
+  },
+  {
+   "name": "BARONESS DRIVE",
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 451.9,
+    "y0": 443.1,
+    "x1": 459.3,
+    "y1": 550
+   },
+   "px": {
+    "x0": 1983.1,
+    "y0": 1409.1,
+    "x1": 2017.2,
+    "y1": 1900.8
+   }
+  },
+  {
+   "name": "BERWIND DRIVE",
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 60.3,
+    "y0": 427.3,
+    "x1": 67.7,
+    "y1": 520.5
+   },
+   "px": {
+    "x0": 181.8,
+    "y0": 1336.4,
+    "x1": 215.8,
+    "y1": 1765.1
+   }
+  },
+  {
+   "name": "BERWIND ROAD",
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 39.8,
+    "y0": 556.2,
+    "x1": 47.2,
+    "y1": 664.5
+   },
+   "px": {
+    "x0": 87.5,
+    "y0": 1929.3,
+    "x1": 121.5,
+    "y1": 2427.5
+   }
+  },
+  {
+   "name": "CAZASSA DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 39.8,
+    "y0": 591.1,
+    "x1": 676,
+    "y1": 598.5
+   },
+   "px": {
+    "x0": 87.5,
+    "y0": 2089.9,
+    "x1": 3014,
+    "y1": 2123.9
+   }
+  },
+  {
+   "name": "CHESSWAY DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 60.3,
+    "y0": 513.1,
+    "x1": 347.7,
+    "y1": 520.5
+   },
+   "px": {
+    "x0": 181.8,
+    "y0": 1731.1,
+    "x1": 1503.8,
+    "y1": 1765.1
+   }
+  },
+  {
+   "name": "CLAYMORE DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 433.3,
+    "y0": 269.2,
+    "x1": 1150,
+    "y1": 276.6
+   },
+   "px": {
+    "x0": 1897.6,
+    "y0": 609.1,
+    "x1": 5194.4,
+    "y1": 643.2
+   }
+  },
+  {
+   "name": "COMMONWEALTH DRIVE",
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 911.5,
+    "y0": 147.1,
+    "x1": 921.9,
+    "y1": 355.44
+   },
+   "px": {
+    "x0": 4097.3,
+    "y0": 47.5,
+    "x1": 4145.1,
+    "y1": 1005.8
+   }
+  },
+  {
+   "name": "DEVON DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 673.2,
+    "y0": 165,
+    "x1": 1154.7,
+    "y1": 172.4
+   },
+   "px": {
+    "x0": 3001.1,
+    "y0": 129.8,
+    "x1": 5216,
+    "y1": 163.8
+   }
+  },
+  {
+   "name": "DUCHESS DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 39.5,
+    "y0": 612.5,
+    "x1": 231.4,
+    "y1": 619.9
+   },
+   "px": {
+    "x0": 86.1,
+    "y0": 2188.3,
+    "x1": 968.8,
+    "y1": 2222.3
+   }
+  },
+  {
+   "name": "DUCHESS DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 398.7,
+    "y0": 612.1,
+    "x1": 628.5,
+    "y1": 619.5
+   },
+   "px": {
+    "x0": 1738.4,
+    "y0": 2186.5,
+    "x1": 2795.5,
+    "y1": 2220.5
+   }
+  },
+  {
+   "name": "EGLESFIELD DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 30.2,
+    "y0": 657.1,
+    "x1": 498,
+    "y1": 664.5
+   },
+   "px": {
+    "x0": 43.3,
+    "y0": 2393.5,
+    "x1": 2195.2,
+    "y1": 2427.5
+   }
+  },
+  {
+   "name": "KINGSGATE DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 103,
+    "y0": 543.8,
+    "x1": 346,
+    "y1": 551.2
+   },
+   "px": {
+    "x0": 378.2,
+    "y0": 1872.3,
+    "x1": 1496,
+    "y1": 1906.3
+   }
+  },
+  {
+   "name": "KINGSGATE DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 338.44,
+    "y0": 543.8,
+    "x1": 722.8,
+    "y1": 551.2
+   },
+   "px": {
+    "x0": 1461.2,
+    "y0": 1872.3,
+    "x1": 3229.3,
+    "y1": 1906.3
+   }
+  },
+  {
+   "name": "KINGSGATE DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 714.2,
+    "y0": 349.8,
+    "x1": 1072,
+    "y1": 357.2
+   },
+   "px": {
+    "x0": 3189.7,
+    "y0": 979.9,
+    "x1": 4835.6,
+    "y1": 1013.9
+   }
+  },
+  {
+   "name": "KINGSGATE DRIVE",
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 714.2,
+    "y0": 349.8,
+    "x1": 722.8,
+    "y1": 551.2
+   },
+   "px": {
+    "x0": 3189.7,
+    "y0": 979.9,
+    "x1": 3229.3,
+    "y1": 1906.3
+   }
+  },
+  {
+   "name": "LIVERPOOL DRIVE",
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 1147.3,
+    "y0": 168.3,
+    "x1": 1154.7,
+    "y1": 333.4
+   },
+   "px": {
+    "x0": 5182,
+    "y0": 145,
+    "x1": 5216,
+    "y1": 904.4
+   }
+  },
+  {
+   "name": "LONG BOW DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 433.3,
+    "y0": 217.4,
+    "x1": 1150,
+    "y1": 224.8
+   },
+   "px": {
+    "x0": 1897.6,
+    "y0": 370.8,
+    "x1": 5194.4,
+    "y1": 404.9
+   }
+  },
+  {
+   "name": "MILLBRANCH PARK DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 433.3,
+    "y0": 326,
+    "x1": 1154.7,
+    "y1": 333.4
+   },
+   "px": {
+    "x0": 1897.6,
+    "y0": 870.4,
+    "x1": 5216,
+    "y1": 904.4
+   }
+  },
+  {
+   "name": "NEW GATE DRIVE",
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 992.3,
+    "y0": 349.8,
+    "x1": 999.7,
+    "y1": 549.5
+   },
+   "px": {
+    "x0": 4469,
+    "y0": 979.9,
+    "x1": 4503,
+    "y1": 1898.5
+   }
+  },
+  {
+   "name": "NEW GATE DRIVE SOUTH",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 777,
+    "y0": 542.1,
+    "x1": 999.7,
+    "y1": 549.5
+   },
+   "px": {
+    "x0": 3478.6,
+    "y0": 1864.5,
+    "x1": 4503,
+    "y1": 1898.5
+   }
+  },
+  {
+   "name": "POPINJAY DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 713.3,
+    "y0": 395,
+    "x1": 994.6,
+    "y1": 402.4
+   },
+   "px": {
+    "x0": 3185.6,
+    "y0": 1187.8,
+    "x1": 4479.6,
+    "y1": 1221.8
+   }
+  },
+  {
+   "name": "QUEENSLAND DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 60.3,
+    "y0": 427.3,
+    "x1": 347.7,
+    "y1": 434.7
+   },
+   "px": {
+    "x0": 181.8,
+    "y0": 1336.4,
+    "x1": 1503.8,
+    "y1": 1370.4
+   }
+  },
+  {
+   "name": "QUEENSLAND DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 338.44,
+    "y0": 443.1,
+    "x1": 994.6,
+    "y1": 450.5
+   },
+   "px": {
+    "x0": 1461.2,
+    "y0": 1409.1,
+    "x1": 4479.6,
+    "y1": 1443.1
+   }
+  },
+  {
+   "name": "QUILL DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 60.3,
+    "y0": 468.4,
+    "x1": 347.7,
+    "y1": 475.8
+   },
+   "px": {
+    "x0": 181.8,
+    "y0": 1525.4,
+    "x1": 1503.8,
+    "y1": 1559.5
+   }
+  },
+  {
+   "name": "SINGING TREES DRIVE",
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 673.2,
+    "y0": 171.1,
+    "x1": 683.6,
+    "y1": 329
+   },
+   "px": {
+    "x0": 3001.1,
+    "y0": 157.9,
+    "x1": 3049,
+    "y1": 884.2
+   }
+  },
+  {
+   "name": "SOUTH MILLBRANCH DRIVE",
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 433.3,
+    "y0": 217.4,
+    "x1": 440.7,
+    "y1": 450.5
+   },
+   "px": {
+    "x0": 1897.6,
+    "y0": 370.8,
+    "x1": 1931.6,
+    "y1": 1443.1
+   }
+  },
+  {
+   "name": "VICTORIA DRIVE",
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 343.1,
+    "y0": 401.6,
+    "x1": 350.5,
+    "y1": 551.2
+   },
+   "px": {
+    "x0": 1482.7,
+    "y0": 1218.2,
+    "x1": 1516.7,
+    "y1": 1906.3
+   }
+  },
+  {
+   "name": "VICTORIA ROAD",
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 398.7,
+    "y0": 545.8,
+    "x1": 406.1,
+    "y1": 664.5
+   },
+   "px": {
+    "x0": 1738.4,
+    "y0": 1881.5,
+    "x1": 1772.5,
+    "y1": 2427.5
+   }
+  },
+  {
+   "name": "WESSEX DRIVE",
+   "orientation": "vertical",
+   "pdf": {
+    "x0": 560.75,
+    "y0": 443.1,
+    "x1": 568.15,
+    "y1": 550
+   },
+   "px": {
+    "x0": 2483.8,
+    "y0": 1409.1,
+    "x1": 2517.9,
+    "y1": 1900.8
+   }
+  },
+  {
+   "name": "WOODSFIELD DRIVE",
+   "orientation": "horizontal",
+   "pdf": {
+    "x0": 713.3,
+    "y0": 491.2,
+    "x1": 994.6,
+    "y1": 498.6
+   },
+   "px": {
+    "x0": 3185.6,
+    "y0": 1630.3,
+    "x1": 4479.6,
+    "y1": 1664.4
+   }
+  }
+ ]
+}

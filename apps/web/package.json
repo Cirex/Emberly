@@ -1,0 +1,60 @@
+{
+  "name": "@emberly/web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "bun --bun next dev",
+    "build": "bun --bun next build",
+    "start": "bun --bun next start",
+    "test": "e=0; for f in tests/*.test.js; do bun test \"$f\" || e=1; done; exit $e",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "verify": "bun run test && bun run typecheck && bun run build",
+    "vc": "bunx vercel@54.20.0",
+    "vercel:env": "bun run vc -- env ls",
+    "vercel:crons": "bun run vc -- crons ls",
+    "vercel:deployments": "bun run vc -- ls emberly",
+    "vercel:pull:dev": "bun run vc -- pull --yes --environment=development",
+    "vercel:pull:preview": "bun run vc -- pull --yes --environment=preview",
+    "vercel:pull:prod": "bun run vc -- pull --yes --environment=production",
+    "vercel:build:prod": "bun run vercel:pull:prod && bun run vc -- build --prod",
+    "deploy:preview": "bun run verify && bun run vc -- deploy --target=preview --yes",
+    "deploy:prod": "bun run verify && bun run vc -- deploy --prod --yes",
+    "db:migrate": "bun scripts/apply-supabase-migrations.mjs",
+    "db:migrate:prod": "bun --env-file=.env.production scripts/apply-supabase-migrations.mjs"
+  },
+  "dependencies": {
+    "@emberly/core": "workspace:*",
+    "@img/sharp-darwin-arm64": "0.34.5",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@sentry/nextjs": "^10.65.0",
+    "@supabase/supabase-js": "^2.110.2",
+    "color": "^4",
+    "date-fns": "^4.4.0",
+    "detect-libc": "^2",
+    "next": "^16.2.10",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "resend": "^6.17.2",
+    "semver": "^7",
+    "sharp": "0.34.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.2",
+    "@types/node": "^26.1.1",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.36.0",
+    "eslint-config-next": "^16.2.10",
+    "pg": "^8.22.0",
+    "postcss": "^8.5.17",
+    "tailwindcss": "^4.3.2",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.17"
+  }
+}

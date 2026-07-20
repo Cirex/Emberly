@@ -1,0 +1,26 @@
+{
+  "name": "@emberly/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Framework-free domain logic and contract constants shared across Emberly apps (web, mobile, sync)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "react-native": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun --bun tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "bun run build && bun test"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

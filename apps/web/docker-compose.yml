@@ -1,0 +1,61 @@
+# Local parity for the Coolify/Docker deployment.
+#
+# NOTE ON BUILD CONTEXT: @emberly/web depends on the workspace package
+# @emberly/core (packages/core) and the single bun.lock, both at the repo ROOT.
+# The build context is therefore the repository root ("../.." from this file)
+# and the Dockerfile is referenced at apps/web/Dockerfile. Run from inside
+# apps/web/:
+#
+#     docker compose up --build
+#
+# All env vars below are optional at build time and read at runtime. The app
+# boots with them unset; features whose keys are missing stay inert (including
+# Sentry, which is fully disabled without a DSN). Fill values in a local .env
+# next to this file, or export them in your shell. See DEPLOY.md for the full
+# list and descriptions.
+
+services:
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    image: emberly-web:local
+    ports:
+      - "3000:3000"
+    environment:
+      # --- Supabase ---
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      # --- App runtime ---
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      API_SECRET_KEY: ${API_SECRET_KEY:-}
+      MAP_SYNC_HASH_SECRET: ${MAP_SYNC_HASH_SECRET:-}
+      CRON_SECRET: ${CRON_SECRET:-}
+      # --- Email (Resend) ---
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
+      GUEST_PASS_EMAIL_ORIGIN: ${GUEST_PASS_EMAIL_ORIGIN:-}
+      # --- Scanner / auth secrets ---
+      SCANNER_KEYS: ${SCANNER_KEYS:-}
+      SCANNER_API_KEY: ${SCANNER_API_KEY:-}
+      SCANNER_SECRET_PEPPER: ${SCANNER_SECRET_PEPPER:-}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:-}
+      ADMIN_LOGIN_KEY: ${ADMIN_LOGIN_KEY:-}
+      RESIDENT_SESSION_SECRET: ${RESIDENT_SESSION_SECRET:-}
+      SELECTION_TOKEN_SECRET: ${SELECTION_TOKEN_SECRET:-}
+      RESIDENT_ENTRY_TOKEN_SECRET: ${RESIDENT_ENTRY_TOKEN_SECRET:-}
+      GUEST_ENTRY_TOKEN_SECRET: ${GUEST_ENTRY_TOKEN_SECRET:-}
+      RESMAN_SESSION_SIGNING_SECRET: ${RESMAN_SESSION_SIGNING_SECRET:-}
+      # --- Sentry (all optional; unset = Sentry disabled) ---
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
+    healthcheck:
+      # Coolify uses the same endpoint; this mirrors it for local runs.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped

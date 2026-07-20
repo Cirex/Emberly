@@ -1,0 +1,25 @@
+# Patterns use **/ so they apply whether the build context is emberly-web
+# itself or the parent directory (the documented Coolify context; see
+# Dockerfile). For parent-context builds, BuildKit reads the sibling file
+# emberly-web/Dockerfile.dockerignore, which mirrors this file.
+**/node_modules
+**/.next
+**/out
+**/build
+**/.git
+**/.github
+**/coverage
+**/.vercel
+**/.DS_Store
+**/*.tsbuildinfo
+**/npm-debug.log*
+**/yarn-error.log*
+
+# Never ship env files into the image (but keep the checked-in example).
+**/.env
+**/.env.*
+!**/.env.example
+
+# Sibling apps and docs are not part of the web build context.
+emberly-resident
+docs

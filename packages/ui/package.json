@@ -1,0 +1,33 @@
+{
+  "name": "@emberly/ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "React Native + NativeWind components and pure-logic helpers shared across the Emberly maintenance and security apps. Shipped as SOURCE — each app's Metro/Babel/NativeWind pipeline transforms these files.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "react-native": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@expo/vector-icons": ">=15",
+    "@shopify/react-native-skia": ">=2",
+    "nativewind": ">=4",
+    "react": ">=19",
+    "react-native": ">=0.86",
+    "zustand": ">=5"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.17",
+    "typescript": "^6.0.3"
+  }
+}

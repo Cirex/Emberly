@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck · Lint · Test · Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Test
+        run: bun run test
+
+      - name: Build web (@emberly/web)
+        run: bun run web:build
+        env:
+          # Sentry source-map upload runs ONLY when SENTRY_AUTH_TOKEN is set
+          # (see apps/web/next.config.mjs). Without these repo secrets the build
+          # still succeeds — the upload is simply skipped. Add them in
+          # Settings → Secrets and variables → Actions to enable source-map
+          # upload for CI builds.
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          # NEXT_PUBLIC_* are inlined at build; unset is fine (features that need
+          # them are inert until configured). Provide via secrets if a CI build
+          # ever needs real client values baked in.
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
+
+# The three iOS apps build on EAS (Expo's cloud), not in GitHub Actions — they
+# need macOS/Xcode + Apple credentials. This job validates the whole monorepo
+# (typecheck/lint/test) and builds the one deployable that builds on Linux (web).

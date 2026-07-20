@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "EmberlyMaintenance",
+    "slug": "emberly-maintenance",
+    "version": "1.0.0",
+    "scheme": "com.emberly.maintenance",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.emberly.maintenance",
+      "appleTeamId": "T49DUB6KRJ",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "EmberlyMaintenance attaches photos from your library to property-map annotations.",
+        "NSLocationWhenInUseUsageDescription": "EmberlyMaintenance uses your location to render the property map's day and night appearance accurately."
+      }
+    },
+    "android": {
+      "package": "com.emberly.maintenance",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon-foreground.png",
+        "backgroundColor": "#FCF8F0"
+      },
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-location",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "buildReactNativeFromSource": true
+          }
+        }
+      ],
+      "@sentry/react-native/expo"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "78200644-b289-4b82-8456-2fc537a44750"
+      }
+    },
+    "owner": "buildwithsora"
+  }
+}

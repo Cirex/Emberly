@@ -1,0 +1,188 @@
+@import "tailwindcss";
+
+/* Keep the existing JS theme (brand colors from @emberly/core, font family). */
+@config "../tailwind.config.ts";
+
+@layer base {
+  /* v4 defaults `border`/`divide` to currentColor; restore v3's gray-200 so any
+     bare `border` utility without an explicit color keeps its old appearance. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+
+  :root {
+    --color-primary: #26348A;
+    --color-primary-light: #3A48A0;
+    --color-accent: #B4B53A;
+    --color-accent-deep: #8C8D22;
+    --color-cream: #F4F1E6;
+    --color-text: #1B255F;
+    --color-muted: #6A6F8A;
+    --color-line: #DDE1F0;
+    /* Warm surface + hairline used across cards, tables, and rails. */
+    --color-surface-2: #FAF7EE;
+    --color-line-soft: #ECEAF3;
+    /* Semantic status palette — distinct from the olive brand accent. */
+    --color-ok: #2E8A5F;
+    --color-ok-tint: #E4F1EA;
+    --color-warn: #B47A1E;
+    --color-warn-tint: #F6ECD6;
+    --color-crit: #C24438;
+    --color-crit-tint: #F7E2DF;
+    /* Layered soft shadow for cards and panels. */
+    --shadow-card: 0 1px 2px rgba(26, 35, 80, .05), 0 8px 22px rgba(26, 35, 80, .05);
+    --shadow-pop: 0 20px 50px rgba(20, 26, 60, .22);
+  }
+
+  html {
+    font-family: Inter, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background-color: var(--color-cream);
+    color: var(--color-text);
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-primary bg-accent px-4 text-sm font-semibold text-primary shadow-xs transition-colors hover:bg-accent/90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-accent {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-primary bg-primary px-4 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-primaryLight focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent/45 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-primary/15 px-4 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent/45 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-danger {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-700 bg-red-600 px-4 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-red-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-red-300 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .card {
+    @apply bg-white rounded-xl border;
+    border-color: var(--color-line);
+    box-shadow: var(--shadow-card);
+  }
+  /* Semantic status pills — pair with .health-pill / .status-pill base. */
+  .pill-ok {
+    background: var(--color-ok-tint);
+    color: var(--color-ok);
+    border-color: transparent;
+  }
+  .pill-warn {
+    background: var(--color-warn-tint);
+    color: var(--color-warn);
+    border-color: transparent;
+  }
+  .pill-crit {
+    background: var(--color-crit-tint);
+    color: var(--color-crit);
+    border-color: transparent;
+  }
+  .pill-info {
+    background: rgb(38 52 138 / 0.10);
+    color: var(--color-primary);
+    border-color: transparent;
+  }
+  .pill-accent {
+    background: rgb(180 181 58 / 0.18);
+    color: var(--color-accent-deep);
+    border-color: transparent;
+  }
+  .pill-neutral {
+    background: rgb(106 111 138 / 0.13);
+    color: var(--color-muted);
+    border-color: transparent;
+  }
+  .pill-dot {
+    @apply inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current;
+  }
+  .admin-page {
+    @apply mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8;
+  }
+  .admin-page-header {
+    @apply mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between;
+  }
+  .admin-kicker {
+    @apply text-xs font-semibold uppercase text-primary/45;
+  }
+  .admin-field {
+    @apply min-w-0 w-full sm:w-auto;
+  }
+  .admin-label {
+    @apply mb-1 block text-xs font-semibold text-primary/55;
+  }
+  .admin-input {
+    @apply min-h-10 rounded-lg border bg-white px-3 text-sm leading-5 text-primary placeholder:text-primary/35 shadow-xs transition-colors focus:outline-hidden focus:ring-2 focus:ring-accent/40;
+    border-color: rgb(38 52 138 / 0.18);
+  }
+  .admin-select {
+    @apply h-10 w-full min-w-44 appearance-none rounded-lg border bg-white px-3 pr-9 text-sm leading-5 text-primary shadow-xs transition-colors focus:outline-hidden focus:ring-2 focus:ring-accent/40;
+    border-color: rgb(38 52 138 / 0.18);
+    background-image: linear-gradient(45deg, transparent 50%, rgb(38 52 138 / 0.75) 50%), linear-gradient(135deg, rgb(38 52 138 / 0.75) 50%, transparent 50%);
+    background-position: calc(100% - 18px) 17px, calc(100% - 13px) 17px;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+  }
+  .admin-input:not(textarea) {
+    @apply h-10;
+  }
+  .admin-textarea {
+    @apply min-h-24 rounded-lg border bg-white px-3 py-2 text-sm leading-5 text-primary placeholder:text-primary/35 shadow-xs transition-colors focus:outline-hidden focus:ring-2 focus:ring-accent/40;
+    border-color: rgb(38 52 138 / 0.18);
+  }
+  .admin-filter-bar {
+    @apply mb-6 flex flex-wrap items-end gap-3 rounded-lg bg-white p-4 shadow-xs border;
+    border-color: var(--color-line);
+  }
+  .admin-table {
+    @apply w-full text-sm;
+  }
+  .admin-table th {
+    @apply whitespace-nowrap px-5 py-3 text-left text-xs font-semibold uppercase text-primary/45;
+  }
+  .admin-table td {
+    @apply px-5 py-3 align-middle;
+  }
+  .admin-table thead tr {
+    background: var(--color-surface-2);
+    border-bottom: 1px solid var(--color-line);
+  }
+  .admin-table tbody {
+    @apply divide-y divide-primary/5;
+  }
+  .admin-table tbody tr {
+    @apply transition-colors hover:bg-primary/5;
+  }
+  .status-pill {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-semibold capitalize;
+  }
+  .health-pill {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold;
+  }
+  .admin-action-link {
+    @apply inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold text-primary/65 underline-offset-2 transition-colors hover:bg-primary/5 hover:text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .admin-danger-link {
+    @apply inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold text-red-600 underline-offset-2 transition-colors hover:bg-red-50 hover:text-red-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-red-300 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .admin-card-header {
+    @apply flex items-center justify-between gap-3 border-b border-primary/10 px-5 py-4;
+  }
+  .admin-card-title {
+    @apply text-sm font-semibold text-primary;
+  }
+  .admin-card-subtitle {
+    @apply mt-1 text-xs text-primary/45;
+  }
+  .pagination-btn {
+    @apply inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-primary/20 px-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-35;
+  }
+  .empty-state-cell {
+    @apply px-6 py-12 text-center text-sm text-primary/45;
+  }
+}

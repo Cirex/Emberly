@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Emberly Apartments",
+    "slug": "emberly-resident",
+    "version": "1.0.0",
+    "scheme": "com.emberly.resident",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.emberly.resident",
+      "appleTeamId": "T49DUB6KRJ",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Use Face ID to unlock Emberly Apartments on this device."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF"
+      },
+      "package": "com.emberly.resident"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "buildReactNativeFromSource": true
+          }
+        }
+      ],
+      "@sentry/react-native/expo"
+    ]
+  }
+}

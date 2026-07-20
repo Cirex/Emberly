@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# ---------------------------------------------------------------------------
+# MONOREPO CAVEAT
+#
+# emberly-resident is one of three SEPARATE git repos (web, resident, shared).
+# This app depends on the sibling package `@emberly/shared` via a local path:
+#
+#     "@emberly/shared": "file:../emberly-shared"
+#
+# For `npm ci` to resolve that dependency, `../emberly-shared` must exist next
+# to this checkout. GitHub Actions only checks out THIS repo by default, so the
+# workflow below optionally checks out the shared repo alongside it.
+#
+# To enable the full pipeline, set a repository variable named
+# `EMBERLY_SHARED_REPO` to the shared repo's `owner/name` (Settings ->
+# Secrets and variables -> Actions -> Variables). If the shared repo is
+# private, also provide a `SHARED_REPO_TOKEN` secret with read access.
+#
+# If `EMBERLY_SHARED_REPO` is not set, the shared checkout/build steps are
+# skipped and `npm ci` will fail on the missing local dependency — that is the
+# expected, documented behavior until the sibling repo is wired up here.
+#
+# We intentionally do NOT run a full native (iOS/Android) build here — that is
+# far too heavy for CI. This job runs JS/TS static checks and unit tests only.
+# ---------------------------------------------------------------------------
+
+jobs:
+  build-and-test:
+    name: typecheck + test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout resident app
+        uses: actions/checkout@v4
+        with:
+          path: emberly-resident
+
+      # Optional: check out the sibling shared package into ../emberly-shared
+      # (relative to emberly-resident) so the file: dependency resolves.
+      - name: Checkout @emberly/shared (sibling)
+        if: ${{ vars.EMBERLY_SHARED_REPO != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.EMBERLY_SHARED_REPO }}
+          token: ${{ secrets.SHARED_REPO_TOKEN || github.token }}
+          path: emberly-shared
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Build the shared package if it was checked out, so its dist/ (the
+      # published entrypoint) is present before the resident app installs it.
+      - name: Build @emberly/shared
+        if: ${{ vars.EMBERLY_SHARED_REPO != '' }}
+        working-directory: emberly-shared
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Install dependencies
+        working-directory: emberly-resident
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: emberly-resident
+        run: npx tsc --noEmit
+
+      - name: Test
+        working-directory: emberly-resident
+        run: npm test

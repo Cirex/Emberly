@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Gates: typecheck, test, build. All three must pass.
+#
+# MONOREPO-ADJACENT CAVEAT (read this before "fixing" a red build):
+# emberly-web depends on the sibling package `@emberly/shared` via
+# `file:../emberly-shared`. That package lives in a SEPARATE git repo, one
+# directory up, and is NOT part of an `actions/checkout` of this repo alone.
+# Its compiled dist/ is also gitignored, so it must be built from source (tsc).
+#
+# This workflow checks out emberly-shared next to emberly-web and builds it, so
+# the file: dependency resolves. If you fork/mirror this repo without the
+# sibling repo available, CI cannot build until the shared package is provided
+# (vendor it, publish it to a registry, or adopt a real monorepo). See DEPLOY.md.
+#
+# The checkout of the sibling repo below assumes it lives at the same owner as
+# this repo under the name `emberly-shared`. Adjust `repository:` if not.
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout emberly-web
+        uses: actions/checkout@v4
+        with:
+          path: emberly-web
+
+      # Best-effort checkout of the sibling package into ../emberly-shared
+      # (relative to emberly-web). Continues on error so we can emit a clear
+      # message below rather than a cryptic npm resolution failure.
+      - name: Checkout @emberly/shared (sibling repo)
+        id: shared
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/emberly-shared
+          path: emberly-shared
+          # A token with read access to the sibling repo. GITHUB_TOKEN works if
+          # both repos are in the same org and the workflow has read access;
+          # otherwise set a SHARED_REPO_TOKEN secret.
+          token: ${{ secrets.SHARED_REPO_TOKEN || github.token }}
+
+      - name: Fail fast if sibling package is unavailable
+        if: steps.shared.outcome != 'success'
+        run: |
+          echo "::error::@emberly/shared could not be checked out."
+          echo "emberly-web depends on ../emberly-shared (file: dependency) which"
+          echo "lives in a separate repo. Provide it (SHARED_REPO_TOKEN secret,"
+          echo "vendoring, or a monorepo) before CI can build. See DEPLOY.md."
+          exit 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: emberly-web/package-lock.json
+
+      # Build the shared package from source (no runtime deps; tsc only). This
+      # produces ../emberly-shared/dist so the file: symlink resolves.
+      - name: Build @emberly/shared
+        working-directory: emberly-shared
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Install emberly-web dependencies
+        working-directory: emberly-web
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        working-directory: emberly-web
+        run: npm run typecheck
+
+      - name: Test
+        working-directory: emberly-web
+        run: npm test
+
+      # Build with Sentry/source-map upload disabled (no secrets needed): with
+      # SENTRY_AUTH_TOKEN unset, withSentryConfig skips upload and the DSN being
+      # unset keeps Sentry inert. The build must be green with zero secrets.
+      - name: Build
+        working-directory: emberly-web
+        run: npx next build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"

@@ -20,7 +20,8 @@
     "sync:lease-details": "bun --env-file=.env run src/run-lease-details.ts",
     "sync:mlgw-bills": "bun --env-file=.env run src/run-mlgw-bills.ts",
     "sync:mlgw-payments": "bun --env-file=.env run src/run-mlgw-payments.ts",
-    "sync:all": "bun --env-file=.env run src/run-units.ts && bun --env-file=.env run src/run-unit-info.ts && bun --env-file=.env run src/run-available-units.ts && bun --env-file=.env run src/run-delinquency.ts && bun --env-file=.env run src/run-work-orders.ts && bun --env-file=.env run src/run-unit-details.ts && bun --env-file=.env run src/run-lease-details.ts && bun --env-file=.env run src/run-mlgw-bills.ts && bun --env-file=.env run src/run-mlgw-payments.ts"
+    "sync:pm": "bun --env-file=.env run src/run-pm-generate.ts",
+    "sync:all": "bun --env-file=.env run src/run-units.ts && bun --env-file=.env run src/run-unit-info.ts && bun --env-file=.env run src/run-available-units.ts && bun --env-file=.env run src/run-delinquency.ts && bun --env-file=.env run src/run-work-orders.ts && bun --env-file=.env run src/run-unit-details.ts && bun --env-file=.env run src/run-lease-details.ts && bun --env-file=.env run src/run-mlgw-bills.ts && bun --env-file=.env run src/run-mlgw-payments.ts && bun --env-file=.env run src/run-pm-generate.ts"
   },
   "dependencies": {
     "@emberly/core": "workspace:*",

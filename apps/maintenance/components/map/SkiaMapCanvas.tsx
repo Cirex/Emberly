@@ -490,14 +490,20 @@ export function SkiaMapCanvas({
         ty.value = p.y;
       });
 
+    // maxDistance kills the false-click class outright: any finger travel past
+    // 10px is navigation, so the tap cancels instead of firing on release.
     const tap = Gesture.Tap()
       .maxDuration(260)
+      .maxDistance(10)
       .onEnd((e) => {
         "worklet";
         runOnJS(onTapJS)(e.x, e.y);
       });
 
-    return Gesture.Simultaneous(pan, pinch, tap);
+    // Exclusive: the tap only claims the touch when the nav gestures FAIL —
+    // running it Simultaneous with pan/pinch made every short navigation flick
+    // also select whatever was under the finger (the false-click complaint).
+    return Gesture.Exclusive(Gesture.Simultaneous(pan, pinch), tap);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onTapJS, baseScale]);
 

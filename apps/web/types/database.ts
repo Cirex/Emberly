@@ -2220,6 +2220,81 @@ export interface Database {
           },
         ];
       };
+      delinquency_actions: {
+        Row: {
+          id: string;
+          resman_lease_id: string;
+          resman_unit_id: string;
+          unit_number: string;
+          kind:
+            | "note"
+            | "called"
+            | "notice_served"
+            | "promise_recorded"
+            | "promise_kept"
+            | "promise_broken"
+            | "fed_filed"
+            | "eviction_completed"
+            | "writeoff"
+            | "payment_plan";
+          note: string;
+          amount: number | null;
+          promise_due_date: string | null;
+          created_by: string;
+          created_by_admin_id: string;
+          created_at: string | null;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          resman_lease_id: string;
+          resman_unit_id?: string;
+          unit_number?: string;
+          kind:
+            | "note"
+            | "called"
+            | "notice_served"
+            | "promise_recorded"
+            | "promise_kept"
+            | "promise_broken"
+            | "fed_filed"
+            | "eviction_completed"
+            | "writeoff"
+            | "payment_plan";
+          note?: string;
+          amount?: number | null;
+          promise_due_date?: string | null;
+          created_by?: string;
+          created_by_admin_id?: string;
+          created_at?: string | null;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          resman_lease_id?: string;
+          resman_unit_id?: string;
+          unit_number?: string;
+          kind?:
+            | "note"
+            | "called"
+            | "notice_served"
+            | "promise_recorded"
+            | "promise_kept"
+            | "promise_broken"
+            | "fed_filed"
+            | "eviction_completed"
+            | "writeoff"
+            | "payment_plan";
+          note?: string;
+          amount?: number | null;
+          promise_due_date?: string | null;
+          created_by?: string;
+          created_by_admin_id?: string;
+          created_at?: string | null;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
       mlgw_accounts: {
         Row: {
           id: string;

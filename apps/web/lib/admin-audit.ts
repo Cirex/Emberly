@@ -8,6 +8,7 @@ type AuditClient = {
 
 export type AdminAuditAction =
   | "resident.require_reauth"
+  | "resident.pii_reveal"
   | "resident.suspend_access"
   | "resident.ban_guest_pass"
   | "resident.unban_guest_pass"

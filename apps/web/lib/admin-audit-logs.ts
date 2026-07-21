@@ -23,6 +23,7 @@ export function formatAdminAuditAction(action: string): string {
     "annotation.update": "Update map annotation",
     "annotation.delete": "Delete map annotation",
     "resident.require_reauth": "Require resident reauth",
+    "resident.pii_reveal": "Reveal resident PII",
     "resident.suspend_access": "Suspend resident access",
     "guest_pass.update": "Update guest pass",
     "scanner.create": "Create scanner",

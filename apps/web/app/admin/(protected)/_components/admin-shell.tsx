@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AdminAlert } from "@/lib/admin-alerts";
 import { AdminIcon } from "../../_components/admin-ui";
 
-type NavIcon = "chart" | "users" | "ticket" | "log" | "scanner" | "audit" | "map" | "building" | "wrench";
+type NavIcon = "chart" | "users" | "ticket" | "log" | "scanner" | "audit" | "map" | "building" | "wrench" | "bolt";
 
 const navGroups: Array<{
   label: string;
@@ -37,6 +37,7 @@ const navGroups: Array<{
       { href: "/admin/units", label: "Units", icon: "building" },
       { href: "/admin/work-orders", label: "Work Orders", icon: "wrench" },
       { href: "/admin/pm", label: "Preventive", icon: "wrench" },
+      { href: "/admin/utilities", label: "Utilities", icon: "bolt" },
       { href: "/admin/property-map", label: "Property Map", icon: "map" },
     ],
   },
@@ -112,6 +113,8 @@ function Icon({ icon }: { icon: NavIcon }) {
       return p(
         "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z",
       );
+    case "bolt":
+      return p("M13 2 3 14h9l-1 8 10-12h-9l1-8z");
   }
 }
 

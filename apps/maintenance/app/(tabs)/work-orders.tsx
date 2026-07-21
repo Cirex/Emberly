@@ -214,15 +214,14 @@ export default function WorkOrdersScreen() {
         ListHeaderComponent={
           <View>
             {statusLine}
-            <View style={{ paddingHorizontal: pad }}>
-              <HotSpots
-                rows={snapshot.hotSpotRows}
-                selectedUnit={view.selectedHotSpotUnit}
-                onSelectUnit={view.setSelectedHotSpotUnit}
-                nowMs={nowMs}
-                width={width}
-              />
-            </View>
+            <HotSpots
+              rows={snapshot.hotSpotRows}
+              selectedUnit={view.selectedHotSpotUnit}
+              onSelectUnit={view.setSelectedHotSpotUnit}
+              nowMs={nowMs}
+              width={width}
+              pad={pad}
+            />
           </View>
         }
       />

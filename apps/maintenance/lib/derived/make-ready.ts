@@ -21,15 +21,6 @@ export const MAKE_READY_STAGES = [
 ] as const;
 export type MakeReadyStage = (typeof MAKE_READY_STAGES)[number];
 
-export const STAGE_TITLES: Record<MakeReadyStage, string> = {
-  trashOut: "Trash Out",
-  punch: "Punch",
-  flooring: "Flooring",
-  finalInspection: "Final Inspection",
-  cleaning: "Cleaning",
-  rekey: "Rekey",
-};
-
 /**
  * ALL stages the (lowercased) title matches — a single order can claim more
  * than one slot ("Final Inspection & Cleaning"). Substring rules ported
@@ -61,15 +52,6 @@ export type MoveInUrgency =
   | "nextSevenDays"
   | "nextFourteenDays"
   | "scheduled";
-
-export const URGENCY_TITLES: Record<MoveInUrgency, string> = {
-  missingDate: "No Date",
-  overdue: "Overdue",
-  today: "Today",
-  nextSevenDays: "At Risk",
-  nextFourteenDays: "Next 14 Days",
-  scheduled: "Scheduled",
-};
 
 /** Bracket the move-in date: signed calendar days from today. */
 export function moveInUrgency(moveInAt: number | null, nowMs: number): MoveInUrgency {
@@ -205,17 +187,20 @@ export function buildMakeReadyGroups(input: {
   return groups;
 }
 
+/** True when a stage slot is claimed by a Completed/Closed order. */
+export function isStageCompleted(wo: ParsedWorkOrder | null): boolean {
+  return wo !== null && isCompleted(wo);
+}
+
+/** The stage a turn is currently working — the first slot not yet completed —
+ *  or null when every stage is done. */
+export function currentStageOf(g: MakeReadyGroup): MakeReadyStage | null {
+  return MAKE_READY_STAGES.find((s) => !isStageCompleted(g.stages[s])) ?? null;
+}
+
 // ── Quick filters ───────────────────────────────────────────────────────────
 
 export type MakeReadyQuickFilter = "all" | "atRisk" | "dueThisWeek" | "incomplete" | "noMoveInDate";
-
-export const QUICK_FILTER_TITLES: Record<MakeReadyQuickFilter, string> = {
-  all: "All",
-  atRisk: "At Risk",
-  dueThisWeek: "Due This Week",
-  incomplete: "Incomplete",
-  noMoveInDate: "No Move-In Date",
-};
 
 const AT_RISK_URGENCIES = new Set<MoveInUrgency>(["missingDate", "overdue", "today", "nextSevenDays"]);
 

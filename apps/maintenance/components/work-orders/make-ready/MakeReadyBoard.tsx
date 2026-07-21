@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import { ClassificationChip, StatusText } from "@/components/work-orders/rows";
@@ -9,20 +10,20 @@ import {
   type MakeReadyQuickFilter,
   type MakeReadyStage,
   type MoveInUrgency,
-  QUICK_FILTER_TITLES,
+  currentStageOf,
+  isStageCompleted,
   quickFilterIncludes,
-  STAGE_TITLES,
-  URGENCY_TITLES,
   urgencyShowsBadge,
 } from "@/lib/derived/make-ready";
 import { TINT } from "@/lib/derived/status";
 import type { ParsedWorkOrder } from "@/lib/derived/types";
-import { abbreviatedDate } from "@/lib/derived/time";
+import { abbreviatedDate, calendarDaysBetween } from "@/lib/derived/time";
 import { HAIRLINE, HAIRLINE_SOFT, MUTED, OLIVE, OLIVE_TEXT } from "@/theme/tokens";
 
 /**
- * Make Ready mode: the six-stage turn board. Phone gets stacked turn cards
- * with a 3×2 stage grid; tablet gets the frozen-column board — a pinned unit
+ * Make Ready turns board. Phone shows the turn rows banded by whether a
+ * move-in is scheduled, each row carrying a move-in chip and the six-segment
+ * labeled stage bar; tablet keeps the frozen-column board — a pinned unit
  * column beside a horizontally scrolling stage grid, kept in sync by fixed
  * cell heights.
  */
@@ -33,24 +34,15 @@ const STAGE_COUNT = MAKE_READY_STAGES.length;
 
 const FILTER_ORDER: MakeReadyQuickFilter[] = ["all", "atRisk", "dueThisWeek", "incomplete", "noMoveInDate"];
 
-const COMPLETED_STATUSES = new Set(["Completed", "Closed"]);
-
-function isStageCompleted(wo: ParsedWorkOrder | null): boolean {
-  return wo !== null && COMPLETED_STATUSES.has(wo.status);
-}
+const RED = "#D1382E";
+const GREEN = "#33A666";
+const AMBER = "#B05E14";
+const SCHEDULED_BAND_LABEL = "#A32D2D";
 
 const URGENCY_BADGE_COLOR: Partial<Record<MoveInUrgency, string>> = {
-  overdue: "#D1382E",
+  overdue: RED,
   today: "#EB852E",
   nextSevenDays: "#E38736",
-};
-
-const EMPTY_HINTS: Record<MakeReadyQuickFilter, string> = {
-  all: "No make-ready turns are on the board right now.",
-  atRisk: "No incomplete turns are inside the at-risk window.",
-  dueThisWeek: "No turns have a move-in today or in the next seven days.",
-  incomplete: "Every turn has all six stages completed.",
-  noMoveInDate: "Every turn has a move-in date.",
 };
 
 // ── Quick-filter chip row ───────────────────────────────────────────────────
@@ -108,11 +100,13 @@ function EyeChip({
   showLabel: boolean;
   onPress: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: showCompleted }}
+      accessibilityLabel={showCompleted ? t("makeReady.hideCompleted") : t("makeReady.showCompleted")}
       style={{
         flexDirection: "row",
         alignItems: "center",
@@ -128,7 +122,7 @@ function EyeChip({
       <Ionicons name={showCompleted ? "eye-outline" : "eye-off-outline"} size={13} color="#4C556F" />
       {showLabel ? (
         <Text style={{ fontSize: 12, fontWeight: "600", color: "#4C556F" }}>
-          {showCompleted ? "Hide Completed" : "Show Completed"}
+          {showCompleted ? t("makeReady.hideCompleted") : t("makeReady.showCompleted")}
         </Text>
       ) : null}
     </Pressable>
@@ -138,6 +132,7 @@ function EyeChip({
 // ── Shared bits ─────────────────────────────────────────────────────────────
 
 function UrgencyBadge({ urgency }: { urgency: MoveInUrgency }) {
+  const { t } = useTranslation();
   const color = URGENCY_BADGE_COLOR[urgency];
   if (!color) return null;
   return (
@@ -150,13 +145,14 @@ function UrgencyBadge({ urgency }: { urgency: MoveInUrgency }) {
       }}
     >
       <Text style={{ fontSize: 8.5, fontWeight: "700", letterSpacing: 0.4, color }}>
-        {URGENCY_TITLES[urgency].toUpperCase()}
+        {t(`makeReady.urgency.${urgency}`).toUpperCase()}
       </Text>
     </View>
   );
 }
 
-/** Six flex capsules — one per stage, filled olive up to completedStageCount. */
+/** Six flex capsules — one per stage, filled olive up to completedStageCount
+ *  (the tablet board's compact strip). */
 function ProgressStrip({ completed }: { completed: number }) {
   return (
     <View style={{ flexDirection: "row", gap: 4 }}>
@@ -175,9 +171,43 @@ function ProgressStrip({ completed }: { completed: number }) {
   );
 }
 
-// The stage a turn is currently working — the first slot not yet completed —
-// drives the row's lead chip. Each stage gets its own tint so the board reads
-// at a glance; short labels keep the expanded glyph strip from clipping.
+/** The six-segment stage bar with 7.5px labels: green when the stage is done,
+ *  olive for the stage the turn is currently on, faint for the rest. */
+function StageBar({ group }: { group: MakeReadyGroup }) {
+  const { t } = useTranslation();
+  const current = currentStageOf(group);
+  return (
+    <View style={{ flexDirection: "row", gap: 4 }}>
+      {MAKE_READY_STAGES.map((stage) => {
+        const done = isStageCompleted(group.stages[stage]);
+        const isCurrent = stage === current;
+        return (
+          <View key={stage} style={{ flex: 1, gap: 3 }}>
+            <View
+              style={{
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: done ? GREEN : isCurrent ? OLIVE : "rgba(9,27,84,0.08)",
+              }}
+            />
+            <Text
+              numberOfLines={1}
+              style={{
+                fontSize: 7.5,
+                fontWeight: "700",
+                color: done ? GREEN : isCurrent ? OLIVE_TEXT : "#98A0B4",
+              }}
+            >
+              {t(`makeReady.stagesShort.${stage}`)}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+// Each stage gets its own tint so the board reads at a glance.
 const STAGE_TINT: Record<MakeReadyStage, string> = {
   trashOut: "#70788F",
   punch: "#848F0D",
@@ -187,21 +217,9 @@ const STAGE_TINT: Record<MakeReadyStage, string> = {
   rekey: "#C79433",
 };
 
-const SHORT_STAGE_TITLES: Record<MakeReadyStage, string> = {
-  trashOut: "Trash",
-  punch: "Punch",
-  flooring: "Floor",
-  finalInspection: "Inspect",
-  cleaning: "Clean",
-  rekey: "Rekey",
-};
-
-function currentStageOf(g: MakeReadyGroup): MakeReadyStage | null {
-  return MAKE_READY_STAGES.find((s) => !isStageCompleted(g.stages[s])) ?? null;
-}
-
 /** The lead chip: the stage this turn is currently on, tinted per stage. */
 function StageChip({ stage }: { stage: MakeReadyStage }) {
+  const { t } = useTranslation();
   const color = STAGE_TINT[stage];
   return (
     <View
@@ -214,7 +232,46 @@ function StageChip({ stage }: { stage: MakeReadyStage }) {
         borderColor: `${color}55`,
       }}
     >
-      <Text style={{ fontSize: 10, fontWeight: "700", color }}>{STAGE_TITLES[stage]}</Text>
+      <Text style={{ fontSize: 10, fontWeight: "700", color }}>{t(`makeReady.stages.${stage}`)}</Text>
+    </View>
+  );
+}
+
+/** The move-in chip: red-filled "Nd late" past date, amber inside 7 days,
+ *  olive dated chip beyond that, nothing when no move-in is set. */
+function MoveInChip({ moveInAt, nowMs }: { moveInAt: number | null; nowMs: number }) {
+  const { t } = useTranslation();
+  if (moveInAt === null) return null;
+  const days = calendarDaysBetween(nowMs, moveInAt);
+  if (days < 0) {
+    return (
+      <View style={{ paddingHorizontal: 8, paddingVertical: 2.5, borderRadius: 999, backgroundColor: RED }}>
+        <Text style={{ fontSize: 9.5, fontWeight: "800", color: "#FFFFFF" }}>
+          {t("makeReady.chip.late", { count: -days })}
+        </Text>
+      </View>
+    );
+  }
+  const soon = days <= 7;
+  const color = soon ? AMBER : OLIVE_TEXT;
+  const label =
+    days === 0
+      ? t("makeReady.chip.moveInToday")
+      : soon
+        ? t("makeReady.chip.moveInSoon", { count: days })
+        : t("makeReady.chip.moveInDate", { date: abbreviatedDate(moveInAt, nowMs) });
+  return (
+    <View
+      style={{
+        paddingHorizontal: 8,
+        paddingVertical: 2.5,
+        borderRadius: 999,
+        backgroundColor: `${color}14`,
+        borderWidth: 1,
+        borderColor: `${color}42`,
+      }}
+    >
+      <Text style={{ fontSize: 9.5, fontWeight: "700", color, fontVariant: ["tabular-nums"] }}>{label}</Text>
     </View>
   );
 }
@@ -222,6 +279,7 @@ function StageChip({ stage }: { stage: MakeReadyStage }) {
 /** Expanded row: the six stages as a labeled circle strip (olive check when
  *  done, empty ring when not) — the mockup's glyph row, no bordered cells. */
 function StageGlyphStrip({ group }: { group: MakeReadyGroup }) {
+  const { t } = useTranslation();
   return (
     <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 2 }}>
       {MAKE_READY_STAGES.map((stage) => {
@@ -248,7 +306,7 @@ function StageGlyphStrip({ group }: { group: MakeReadyGroup }) {
               numberOfLines={1}
               style={{ fontSize: 8.5, fontWeight: "700", color: done ? OLIVE_TEXT : "#98A0B4" }}
             >
-              {SHORT_STAGE_TITLES[stage]}
+              {t(`makeReady.stagesShort.${stage}`)}
             </Text>
           </View>
         );
@@ -284,32 +342,45 @@ function StageValue({ wo }: { wo: ParsedWorkOrder | null }) {
   );
 }
 
-// ── Phone: turn rows ────────────────────────────────────────────────────────
+// ── Phone: banded turn rows ─────────────────────────────────────────────────
+
+/** Band strip separating scheduled from unscheduled turns. */
+function BandHeader({ label, color, pad }: { label: string; color: string; pad: number }) {
+  return (
+    <View
+      style={{
+        paddingHorizontal: pad,
+        paddingVertical: 8,
+        borderTopWidth: 1,
+        borderTopColor: HAIRLINE,
+        backgroundColor: "rgba(9,27,84,0.03)",
+      }}
+    >
+      <Text style={{ fontSize: 10.5, fontWeight: "800", letterSpacing: 0.9, color }}>{label}</Text>
+    </View>
+  );
+}
 
 /**
- * One turn as a full-bleed row (Option 2, matching the approved mockup): the
- * unit leads with a tinted chip for the stage it's currently on and the
- * move-in date on the right (red when overdue); the six-segment olive progress
- * strip sits beneath; and the labeled stage-glyph strip discloses only while
- * the row is expanded.
+ * One turn as a full-bleed row: the unit leads with a tinted chip for the
+ * stage it's currently on and the move-in chip on the right; the six-segment
+ * labeled stage bar sits beneath; and the stage-glyph strip discloses only
+ * while the row is expanded.
  */
 function TurnRow({
   group,
   nowMs,
   pad,
-  first,
   expanded,
   onToggle,
 }: {
   group: MakeReadyGroup;
   nowMs: number;
   pad: number;
-  first: boolean;
   expanded: boolean;
   onToggle: () => void;
 }) {
   const stage = currentStageOf(group);
-  const overdue = group.urgency === "overdue";
   return (
     <Pressable
       onPress={onToggle}
@@ -319,7 +390,7 @@ function TurnRow({
         paddingHorizontal: pad,
         paddingVertical: 13,
         gap: 10,
-        borderTopWidth: first ? 0 : 1,
+        borderTopWidth: 1,
         borderTopColor: HAIRLINE,
       }}
     >
@@ -330,25 +401,10 @@ function TurnRow({
         {stage ? <StageChip stage={stage} /> : null}
         {urgencyShowsBadge(group.urgency) ? <UrgencyBadge urgency={group.urgency} /> : null}
         <View style={{ flex: 1 }} />
-        {group.moveInAt !== null ? (
-          <Text
-            style={{
-              fontSize: 11,
-              fontWeight: "700",
-              fontVariant: ["tabular-nums"],
-              color: overdue ? TINT.blocked : MUTED,
-            }}
-          >
-            Move-in {abbreviatedDate(group.moveInAt, nowMs)}
-          </Text>
-        ) : (
-          <Text className="text-muted dark:text-white/40" style={{ fontSize: 11, fontWeight: "600" }}>
-            No move-in date
-          </Text>
-        )}
+        <MoveInChip moveInAt={group.moveInAt} nowMs={nowMs} />
         <Ionicons name={expanded ? "chevron-down" : "chevron-forward"} size={13} color="rgba(9,27,84,0.32)" />
       </View>
-      <ProgressStrip completed={group.completedStageCount} />
+      <StageBar group={group} />
       {expanded ? <StageGlyphStrip group={group} /> : null}
     </Pressable>
   );
@@ -369,6 +425,7 @@ function BoardHeaderText({ text }: { text: string }) {
 }
 
 function TabletBoard({ groups, nowMs }: { groups: MakeReadyGroup[]; nowMs: number }) {
+  const { t } = useTranslation();
   return (
     <AppCardSurface kind="panel" style={{ overflow: "hidden", flexDirection: "row" }}>
       {/* Pinned unit column */}
@@ -429,7 +486,7 @@ function TabletBoard({ groups, nowMs }: { groups: MakeReadyGroup[]; nowMs: numbe
         {MAKE_READY_STAGES.map((stage) => (
           <View key={stage} style={{ minWidth: 132, flexGrow: 1 }}>
             <View style={{ height: HEADER_HEIGHT, justifyContent: "center", paddingHorizontal: 10 }}>
-              <BoardHeaderText text={STAGE_TITLES[stage]} />
+              <BoardHeaderText text={t(`makeReady.stages.${stage}`)} />
             </View>
             {groups.map((g) => {
               const wo = g.stages[stage];
@@ -481,6 +538,7 @@ export function MakeReadyBoard({
   /** Screen edge inset the full-bleed rows use for their content. */
   pad?: number;
 }) {
+  const { t } = useTranslation();
   const tablet = width >= 768;
   const [expandedUnit, setExpandedUnit] = useState<string | null>(null);
 
@@ -491,6 +549,22 @@ export function MakeReadyBoard({
         (g) => quickFilterIncludes(quickFilter, g) && (showCompleted || g.unitStatus !== "Ready"),
       ),
     [groups, quickFilter, showCompleted],
+  );
+
+  // The groups arrive dated-first ascending, undated last — the two bands are
+  // a straight partition of the already-sorted list.
+  const scheduled = useMemo(() => visible.filter((g) => g.moveInAt !== null), [visible]);
+  const unscheduled = useMemo(() => visible.filter((g) => g.moveInAt === null), [visible]);
+
+  const renderRow = (g: MakeReadyGroup) => (
+    <TurnRow
+      key={g.unitNumber}
+      group={g}
+      nowMs={nowMs}
+      pad={pad}
+      expanded={expandedUnit === g.unitNumber}
+      onToggle={() => setExpandedUnit((prev) => (prev === g.unitNumber ? null : g.unitNumber))}
+    />
   );
 
   return (
@@ -504,7 +578,7 @@ export function MakeReadyBoard({
         {FILTER_ORDER.map((f) => (
           <FilterChip
             key={f}
-            label={QUICK_FILTER_TITLES[f]}
+            label={t(`makeReady.filters.${f}`)}
             count={quickCounts[f]}
             selected={f === quickFilter}
             onPress={() => onQuickFilter(f)}
@@ -517,13 +591,13 @@ export function MakeReadyBoard({
       {visible.length === 0 ? (
         <View style={{ paddingVertical: 30, paddingHorizontal: pad + 10, alignItems: "center" }}>
           <Text className="text-navy dark:text-white" style={{ fontSize: 13, fontWeight: "700" }}>
-            No turns match
+            {t("makeReady.noTurnsMatch")}
           </Text>
           <Text
             className="text-muted dark:text-white/60"
             style={{ fontSize: 11, marginTop: 4, textAlign: "center" }}
           >
-            {EMPTY_HINTS[quickFilter]}
+            {t(`makeReady.emptyHints.${quickFilter}`)}
           </Text>
         </View>
       ) : tablet ? (
@@ -531,18 +605,23 @@ export function MakeReadyBoard({
           <TabletBoard groups={visible} nowMs={nowMs} />
         </View>
       ) : (
-        <View style={{ borderTopWidth: 1, borderTopColor: HAIRLINE }}>
-          {visible.map((g, i) => (
-            <TurnRow
-              key={g.unitNumber}
-              group={g}
-              nowMs={nowMs}
+        <View>
+          {scheduled.length > 0 ? (
+            <BandHeader
+              label={t("makeReady.bands.scheduled", { count: scheduled.length })}
+              color={SCHEDULED_BAND_LABEL}
               pad={pad}
-              first={i === 0}
-              expanded={expandedUnit === g.unitNumber}
-              onToggle={() => setExpandedUnit((prev) => (prev === g.unitNumber ? null : g.unitNumber))}
             />
-          ))}
+          ) : null}
+          {scheduled.map(renderRow)}
+          {unscheduled.length > 0 ? (
+            <BandHeader
+              label={t("makeReady.bands.unscheduled", { count: unscheduled.length })}
+              color="#4C556F"
+              pad={pad}
+            />
+          ) : null}
+          {unscheduled.map(renderRow)}
         </View>
       )}
     </View>

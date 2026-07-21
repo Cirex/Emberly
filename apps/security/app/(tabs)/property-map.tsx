@@ -2,7 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useShallow } from "zustand/react/shallow";
 import { LinearGradient } from "expo-linear-gradient";
 import { useColorScheme } from "nativewind";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import { Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnnotationEditorDialog } from "@/components/map/AnnotationEditorDialog";
@@ -143,15 +144,26 @@ export default function PropertyMapScreen() {
   const jumpSeq = useMapJump((s) => s.seq);
   const consumeJump = useMapJump((s) => s.consume);
   const [focusTarget, setFocusTarget] = useState<{ x: number; y: number; seq: number } | undefined>();
+  // Consume only while FOCUSED: the tab stays mounted in the background, so
+  // without the gate a backgrounded map ate the jump the moment it was
+  // requested and the selection/tooltip was gone by the time the screen
+  // actually appeared. Gated, the request survives until arrival.
+  const [isFocused, setIsFocused] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      setIsFocused(true);
+      return () => setIsFocused(false);
+    }, []),
+  );
   useEffect(() => {
-    if (!jumpUnit) return;
+    if (!isFocused || !jumpUnit) return;
     const target = PLACED_UNITS.find((u) => u.number === jumpUnit);
     consumeJump();
     if (!target) return;
     setEditingId(undefined);
     setSelected(jumpUnit);
     setFocusTarget({ x: target.cx, y: target.cy, seq: jumpSeq });
-  }, [jumpUnit, jumpSeq, consumeJump, setEditingId]);
+  }, [isFocused, jumpUnit, jumpSeq, consumeJump, setEditingId]);
 
   // A search that highlights off-screen units reads as "no results". When the
   // query resolves to matches, fly to the center of the matched cells so the

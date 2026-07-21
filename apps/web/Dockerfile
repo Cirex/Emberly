@@ -38,11 +38,17 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Copy only manifests + lockfile first so the install layer caches until a
 # dependency changes. Every workspace manifest is required for a
 # --frozen-lockfile install to reconcile against bun.lock.
+#
+# ADDING A NEW APP? Add its package.json here too. The workspaces globs are
+# `apps/*`, `packages/*`, `supabase/sync`, so a new workspace lands in bun.lock
+# immediately, and a frozen install that cannot see its manifest fails the
+# build — the web image breaks on a change that never touched the web app.
 COPY package.json bun.lock turbo.json tsconfig.base.json ./
 COPY apps/web/package.json ./apps/web/
 COPY apps/resident/package.json ./apps/resident/
 COPY apps/security/package.json ./apps/security/
 COPY apps/maintenance/package.json ./apps/maintenance/
+COPY apps/manager/package.json ./apps/manager/
 COPY packages/core/package.json ./packages/core/
 COPY packages/ui/package.json ./packages/ui/
 COPY supabase/sync/package.json ./supabase/sync/

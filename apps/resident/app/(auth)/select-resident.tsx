@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
 import { GlassPanel, ResidentScreen, ScreenHeader } from '@/components/resident-glass';
 import { useAuth } from '@/lib/auth';
+import { capture } from '@/lib/analytics';
 import { normalizeUnitLabel } from '@emberly/core';
 
 export default function SelectResidentScreen() {
@@ -40,6 +41,8 @@ export default function SelectResidentScreen() {
         throw new Error('Resident selection has expired. Please sign in again.');
       }
       await completeSelection(pendingSelection.selectionToken, residentId);
+      // How often the shared-login picker is actually exercised (no names).
+      capture('resident_selected', { residentCount: residents.length });
       router.replace('/(tabs)');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'An unexpected error occurred.';

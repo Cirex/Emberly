@@ -257,7 +257,10 @@ export default function GuestPassScreen() {
       const result = await callWithAccessRetry({
         call: () => createGuestPass(token, guest),
         verifyAccess: resmanSession ? () => verifySession(token, resmanSession) : null,
-        logout,
+        logout: async () => {
+          capture('session_expired', { via: 'access_retry' });
+          await logout();
+        },
         logoutMessage: 'Your resident access could not be verified. Please sign in again.',
       });
       const pass = normalizeCreatedGuestPassResponse(result);
@@ -320,6 +323,8 @@ export default function GuestPassScreen() {
     setRevokingPassIds((current) => new Set(current).add(pass.passId));
     try {
       const result = await revokeGuestPass(token, pass.passId);
+      // Completes the pass lifecycle next to guest_pass_created (no guest PII).
+      capture('guest_pass_revoked');
       const revokedPass = result.pass
         ? normalizeCreatedGuestPassResponse({ pass: result.pass })
         : { ...pass, status: 'revoked' as const };

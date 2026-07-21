@@ -29,7 +29,7 @@ import {
   type LocalUnlockAvailability,
 } from "./localUnlock";
 import { normalizeUnitLabel } from "@emberly/core";
-import { identify, resetAnalytics } from "./analytics";
+import { capture, identify, resetAnalytics } from "./analytics";
 
 const TOKEN_KEY = "emberly_token";
 const TENANT_ID_KEY = "emberly_tenant_id";
@@ -245,6 +245,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const heartbeatResult = await verifySession(storedToken, parsedResmanSession);
           rememberHeartbeatResult(heartbeatResult);
           if (shouldLogoutForHeartbeatResult(heartbeatResult)) {
+            capture("session_expired", { via: "restore" });
             await performLogout();
             return;
           }
@@ -310,7 +311,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       void verifySession(currentToken, currentResmanSession)
         .then(async (result) => {
           rememberHeartbeatResult(result);
-          if (shouldLogoutForHeartbeatResult(result)) await performLogout();
+          if (shouldLogoutForHeartbeatResult(result)) {
+            capture("session_expired", { via: "heartbeat" });
+            await performLogout();
+          }
         })
         .catch((error) => {
           console.warn("Session heartbeat failed.", error);
@@ -329,7 +333,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       void verifySession(token, resmanSession)
         .then(async (result) => {
           rememberHeartbeatResult(result);
-          if (shouldLogoutForHeartbeatResult(result)) await performLogout();
+          if (shouldLogoutForHeartbeatResult(result)) {
+            capture("session_expired", { via: "heartbeat" });
+            await performLogout();
+          }
         })
         .catch((error) => {
           console.warn("Scheduled session heartbeat failed.", error);
@@ -452,9 +459,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function unlockWithLocalAuth() {
-    const unlocked = await authenticateWithLocalUnlock(`Unlock with ${localUnlockStatus.label}`);
-    if (unlocked) setIsAppLocked(false);
-    return unlocked;
+    try {
+      const unlocked = await authenticateWithLocalUnlock(`Unlock with ${localUnlockStatus.label}`);
+      // `false` here is a user cancel; hard failures throw and land below.
+      capture("local_unlock_used", { success: unlocked });
+      if (unlocked) setIsAppLocked(false);
+      return unlocked;
+    } catch (error) {
+      capture("local_unlock_used", { success: false, reason: "error" });
+      throw error;
+    }
   }
 
   async function logout() {

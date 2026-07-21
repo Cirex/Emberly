@@ -30,7 +30,13 @@ export const posthog: PostHog | null = apiKey ? new PostHog(apiKey, { host }) : 
  */
 export type AnalyticsEvent =
   | 'login_success'
+  | 'login_failed'
+  | 'resident_selected'
   | 'guest_pass_created'
+  | 'guest_pass_revoked'
+  | 'entry_pass_refresh_failed'
+  | 'local_unlock_used'
+  | 'session_expired'
   | (string & {});
 
 /** A JSON-serializable value — mirrors what PostHog accepts for properties. */

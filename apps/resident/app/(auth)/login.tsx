@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
 import { FieldShell, GlassButton, GlassPanel, ResidentScreen } from '@/components/resident-glass';
 import { useAuth } from '@/lib/auth';
+import { ApiRequestError } from '@/lib/api';
 import { capture } from '@/lib/analytics';
 
 const logo = require('../../assets/logo-transparent.png');
@@ -58,6 +59,12 @@ export default function LoginScreen() {
         router.push('/(auth)/select-resident');
       }
     } catch (err: unknown) {
+      // Categorized only — never the message, which can echo the username.
+      capture('login_failed', {
+        reason: err instanceof ApiRequestError
+          ? (err.status === 401 || err.status === 403 ? 'rejected' : 'server')
+          : 'network',
+      });
       const message = err instanceof Error ? err.message : 'An unexpected error occurred.';
       Alert.alert('Sign In Failed', message);
     } finally {

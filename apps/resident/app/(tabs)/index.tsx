@@ -17,7 +17,8 @@ import QRCode from 'react-native-qrcode-svg';
 import { Colors } from '@/constants/colors';
 import { GlassPanel, ResidentScreen } from '@/components/resident-glass';
 import { useAuth } from '@/lib/auth';
-import { getResidentEntryToken, verifySession } from '@/lib/api';
+import { ApiRequestError, getResidentEntryToken, verifySession } from '@/lib/api';
+import { capture } from '@/lib/analytics';
 import { callWithAccessRetry } from '@/lib/entryPassRefresh';
 import { secondsUntilEntryTokenExpiry } from '@/lib/residentEntryToken';
 
@@ -60,7 +61,10 @@ export default function MyPassScreen() {
       const result = await callWithAccessRetry({
         call: () => getResidentEntryToken(token, deviceSession),
         verifyAccess: resmanSession ? () => verifySession(token, resmanSession) : null,
-        logout,
+        logout: async () => {
+          capture('session_expired', { via: 'access_retry' });
+          await logout();
+        },
         logoutMessage: 'Your ResMan session has expired. Please sign in again.',
       });
       const secondsRemaining = secondsUntilEntryTokenExpiry(result.expiresAt);
@@ -71,6 +75,13 @@ export default function MyPassScreen() {
       });
       animateProgress(secondsRemaining);
     } catch (err: unknown) {
+      // Failures only — the pass refreshes every ~60s, so success events
+      // would be noise. A spike here is the gate-QR health signal.
+      capture('entry_pass_refresh_failed', {
+        reason: err instanceof ApiRequestError
+          ? (err.status === 401 || err.status === 403 ? 'rejected' : 'server')
+          : 'network',
+      });
       const msg = err instanceof Error ? err.message : 'Failed to load pass.';
       setError(msg);
     } finally {

@@ -9,6 +9,7 @@ import { useAnnotations } from "@/lib/stores/annotations";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { usePendingEdits } from "@/lib/stores/pending-edits";
+import { useWorkOrderPhotos } from "@/lib/stores/work-order-photos";
 import { useTags } from "@/lib/stores/tags";
 import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
@@ -38,9 +39,14 @@ function useServerSync() {
         .refresh(config)
         .then(() => {
           // Pending closes ride behind the mirror: retry un-acked ones, retire
-          // the ones the sync has confirmed closed.
+          // the ones the sync has confirmed closed. Completion photos flush
+          // AFTER the close flush — the work-order row exists server-side
+          // either way, but this keeps a photo from racing its own close.
           const closes = usePendingCloses.getState();
-          void closes.flush(config);
+          void closes
+            .flush(config)
+            .then(() => useWorkOrderPhotos.getState().flush(config))
+            .then(() => useWorkOrderPhotos.getState().prune(Date.now()));
           const closedIds = new Set(
             useWorkOrders
               .getState()

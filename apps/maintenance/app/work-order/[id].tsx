@@ -4,9 +4,10 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { capture } from "@/lib/analytics";
+import { CloseWorkOrderSheet } from "@/components/work-orders/CloseWorkOrderSheet";
 import { MarkdownEditorSheet } from "@/components/work-orders/MarkdownEditorSheet";
 import { MarkdownLite } from "@/components/work-orders/markdown";
 import { TechBadge } from "@/components/work-orders/rows";
@@ -21,6 +22,7 @@ import { useConfig } from "@/lib/stores/config";
 import { useMapJump } from "@emberly/ui";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { usePendingEdits } from "@/lib/stores/pending-edits";
+import { useWorkOrderPhotos } from "@/lib/stores/work-order-photos";
 import { CALLBACK_TINT, MUTED, NAVY, OLIVE, OLIVE_TEXT } from "@/theme/tokens";
 
 const SLATE = "#4C556F";
@@ -58,6 +60,8 @@ export default function WorkOrderDetail() {
   const [editing, setEditing] = useState<null | "technician" | "description" | "completionNotes">(
     null,
   );
+  // Close confirmation sheet (Mark complete + optional completion photos).
+  const [closeSheetOpen, setCloseSheetOpen] = useState(false);
 
   const wo = findWorkOrder(snapshot.byUnit, id);
 
@@ -154,19 +158,31 @@ export default function WorkOrderDetail() {
     if (wo.unitNumber.trim().length > 0) requestJump(wo.unitNumber.trim());
     router.push("/(tabs)/property-map");
   };
-  const onMarkComplete = () => {
-    Alert.alert("Mark complete?", `#${wo.number} · ${wo.unitNumber} will be closed.`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Mark Complete",
-        onPress: () => {
-          void queueClose(wo.id, "", { baseUrl, token });
-          // No PII: internal work-order id + prior status category only.
-          capture("work_order_completed", { workOrderId: wo.id, status: wo.status });
-          router.back();
-        },
-      },
-    ]);
+  const onMarkComplete = () => setCloseSheetOpen(true);
+  const onConfirmClose = (photoUris: string[]) => {
+    setCloseSheetOpen(false);
+    const config = { baseUrl, token };
+    const workOrderId = wo.id;
+    // Queue the photos locally, then the close (which fires its own immediate
+    // attempt), then kick a photo flush so the uploads ride right behind the
+    // close instead of waiting a full sync tick. Any failure just leaves the
+    // queues for the next tick — closing stays offline-safe.
+    void (async () => {
+      const photoStore = useWorkOrderPhotos.getState();
+      for (const uri of photoUris) {
+        try {
+          await photoStore.enqueue(workOrderId, uri, "completion");
+        } catch {
+          // Copying the picked file failed — skip this photo, keep closing.
+        }
+      }
+      await queueClose(workOrderId, "", config);
+      if (photoUris.length > 0) await useWorkOrderPhotos.getState().flush(config);
+    })();
+    // No PII: internal work-order id + prior status category only.
+    if (photoUris.length === 0) capture("completion_photo_skipped", { workOrderId });
+    capture("work_order_completed", { workOrderId, status: wo.status });
+    router.back();
   };
 
   return (
@@ -546,6 +562,17 @@ export default function WorkOrderDetail() {
         </View>
       </View>
 
+      {/* Close confirmation + completion photos */}
+      <CloseWorkOrderSheet
+        visible={closeSheetOpen}
+        workOrderId={wo.id}
+        number={wo.number}
+        unitNumber={wo.unitNumber}
+        dark={dark}
+        onConfirm={onConfirmClose}
+        onClose={() => setCloseSheetOpen(false)}
+      />
+
       {/* Technician picker */}
       <TechnicianPicker
         visible={editing === "technician"}
@@ -855,7 +882,7 @@ function Journey({
   dark: boolean;
   paper: string;
 }) {
-  const stops: Array<{ label: string; ms: number | null; unsetText: string }> = [
+  const stops: { label: string; ms: number | null; unsetText: string }[] = [
     { label: "Reported", ms: wo.reportedAt, unsetText: "—" },
     { label: "Scheduled", ms: wo.scheduledAt, unsetText: "Set date" },
     { label: "Completed", ms: wo.completedAt, unsetText: "—" },

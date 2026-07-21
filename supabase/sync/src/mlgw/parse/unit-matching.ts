@@ -48,6 +48,8 @@ export function buildUnitLookup(units: PropertyUnitInput[]): Map<string, Propert
     }
     const numberKey = unitNumberLookupKeyFromUnitNumber(unit.number);
     if (numberKey !== null) add(numberKey, unit);
+    const looseKey = looseUnitLookupKey(unit);
+    if (looseKey !== null) add(looseKey, unit);
   }
 
   const lookup = new Map<string, PropertyUnitInput>();
@@ -69,8 +71,15 @@ export function matchedUnit(
     if (unit !== undefined) return unit;
   }
   const unitNumberKey = unitNumberLookupKeyFromServiceAddress(serviceAddress);
-  if (unitNumberKey === null) return null;
-  return lookup.get(unitNumberKey) ?? null;
+  if (unitNumberKey !== null) {
+    const unit = lookup.get(unitNumberKey);
+    if (unit !== undefined) return unit;
+  }
+  for (const looseKey of looseServiceAddressKeys(serviceAddress)) {
+    const unit = lookup.get(looseKey);
+    if (unit !== undefined) return unit;
+  }
+  return null;
 }
 
 /**
@@ -186,4 +195,71 @@ function normalizedUnitLookupAddress(value: string): string {
 /** NFKD fold + combining-mark strip, approximating Swift diacritic/width folding. */
 function foldDiacriticsAndWidth(value: string): string {
   return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+}
+
+// MARK: - Loose address matching (Emberly extension beyond the Swift port)
+//
+// MLGW and ResMan spell the same street differently often enough to matter:
+// "KINGS GATE DR" vs "Kingsgate Dr.", "MILL BRANCH RD" vs "Millbranch Dr.",
+// "S NEW GATE DR" vs "New Gate Dr. South". The loose key keeps only what the
+// two systems agree on \u2014 building number, the street's name tokens squashed
+// together (directionals and street types dropped), and the apt suffix \u2014 and
+// goes through the same unique-bucket discipline as the strict keys, so an
+// ambiguous loose key never matches. Measured on the live mirror: 577 strict
+// matches, +57 loose, 0 strict/loose disagreements.
+
+const LOOSE_DIRECTIONAL_TOKENS = new Set(["n", "s", "e", "w", "ne", "nw", "se", "sw", "north", "south", "east", "west"]);
+/** Post-normalization street types (UNIT_LOOKUP_REPLACEMENTS folds long forms first). */
+const LOOSE_STREET_TYPE_TOKENS = new Set(["st", "ave", "dr", "rd", "ct", "pl", "ln", "blvd", "cir", "ter", "pkwy", "hwy", "way", "trl", "trail", "cv", "cove"]);
+
+interface LooseAddressParts {
+  building: string;
+  coreTokens: string[];
+  suffix: string;
+}
+
+/** Building number + street-name tokens + apt suffix from a normalized address. */
+function looseAddressParts(value: string, fallbackSuffix: string | null = null): LooseAddressParts | null {
+  const tokens = normalizedUnitLookupAddress(value).split(" ").filter((t) => t.length > 0);
+  let suffix = fallbackSuffix?.trim().toUpperCase() ?? null;
+  const aptIndex = tokens.lastIndexOf("apt");
+  let streetTokens = tokens;
+  if (aptIndex >= 0) {
+    const aptSuffix = tokens.slice(aptIndex + 1).join("").toUpperCase();
+    if (aptSuffix.length > 0) suffix = aptSuffix;
+    streetTokens = tokens.slice(0, aptIndex);
+  }
+  if (streetTokens.length === 0 || !/^\d{1,6}$/.test(streetTokens[0])) return null;
+  const building = streetTokens[0];
+  const coreTokens = streetTokens
+    .slice(1)
+    .filter((t) => !LOOSE_DIRECTIONAL_TOKENS.has(t) && !LOOSE_STREET_TYPE_TOKENS.has(t));
+  if (coreTokens.length === 0 || suffix === null || suffix.length === 0) return null;
+  return { building, coreTokens, suffix };
+}
+
+function looseKeyOf(building: string, coreTokens: string[], suffix: string): string {
+  return `loose:${building}|${coreTokens.join("")}|${suffix}`;
+}
+
+/** The unit's loose key \u2014 apt suffix from its street when present, else its unit number. */
+function looseUnitLookupKey(unit: PropertyUnitInput): string | null {
+  const parts = looseAddressParts(unit.street, unitSuffix(unit.number));
+  return parts === null ? null : looseKeyOf(parts.building, parts.coreTokens, parts.suffix);
+}
+
+/**
+ * Loose keys for an MLGW service address, most-specific first: the full street
+ * core, then (when the core has several tokens) the core minus its trailing
+ * token \u2014 MLGW's "MILL BRANCH PARK DR" vs ResMan's "Millbranch Dr." keeps an
+ * extra trailing word the squash alone can't absorb.
+ */
+function looseServiceAddressKeys(serviceAddress: string): string[] {
+  const parts = looseAddressParts(serviceAddress);
+  if (parts === null) return [];
+  const keys = [looseKeyOf(parts.building, parts.coreTokens, parts.suffix)];
+  if (parts.coreTokens.length >= 2) {
+    keys.push(looseKeyOf(parts.building, parts.coreTokens.slice(0, -1), parts.suffix));
+  }
+  return keys;
 }

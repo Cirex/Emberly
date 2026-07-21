@@ -15,7 +15,18 @@
 import { upsertMirror, type ServiceClient } from "../db/client";
 import { downloadBillsInBackground, downloadPaymentsInBackground, SupabaseStorageBillFileStore } from "./download";
 import type { BillFileStore } from "./download";
-import { billSummaries, buildBillDTO, parseDownloadedBills, toAccountRow, toBillRow, toPaymentRow, uniqueParsedBills } from "./parse";
+import {
+  billSummaries,
+  buildBillDTO,
+  buildUnitLookup,
+  parseDownloadedBills,
+  resolveAccountUnit,
+  toAccountRow,
+  toBillRow,
+  toPaymentRow,
+  uniqueParsedBills,
+  type PropertyUnitInput,
+} from "./parse";
 import type { MLGWSyncProperty, MlgwAccountRow, MlgwBillRow, MlgwPaymentRow } from "./types";
 
 export interface MlgwCredentials {
@@ -33,6 +44,8 @@ export interface SyncMlgwBillsParams {
   log?: (message: string) => void;
   /** Byte sink for downloaded invoices (default: the `mlgw-bills` storage bucket). */
   fileStore?: BillFileStore;
+  /** Unit-matcher inputs (default: the property's resman_units mirror rows). */
+  units?: PropertyUnitInput[];
 }
 
 export interface SyncMlgwBillsResult {
@@ -41,6 +54,38 @@ export interface SyncMlgwBillsResult {
   payments: number;
   downloadedDocuments: number;
   skippedKnownDocuments: number;
+}
+
+/** The property's resman_units mirror rows, shaped for `buildUnitLookup`. */
+async function fetchPropertyUnits(supabase: ServiceClient, propertyId: string): Promise<PropertyUnitInput[]> {
+  const PAGE = 1000;
+  const units: PropertyUnitInput[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const res = await supabase
+      .from("resman_units")
+      .select("resman_unit_id, number, street, city, state")
+      .eq("resman_property_id", propertyId)
+      .order("resman_unit_id")
+      .range(from, from + PAGE - 1);
+    if (res.error) throw new Error(`resman_units read failed: ${res.error.message}`);
+    const rows = (res.data ?? []) as Array<{
+      resman_unit_id: string;
+      number: string | null;
+      street: string | null;
+      city: string | null;
+      state: string | null;
+    }>;
+    for (const row of rows) {
+      units.push({
+        unitId: row.resman_unit_id,
+        number: row.number ?? "",
+        street: row.street ?? "",
+        city: row.city ?? "",
+        state: row.state ?? "",
+      });
+    }
+    if (rows.length < PAGE) return units;
+  }
 }
 
 export async function syncMlgwBills(params: SyncMlgwBillsParams): Promise<SyncMlgwBillsResult> {
@@ -61,11 +106,17 @@ export async function syncMlgwBills(params: SyncMlgwBillsParams): Promise<SyncMl
   const parsed = uniqueParsedBills(await parseDownloadedBills(result.downloadedBills));
   const summaries = billSummaries(parsed);
 
+  // Account → unit linkage (XMS's address heuristic): built from the property's
+  // resman_units mirror so vacancy exposure / occupancy overlays have real ids.
+  const units = params.units ?? (await fetchPropertyUnits(supabase, propertyId));
+  const unitLookup = buildUnitLookup(units);
+
   const accountsById = new Map<string, MlgwAccountRow>();
   const billRows: MlgwBillRow[] = [];
   for (const summary of summaries) {
     const dto = buildBillDTO(summary);
-    const accountRow = toAccountRow(dto, property);
+    const resolved = resolveAccountUnit(dto.servicesAt ?? "", unitLookup);
+    const accountRow = toAccountRow(dto, property, resolved.resman_unit_id ? resolved : undefined);
     accountsById.set(accountRow.id, accountRow);
     const billRow = toBillRow(dto, property);
     if (billRow !== null) billRows.push(billRow);

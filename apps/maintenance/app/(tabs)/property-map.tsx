@@ -13,7 +13,7 @@ import { TagEditorDialog } from "@/components/map/TagEditorDialog";
 import { TourSheet } from "@/components/map/TourSheet";
 import { UtilitiesHub } from "@/components/map/UtilitiesHub";
 import { UtilityAnnotationDialog } from "@/components/map/UtilityAnnotationDialog";
-import { UtilityDrawPill, type UtilityDrawSubMode } from "@/components/map/UtilityDrawPill";
+import { UtilityDrawSheet, type UtilityDrawSubMode } from "@/components/map/UtilityDrawSheet";
 import { SkiaMapCanvas, type PlaceMode } from "@/components/map/SkiaMapCanvas";
 import { AccountMenu } from "@/components/ui/AccountMenu";
 import { useMapSearch } from "@/lib/stores/map-search";
@@ -537,30 +537,48 @@ export default function PropertyMapScreen() {
         ) : null}
       </View>
 
-      {/* Utility draw pill — top-left, mirroring the control stack's glass. */}
+      {/* Draw mode (approved mockup): a small status pill top-left, with the
+          controls in the non-modal "New run" sheet at the bottom — the map in
+          between stays tappable to place points. */}
       {placeMode === "utility" ? (
-        <View style={{ position: "absolute", top: insets.top + HEADER_TOP_PAD + 56, left: hPad }}>
-          <UtilityDrawPill
+        <>
+          <View
+            pointerEvents="none"
+            style={{ position: "absolute", top: insets.top + HEADER_TOP_PAD + 56, left: hPad }}
+          >
+            <GlassSurface radius={999}>
+              <Text
+                style={{
+                  paddingHorizontal: 13,
+                  paddingVertical: 7,
+                  fontSize: 11,
+                  fontWeight: "800",
+                  color: UTILITY_COLORS[utilityType],
+                }}
+              >
+                {t(utilitySub === "line" ? "utility.drawingRun" : "utility.placingPin", {
+                  type: t(`utility.types.${utilityType}`).toLowerCase(),
+                })}
+              </Text>
+            </GlassSurface>
+          </View>
+          <UtilityDrawSheet
             utilityType={utilityType}
             subMode={utilitySub}
-            vertexCount={draftPoints.length}
+            points={draftPoints}
             lineStyle={draftStyle}
             lineWeight={draftWeight}
             flowArrows={draftArrows}
             onSelectType={pickUtilityType}
-            onSelectSubMode={(m) => {
-              setUtilitySub(m);
-              setDraftPoints([]);
-            }}
             onSelectStyle={setDraftStyle}
             onSelectWeight={setDraftWeight}
             onToggleArrows={setDraftArrows}
             onReverse={() => setDraftPoints((prev) => [...prev].reverse())}
             onUndo={() => setDraftPoints((prev) => prev.slice(0, -1))}
-            onDone={finishUtilityLine}
+            onFinish={finishUtilityLine}
             onCancel={cancelUtilityDraw}
           />
-        </View>
+        </>
       ) : null}
 
       {/* Legend — quiet glass card, bottom-left, only while the tint is on. */}

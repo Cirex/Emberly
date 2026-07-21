@@ -39,6 +39,8 @@ import {
   type PlacedUnit,
 } from "@/lib/map-data";
 import type { MapAnnotation } from "@/lib/stores/annotations";
+import type { UtilityPoint } from "@/lib/api/annotations";
+import { UTILITY_COLORS, hitTestUtilityLines } from "@/lib/utility-lines";
 import { buildPlanPicture } from "@emberly/ui";
 
 const DEFAULT_FILL = "rgba(9,27,84,0.10)";
@@ -60,6 +62,33 @@ const SEL_RADIUS = 4;
 const SEL_INSET = 2;
 /** Squared tap radius (~63 page px ≈ 14 pt on screen at fit). */
 const HIT_R2 = 4000;
+
+// Utility layer (sewer/water/gas/electrical runs + utility pins). Markers are
+// the annotation pins at ~70% size; strokes hold a constant on-screen width
+// (divided by the effective scale each frame) so a run reads the same at
+// every zoom instead of ballooning at 8×.
+const UTIL_PIN_R = PIN_R * 0.7;
+const UTIL_PIN_RING = 3.4 * 0.7;
+const UTIL_STROKE = 2.5;
+/** Dash intervals in screen pt — scaled by 1/eff alongside the stroke. */
+const UTIL_DASH_SEWER: [number, number] = [9, 6];
+const UTIL_DASH_GAS: [number, number] = [2.5, 6];
+/** Vertex discs on the in-progress draw, page space like the pins. */
+const DRAFT_VERTEX_R = 7;
+
+function utilityColor(a: { utilityType?: MapAnnotation["utilityType"] }): string {
+  return UTILITY_COLORS[a.utilityType ?? "other"];
+}
+
+/** Page-space Skia path through a run's normalized vertices. */
+function buildUtilityPath(points: UtilityPoint[]) {
+  const b = Skia.PathBuilder.Make();
+  points.forEach((p, i) => {
+    if (i === 0) b.moveTo(p.x * PAGE_WIDTH, p.y * PAGE_HEIGHT);
+    else b.lineTo(p.x * PAGE_WIDTH, p.y * PAGE_HEIGHT);
+  });
+  return b.detach();
+}
 
 /** Ionicons rendered straight onto the pins via the bundled typeface. */
 const IONICONS_TTF = require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf");
@@ -210,7 +239,7 @@ function placeTooltip(
   };
 }
 
-export type PlaceMode = "none" | "annotate";
+export type PlaceMode = "none" | "annotate" | "utility";
 
 interface UnitsLayerProps {
   matched: Set<string>;
@@ -277,6 +306,8 @@ interface SkiaMapCanvasProps {
   /** Occupancy tint of the selected unit — drives highlight + connector. */
   selectedTint?: string;
   annotations: MapAnnotation[];
+  /** The utility run being drawn right now — rendered live above the saved runs. */
+  utilityDraft?: { points: UtilityPoint[]; color: string };
   /** Tour stops, in route order — each gets a numbered badge at its unit. */
   tourStops?: TourBadgeStop[];
   night: boolean;
@@ -291,6 +322,10 @@ interface SkiaMapCanvasProps {
   onSelect: (number: string) => void;
   onPlacePin: (nx: number, ny: number) => void;
   onSelectPin: (id: string) => void;
+  /** A tap in utility mode: normalized page point for a vertex or utility pin. */
+  onPlaceUtility: (nx: number, ny: number) => void;
+  /** A tap landed on an existing utility pin or run. */
+  onSelectUtility: (id: string) => void;
 }
 
 export function SkiaMapCanvas({
@@ -304,6 +339,7 @@ export function SkiaMapCanvas({
   home,
   focus,
   annotations,
+  utilityDraft,
   tourStops,
   night,
   placeMode,
@@ -312,6 +348,8 @@ export function SkiaMapCanvas({
   onSelect,
   onPlacePin,
   onSelectPin,
+  onPlaceUtility,
+  onSelectUtility,
 }: SkiaMapCanvasProps) {
   const dark = useColorScheme().colorScheme === "dark";
   const pinIconFont = useFont(IONICONS_TTF, PIN_ICON_SIZE);
@@ -346,6 +384,38 @@ export function SkiaMapCanvas({
     }
     return started ? b.detach() : null;
   }, [tourStops]);
+
+  // Utility layer, split once per annotations change. Lines carry a prebuilt
+  // page-space path plus their per-type dash treatment; pins and utility pins
+  // render (and hit-test) separately.
+  const utilityLines = useMemo(() => {
+    const out: {
+      id: string;
+      color: string;
+      dash: "sewer" | "gas" | null;
+      path: ReturnType<typeof buildUtilityPath>;
+    }[] = [];
+    for (const a of annotations) {
+      if (a.kind !== "utility_line" || !a.points || a.points.length < 2) continue;
+      out.push({
+        id: a.id,
+        color: utilityColor(a),
+        dash: a.utilityType === "sewer" || a.utilityType === "gas" ? a.utilityType : null,
+        path: buildUtilityPath(a.points),
+      });
+    }
+    return out;
+  }, [annotations]);
+  const utilityPins = useMemo(() => annotations.filter((a) => a.kind === "utility_pin"), [annotations]);
+  const pins = useMemo(
+    () => annotations.filter((a) => a.kind !== "utility_pin" && a.kind !== "utility_line"),
+    [annotations],
+  );
+  const draftPath = useMemo(
+    () =>
+      utilityDraft && utilityDraft.points.length >= 2 ? buildUtilityPath(utilityDraft.points) : null,
+    [utilityDraft],
+  );
 
   // Recorded once per scheme; replayed as vectors under the zoom transform
   // every frame. The night variant re-colors every op (see plan-picture.ts)
@@ -443,12 +513,20 @@ export function SkiaMapCanvas({
     const wy = (py - ty.value) / eff;
 
     if (placeMode === "annotate") return onPlacePin(wx / PAGE_WIDTH, wy / PAGE_HEIGHT);
+    if (placeMode === "utility") return onPlaceUtility(wx / PAGE_WIDTH, wy / PAGE_HEIGHT);
 
+    // Markers first (a line's anchor point is not tappable — only its stroke),
+    // then the drawn runs, then the units underneath everything.
     for (const a of annotations) {
+      if (a.kind === "utility_line") continue;
       const dx = wx - a.x * PAGE_WIDTH;
       const dy = wy - a.y * PAGE_HEIGHT;
-      if (dx * dx + dy * dy <= HIT_R2) return onSelectPin(a.id);
+      if (dx * dx + dy * dy <= HIT_R2) {
+        return a.kind === "utility_pin" ? onSelectUtility(a.id) : onSelectPin(a.id);
+      }
     }
+    const lineId = hitTestUtilityLines(annotations, wx, wy, PAGE_WIDTH, PAGE_HEIGHT);
+    if (lineId) return onSelectUtility(lineId);
     const hit = PLACED_UNITS.find((u) => wx >= u.x && wx <= u.x + u.w && wy >= u.y && wy <= u.y + u.h);
     // Tap-away clears the selection, like the Swift map — "" means none.
     onSelect(hit ? hit.number : "");
@@ -552,6 +630,19 @@ export function SkiaMapCanvas({
   // the transformed group that means dividing by the effective scale.
   const highlightStroke = useDerivedValue(() => 1.6 / (scale.value * baseScale), [baseScale]);
 
+  // Utility runs get the same treatment: ~2.5pt strokes (and matching dash
+  // intervals) whatever the zoom, so a gas dotted run doesn't turn into
+  // page-sized blobs at 8×.
+  const utilityStroke = useDerivedValue(() => UTIL_STROKE / (scale.value * baseScale), [baseScale]);
+  const utilityDashSewer = useDerivedValue(() => {
+    const eff = scale.value * baseScale;
+    return [UTIL_DASH_SEWER[0] / eff, UTIL_DASH_SEWER[1] / eff];
+  }, [baseScale]);
+  const utilityDashGas = useDerivedValue(() => {
+    const eff = scale.value * baseScale;
+    return [UTIL_DASH_GAS[0] / eff, UTIL_DASH_GAS[1] / eff];
+  }, [baseScale]);
+
   return (
     <View style={{ width, height }}>
       <GestureDetector gesture={gesture}>
@@ -596,9 +687,80 @@ export function SkiaMapCanvas({
               />
             </Group>
           ) : null}
+          {/* Utility runs: beneath the pins, above the plan/units. Solid for
+              water/electrical/other; sewer dashed, gas dotted. */}
+          {utilityLines.map((l) => (
+            <Path
+              key={l.id}
+              path={l.path}
+              style="stroke"
+              strokeWidth={utilityStroke}
+              strokeCap="round"
+              strokeJoin="round"
+              color={l.color}
+            >
+              {l.dash === "sewer" ? (
+                <DashPathEffect intervals={utilityDashSewer} />
+              ) : l.dash === "gas" ? (
+                <DashPathEffect intervals={utilityDashGas} />
+              ) : null}
+            </Path>
+          ))}
+
+          {/* The in-progress draw: live polyline plus a disc per vertex, so
+              the first tap is visible before there's a segment to stroke. */}
+          {utilityDraft ? (
+            <Group>
+              {draftPath ? (
+                <Path
+                  path={draftPath}
+                  style="stroke"
+                  strokeWidth={utilityStroke}
+                  strokeCap="round"
+                  strokeJoin="round"
+                  color={utilityDraft.color}
+                  opacity={0.9}
+                />
+              ) : null}
+              {utilityDraft.points.map((p, i) => (
+                <Group key={i}>
+                  <Circle cx={p.x * PAGE_WIDTH} cy={p.y * PAGE_HEIGHT} r={DRAFT_VERTEX_R} color={utilityDraft.color} />
+                  <Circle
+                    cx={p.x * PAGE_WIDTH}
+                    cy={p.y * PAGE_HEIGHT}
+                    r={DRAFT_VERTEX_R}
+                    color="rgba(255,255,255,0.85)"
+                    style="stroke"
+                    strokeWidth={2}
+                  />
+                </Group>
+              ))}
+            </Group>
+          ) : null}
+
+          {/* Utility pins: the annotation pin treatment at ~70% — type-colored
+              disc with the white ring, no glyph. */}
+          {utilityPins.map((a) => {
+            const cx = a.x * PAGE_WIDTH;
+            const cy = a.y * PAGE_HEIGHT;
+            return (
+              <Group key={a.id}>
+                <Circle cx={cx} cy={cy} r={UTIL_PIN_R} color={utilityColor(a)} />
+                <Circle
+                  cx={cx}
+                  cy={cy}
+                  r={UTIL_PIN_R}
+                  color="rgba(255,255,255,0.85)"
+                  style="stroke"
+                  strokeWidth={UTIL_PIN_RING}
+                />
+              </Group>
+            );
+          })}
+
           {/* Pins: colored disc, white ring, and the pin's chosen Ionicons
               glyph (note, unlocked door, trash, …) drawn with the real font. */}
-          {annotations.map((a) => {
+          {pins.map((a) => {
             const cx = a.x * PAGE_WIDTH;
             const cy = a.y * PAGE_HEIGHT;
             const glyph = pinGlyph(a.icon);

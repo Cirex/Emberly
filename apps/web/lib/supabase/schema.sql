@@ -477,7 +477,18 @@ create table if not exists public.map_annotations (
   -- 'security' (guard iPads + admin). Origin records which door a row came
   -- through; admin/scanner writers have no sync key, hence the nullable FK.
   layer text not null default 'staff'
-    constraint map_annotations_layer_check check (layer in ('staff', 'security')),
+    constraint map_annotations_layer_check check (layer in ('staff', 'security', 'utility')),
+  -- Utility overlay (see deltas/2026-07-21-utility-layer.sql): a row is a
+  -- plain pin, a utility pin, or a drawn utility polyline. Utility kinds live
+  -- on the shared 'utility' layer, visible to both staff and security surfaces.
+  kind text not null default 'pin'
+    constraint map_annotations_kind_check check (kind in ('pin', 'utility_pin', 'utility_line')),
+  utility_type text
+    constraint map_annotations_utility_type_check
+    check (utility_type is null or utility_type in ('water', 'sewer', 'gas', 'electrical', 'other')),
+  -- For kind='utility_line': ordered array of {x, y} objects, each normalized
+  -- 0..1 against the map image. Null for pin kinds.
+  points jsonb,
   origin text not null default 'sync'
     constraint map_annotations_origin_check check (origin in ('sync', 'admin', 'scanner')),
   created_by_key_id uuid,

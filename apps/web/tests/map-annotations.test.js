@@ -39,6 +39,9 @@ function annotationRow(overrides = {}) {
     normalized_x: 0.25,
     normalized_y: 0.75,
     color_hex: "#ffcc00",
+    kind: "pin",
+    utility_type: null,
+    points: null,
     created_by_display_name: "Jane Staff",
     created_at: "2026-06-29T12:00:00.000Z",
     updated_at: "2026-06-29T12:05:00.000Z",
@@ -74,6 +77,9 @@ test("annotation create insert scopes rows to sync key feature and actor", () =>
     normalized_x: 0,
     normalized_y: 1,
     color_hex: "#ffcc00",
+    kind: "pin",
+    utility_type: null,
+    points: null,
     created_by_key_id: "key-1",
     created_by_display_name: "Jane Staff",
     created_by_resman_login_hash: "hmac-sha256:abc",
@@ -113,6 +119,9 @@ test("annotation update patch trims fields, clamps coordinates, and increments v
     normalized_x: 1,
     normalized_y: 0,
     color_hex: "#00ffaa",
+    kind: "pin",
+    utility_type: null,
+    points: null,
     updated_by_key_id: "key-1",
     updated_by_display_name: "Jane Staff",
     updated_at: "2026-06-29T12:10:00.000Z",
@@ -177,6 +186,9 @@ test("annotation response maps snake case rows and photos to camel case", () => 
     normalizedX: 0.25,
     normalizedY: 0.75,
     colorHex: "#ffcc00",
+    kind: "pin",
+    utilityType: null,
+    points: null,
     createdByDisplayName: "Jane Staff",
     createdAt: "2026-06-29T12:00:00.000Z",
     updatedAt: "2026-06-29T12:05:00.000Z",
@@ -432,7 +444,7 @@ test("annotation delete route version-gates soft delete and returns conflict whe
     ["resman_account_id", "1659"],
     ["property_id", "property-1"],
     ["feature_key", MAP_ANNOTATIONS_FEATURE_KEY],
-    ["layer", "staff"],
+    ["in:layer", ["staff", "utility"]],
     ["version", 3],
     ["is:deleted_at", null],
   ]);
@@ -557,6 +569,11 @@ function chainResult(result, operation = null) {
     },
     is(column, value) {
       this.filters.push([`is:${column}`, value]);
+      if (operation) operation.filters = this.filters;
+      return this;
+    },
+    in(column, values) {
+      this.filters.push([`in:${column}`, values]);
       if (operation) operation.filters = this.filters;
       return this;
     },

@@ -1,4 +1,5 @@
 import type { Database, Json } from "../types/database";
+import { isUtilityKind, type AnnotationKind, type UtilityPoint, type UtilityType } from "./map-annotation-kinds";
 import type { MapSyncKeyContext } from "./map-sync";
 
 type MapAnnotationInsert = Database["public"]["Tables"]["map_annotations"]["Insert"];
@@ -13,6 +14,9 @@ export type AnnotationInput = {
   normalizedX?: number;
   normalizedY?: number;
   colorHex?: string;
+  kind?: AnnotationKind;
+  utilityType?: UtilityType | null;
+  points?: UtilityPoint[] | null;
 };
 
 export type AnnotationRow = Pick<
@@ -23,6 +27,9 @@ export type AnnotationRow = Pick<
   | "normalized_x"
   | "normalized_y"
   | "color_hex"
+  | "kind"
+  | "utility_type"
+  | "points"
   | "created_by_display_name"
   | "created_at"
   | "updated_at"
@@ -55,19 +62,25 @@ export function buildAnnotationCreateInsert(
   input: AnnotationInput,
   createdAt = new Date().toISOString(),
 ): MapAnnotationInsert {
+  const kind = input.kind ?? "pin";
   const insert: MapAnnotationInsert = {
     resman_account_id: syncKey.resman_account_id,
     property_id: syncKey.property_id,
     feature_key: syncKey.feature_key,
     // The external sync client is the staff map; the security layer belongs to
     // the guard devices and admin portal (lib/map-annotation-service.ts).
-    layer: "staff",
+    // Utility kinds always land on the shared 'utility' layer, whichever door
+    // wrote them.
+    layer: isUtilityKind(kind) ? "utility" : "staff",
     origin: "sync",
     title: trimOrEmpty(input.title),
     notes: trimOrEmpty(input.notes),
     normalized_x: clampNormalized(input.normalizedX),
     normalized_y: clampNormalized(input.normalizedY),
     color_hex: trimOrEmpty(input.colorHex),
+    kind,
+    utility_type: input.utilityType ?? null,
+    points: (input.points ?? null) as Json,
     created_by_key_id: syncKey.id,
     created_by_display_name: syncKey.requester_display_name,
     created_by_resman_login_hash: syncKey.requester_resman_login_hash,
@@ -91,12 +104,19 @@ export function buildAnnotationUpdatePatch(
   currentVersion: number,
   updatedAt = new Date().toISOString(),
 ): MapAnnotationUpdate {
+  const kind = input.kind ?? "pin";
   return {
     title: trimOrEmpty(input.title),
     notes: trimOrEmpty(input.notes),
     normalized_x: clampNormalized(input.normalizedX),
     normalized_y: clampNormalized(input.normalizedY),
     color_hex: trimOrEmpty(input.colorHex),
+    kind,
+    utility_type: input.utilityType ?? null,
+    points: (input.points ?? null) as Json,
+    // A row updated to (or created as) a utility kind must sit on the shared
+    // 'utility' layer; plain-pin updates leave the layer untouched.
+    ...(isUtilityKind(kind) ? { layer: "utility" } : {}),
     updated_by_key_id: syncKey.id,
     updated_by_display_name: syncKey.requester_display_name,
     updated_at: updatedAt,
@@ -149,6 +169,9 @@ export function buildAnnotationResponse(row: AnnotationRow, photos: MapAnnotatio
     normalizedX: row.normalized_x,
     normalizedY: row.normalized_y,
     colorHex: row.color_hex,
+    kind: row.kind,
+    utilityType: row.utility_type,
+    points: row.points,
     createdByDisplayName: row.created_by_display_name,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

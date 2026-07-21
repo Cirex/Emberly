@@ -7,11 +7,12 @@
  * and an audit row per mutation.
  */
 import type { Database, Json } from "../types/database";
+import { isUtilityKind, type AnnotationKind, type UtilityPoint, type UtilityType } from "./map-annotation-kinds";
 import { buildAnnotationResponse, type AnnotationRow } from "./map-annotations";
 import { MAP_ANNOTATIONS_FEATURE_KEY } from "./map-sync";
 import type { UntypedSupabase } from "./supabase/types";
 
-export type MapAnnotationLayer = "staff" | "security";
+export type MapAnnotationLayer = "staff" | "security" | "utility";
 
 /**
  * The one property this deployment manages, in the same coordinates the
@@ -42,9 +43,15 @@ export function actorFor(admin: { adminId: string; displayName: string }): Annot
   };
 }
 
-/** The layers a caller may touch — scanners live on the security layer. */
+/**
+ * The layers a caller may touch — scanners live on the security layer. The
+ * shared 'utility' layer (pins + drawn sewer/water/gas runs) is visible to
+ * both the staff and security surfaces.
+ */
 export function layersFor(admin: { adminId: string }): MapAnnotationLayer[] {
-  return admin.adminId.startsWith("scanner:") ? ["security"] : ["staff", "security"];
+  return admin.adminId.startsWith("scanner:")
+    ? ["security", "utility"]
+    : ["staff", "security", "utility"];
 }
 
 export interface LayeredAnnotationInput {
@@ -55,12 +62,16 @@ export interface LayeredAnnotationInput {
   colorHex: string;
   /** Ionicons name shown on the pin; the app curates the set. */
   icon?: string;
+  /** 'pin' (default), 'utility_pin', or 'utility_line'. */
+  kind?: AnnotationKind;
+  utilityType?: UtilityType | null;
+  points?: UtilityPoint[] | null;
 }
 
 type LayeredRow = AnnotationRow & { layer: string; origin: string; icon: string };
 
 const SELECT =
-  "id, title, notes, normalized_x, normalized_y, color_hex, icon, layer, origin, created_by_display_name, created_at, updated_at, deleted_at, version";
+  "id, title, notes, normalized_x, normalized_y, color_hex, kind, utility_type, points, icon, layer, origin, created_by_display_name, created_at, updated_at, deleted_at, version";
 
 export function serializeLayeredAnnotation(row: LayeredRow) {
   return { ...buildAnnotationResponse(row), layer: row.layer, origin: row.origin, icon: row.icon };
@@ -102,17 +113,23 @@ export async function createLayeredAnnotation(
   input: LayeredAnnotationInput,
 ): Promise<LayeredRow> {
   const now = new Date().toISOString();
+  const kind = input.kind ?? "pin";
   const insert: Database["public"]["Tables"]["map_annotations"]["Insert"] = {
     resman_account_id: MAP_SCOPE.resmanAccountId,
     property_id: MAP_SCOPE.propertyId,
     feature_key: MAP_ANNOTATIONS_FEATURE_KEY,
-    layer,
+    // Utility kinds always land on the shared 'utility' layer, whatever layer
+    // the caller asked for.
+    layer: isUtilityKind(kind) ? "utility" : layer,
     origin: actor.origin,
     title: input.title.trim(),
     notes: input.notes?.trim() ?? "",
     normalized_x: clamp01(input.normalizedX),
     normalized_y: clamp01(input.normalizedY),
     color_hex: input.colorHex.trim(),
+    kind,
+    utility_type: input.utilityType ?? null,
+    points: (input.points ?? null) as Json,
     icon: input.icon?.trim() || "document-text",
     created_by_key_id: null,
     created_by_display_name: actor.displayName,
@@ -123,7 +140,9 @@ export async function createLayeredAnnotation(
   };
   const { data, error } = await client.from("map_annotations").insert(insert).select(SELECT).single();
   if (error || !data) throw error ?? new Error("insert returned nothing");
-  await audit(client, "annotation.create", actor, (data as LayeredRow).id, { layer });
+  await audit(client, "annotation.create", actor, (data as LayeredRow).id, {
+    layer: (data as LayeredRow).layer,
+  });
   return data as LayeredRow;
 }
 
@@ -156,6 +175,7 @@ export async function updateLayeredAnnotation(
   }
 
   const now = new Date().toISOString();
+  const kind = input.kind ?? "pin";
   const { data, error } = await scoped(
     client
       .from("map_annotations")
@@ -165,6 +185,12 @@ export async function updateLayeredAnnotation(
         normalized_x: clamp01(input.normalizedX),
         normalized_y: clamp01(input.normalizedY),
         color_hex: input.colorHex.trim(),
+        kind,
+        utility_type: input.utilityType ?? null,
+        points: (input.points ?? null) as Json,
+        // A row updated to a utility kind must sit on the shared 'utility'
+        // layer; plain-pin updates leave the layer untouched.
+        ...(isUtilityKind(kind) ? { layer: "utility" } : {}),
         ...(input.icon !== undefined ? { icon: input.icon.trim() || "document-text" } : {}),
         updated_by_display_name: actor.displayName,
         updated_at: now,

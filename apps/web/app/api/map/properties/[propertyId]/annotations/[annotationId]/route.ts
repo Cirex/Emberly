@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { readJson } from "@/lib/http";
+import { annotationKindFields, validateAnnotationKindFields } from "@/lib/map-annotation-kinds";
 import {
   buildAnnotationAuditInsert,
   buildAnnotationDeletePatch,
@@ -17,14 +18,17 @@ interface RouteContext {
   params: Promise<{ propertyId: string; annotationId: string }>;
 }
 
-const AnnotationUpdateSchema = z.object({
-  expectedVersion: z.number().int().positive(),
-  title: z.string().trim().min(1),
-  notes: z.string().optional().default(""),
-  normalizedX: z.number().min(0).max(1),
-  normalizedY: z.number().min(0).max(1),
-  colorHex: z.string().trim().min(1),
-});
+const AnnotationUpdateSchema = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+    title: z.string().trim().min(1),
+    notes: z.string().optional().default(""),
+    normalizedX: z.number().min(0).max(1),
+    normalizedY: z.number().min(0).max(1),
+    colorHex: z.string().trim().min(1),
+    ...annotationKindFields,
+  })
+  .superRefine(validateAnnotationKindFields);
 
 const AnnotationDeleteSchema = z.object({
   expectedVersion: z.number().int().positive(),
@@ -33,13 +37,13 @@ const AnnotationDeleteSchema = z.object({
 function loadAnnotationQuery(supabase: UntypedSupabase, syncKey: MapSyncKeyContext, propertyId: string, annotationId: string) {
   return supabase
     .from("map_annotations")
-    .select("id, title, notes, normalized_x, normalized_y, color_hex, created_by_display_name, created_at, updated_at, deleted_at, version")
+    .select("id, title, notes, normalized_x, normalized_y, color_hex, kind, utility_type, points, created_by_display_name, created_at, updated_at, deleted_at, version")
     .eq("id", annotationId)
     .eq("resman_account_id", syncKey.resman_account_id)
     .eq("property_id", propertyId)
     .eq("feature_key", MAP_ANNOTATIONS_FEATURE_KEY)
-    // Staff layer only — a sync key can't reach security-layer pins.
-    .eq("layer", "staff")
+    // Staff + shared utility layers — a sync key can't reach security-layer pins.
+    .in("layer", ["staff", "utility"])
     .is("deleted_at", null)
     .maybeSingle();
 }
@@ -103,10 +107,10 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       .eq("resman_account_id", syncKey.resman_account_id)
       .eq("property_id", propertyId)
       .eq("feature_key", MAP_ANNOTATIONS_FEATURE_KEY)
-      .eq("layer", "staff")
+      .in("layer", ["staff", "utility"])
       .eq("version", parsed.data.expectedVersion)
       .is("deleted_at", null)
-      .select("id, title, notes, normalized_x, normalized_y, color_hex, created_by_display_name, created_at, updated_at, deleted_at, version")
+      .select("id, title, notes, normalized_x, normalized_y, color_hex, kind, utility_type, points, created_by_display_name, created_at, updated_at, deleted_at, version")
       .maybeSingle();
 
     if (updateError) {
@@ -201,7 +205,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
       .eq("resman_account_id", syncKey.resman_account_id)
       .eq("property_id", propertyId)
       .eq("feature_key", MAP_ANNOTATIONS_FEATURE_KEY)
-      .eq("layer", "staff")
+      .in("layer", ["staff", "utility"])
       .eq("version", parsed.data.expectedVersion)
       .is("deleted_at", null)
       .select("id")

@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function PropertyMapPage() {
   const supabase = createAdminClient() as unknown as UntypedSupabase;
   const [rows, camerasResult, photoIds] = await Promise.all([
-    listLayeredAnnotations(supabase, ["staff", "security"], null),
+    listLayeredAnnotations(supabase, ["staff", "security", "utility"], null),
     supabase.from("map_cameras").select(CAMERA_SELECT).order("created_at", { ascending: true }),
     photoIdsByAnnotation(),
   ]);

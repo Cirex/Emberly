@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminOrScanner } from "@/lib/admin-request";
 import { readJson } from "@/lib/http";
+import { annotationKindFields, validateAnnotationKindFields } from "@/lib/map-annotation-kinds";
 import {
   actorFor,
   createLayeredAnnotation,
@@ -25,17 +26,20 @@ import { createUntypedAdminClient } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const LayerSchema = z.enum(["staff", "security"]);
+const LayerSchema = z.enum(["staff", "security", "utility"]);
 
-const CreateSchema = z.object({
-  layer: LayerSchema.optional(),
-  title: z.string().trim().optional().default(""),
-  notes: z.string().optional().default(""),
-  normalizedX: z.number().min(0).max(1),
-  normalizedY: z.number().min(0).max(1),
-  colorHex: z.string().trim().min(1),
-  icon: z.string().trim().max(40).regex(/^[a-z0-9-]*$/).optional(),
-});
+const CreateSchema = z
+  .object({
+    layer: LayerSchema.optional(),
+    title: z.string().trim().optional().default(""),
+    notes: z.string().optional().default(""),
+    normalizedX: z.number().min(0).max(1),
+    normalizedY: z.number().min(0).max(1),
+    colorHex: z.string().trim().min(1),
+    icon: z.string().trim().max(40).regex(/^[a-z0-9-]*$/).optional(),
+    ...annotationKindFields,
+  })
+  .superRefine(validateAnnotationKindFields);
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const auth = await requireAdminOrScanner(request);
@@ -92,7 +96,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const actor = actorFor(auth.admin);
     // A scanner writes to its own layer whatever the body says; admins default
-    // to staff unless they picked a layer explicitly.
+    // to staff unless they picked a layer explicitly. Utility kinds are forced
+    // onto the 'utility' layer by the service regardless of this choice.
     const layer: MapAnnotationLayer =
       actor.origin === "scanner" ? "security" : (parsed.data.layer ?? "staff");
 

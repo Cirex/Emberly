@@ -9,6 +9,22 @@ type ScannerConfig = StaffConfig;
  * reads or writes is its own layer by construction.
  */
 
+/** What a row is: a plain pin, a utility pin, or a drawn utility polyline. */
+export const ANNOTATION_KINDS = ["pin", "utility_pin", "utility_line"] as const;
+export type AnnotationKind = (typeof ANNOTATION_KINDS)[number];
+
+/** Machine values, never translated (AGENTS.md · Localization). */
+export const UTILITY_TYPES = ["water", "sewer", "gas", "electrical", "other"] as const;
+export type UtilityType = (typeof UTILITY_TYPES)[number];
+
+/** One vertex of a drawn utility run, normalized 0–1 to the map page. */
+export interface UtilityPoint {
+  x: number;
+  y: number;
+}
+
+const UtilityPointSchema = z.object({ x: z.number(), y: z.number() });
+
 export const RemoteAnnotationSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -17,6 +33,12 @@ export const RemoteAnnotationSchema = z.object({
   normalizedY: z.number(),
   colorHex: z.string(),
   icon: z.string().catch("document-text"),
+  // `catch` keeps rows from an older server (no utility columns yet) — and any
+  // future kind this build doesn't know — rendering as plain pins. The
+  // nullable+catch pair normalizes absent AND invalid to null.
+  kind: z.enum(ANNOTATION_KINDS).catch("pin"),
+  utilityType: z.enum(UTILITY_TYPES).nullable().catch(null),
+  points: z.array(UtilityPointSchema).nullable().catch(null),
   createdByDisplayName: z.string().nullable(),
   updatedAt: z.string().nullable(),
   deletedAt: z.string().nullable(),
@@ -45,10 +67,16 @@ export async function listAnnotations(config: ScannerConfig): Promise<RemoteAnno
 export interface AnnotationFields {
   title: string;
   notes: string;
+  /** For utility_line rows this is the first vertex (columns stay NOT NULL). */
   normalizedX: number;
   normalizedY: number;
   colorHex: string;
   icon: string;
+  kind: AnnotationKind;
+  /** Required by the server for utility kinds; must be null for plain pins. */
+  utilityType: UtilityType | null;
+  /** 2–200 vertices, only for kind 'utility_line'; null otherwise. */
+  points: UtilityPoint[] | null;
 }
 
 export async function createAnnotation(

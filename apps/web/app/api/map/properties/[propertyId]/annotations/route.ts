@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { readJson } from "@/lib/http";
+import { annotationKindFields, validateAnnotationKindFields } from "@/lib/map-annotation-kinds";
 import {
   buildAnnotationAuditInsert,
   buildAnnotationCreateInsert,
@@ -14,14 +15,17 @@ interface RouteContext {
   params: Promise<{ propertyId: string }>;
 }
 
-const AnnotationCreateSchema = z.object({
-  id: z.string().trim().min(1).optional(),
-  title: z.string().trim().min(1),
-  notes: z.string().optional().default(""),
-  normalizedX: z.number().min(0).max(1),
-  normalizedY: z.number().min(0).max(1),
-  colorHex: z.string().trim().min(1),
-});
+const AnnotationCreateSchema = z
+  .object({
+    id: z.string().trim().min(1).optional(),
+    title: z.string().trim().min(1),
+    notes: z.string().optional().default(""),
+    normalizedX: z.number().min(0).max(1),
+    normalizedY: z.number().min(0).max(1),
+    colorHex: z.string().trim().min(1),
+    ...annotationKindFields,
+  })
+  .superRefine(validateAnnotationKindFields);
 
 function parseSince(request: NextRequest): { ok: true; since: string | null } | { ok: false; response: NextResponse } {
   const url = request.nextUrl ?? new URL(request.url);
@@ -48,13 +52,14 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     const { since } = parsedSince;
     let query = supabase
       .from("map_annotations")
-      .select("id, title, notes, normalized_x, normalized_y, color_hex, created_by_display_name, created_at, updated_at, deleted_at, version")
+      .select("id, title, notes, normalized_x, normalized_y, color_hex, kind, utility_type, points, created_by_display_name, created_at, updated_at, deleted_at, version")
       .eq("resman_account_id", syncKey.resman_account_id)
       .eq("property_id", propertyId)
       .eq("feature_key", MAP_ANNOTATIONS_FEATURE_KEY)
-      // The sync client sees the staff layer only — security-layer pins are
-      // the guard devices' and admin portal's world.
-      .eq("layer", "staff");
+      // The sync client sees its own staff layer plus the shared utility
+      // layer — security-layer pins stay the guard devices' and admin
+      // portal's world.
+      .in("layer", ["staff", "utility"]);
 
     if (since) {
       query = query.gte("updated_at", since);
@@ -102,7 +107,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const { data: annotation, error: insertError } = await supabase
       .from("map_annotations")
       .insert(buildAnnotationCreateInsert(syncKey, parsed.data))
-      .select("id, title, notes, normalized_x, normalized_y, color_hex, created_by_display_name, created_at, updated_at, deleted_at, version")
+      .select("id, title, notes, normalized_x, normalized_y, color_hex, kind, utility_type, points, created_by_display_name, created_at, updated_at, deleted_at, version")
       .single();
 
     if (insertError || !annotation) {

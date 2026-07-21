@@ -273,6 +273,9 @@ export default function Settings() {
         <Row label={t("settings.occupancyTint")} sub={t("settings.occupancyTintSub")}>
           <Toggle value={settings.mapOccupancyTint} onChange={settings.setMapOccupancyTint} />
         </Row>
+        <Row label={t("settings.utilityLayer")} sub={t("settings.utilityLayerSub")}>
+          <Toggle value={settings.utilityLayerVisible} onChange={settings.setUtilityLayerVisible} />
+        </Row>
       </AppCardSurface>
 
       <SectionLabel>{t("settings.work")}</SectionLabel>

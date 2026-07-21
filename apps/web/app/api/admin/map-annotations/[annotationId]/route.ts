@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminOrScanner } from "@/lib/admin-request";
 import { readJson } from "@/lib/http";
+import { annotationKindFields, validateAnnotationKindFields } from "@/lib/map-annotation-kinds";
 import {
   actorFor,
   deleteLayeredAnnotation,
@@ -26,15 +27,18 @@ interface RouteContext {
   params: Promise<{ annotationId: string }>;
 }
 
-const UpdateSchema = z.object({
-  expectedVersion: z.number().int().positive(),
-  title: z.string().trim().optional().default(""),
-  notes: z.string().optional().default(""),
-  normalizedX: z.number().min(0).max(1),
-  normalizedY: z.number().min(0).max(1),
-  colorHex: z.string().trim().min(1),
-  icon: z.string().trim().max(40).regex(/^[a-z0-9-]*$/).optional(),
-});
+const UpdateSchema = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+    title: z.string().trim().optional().default(""),
+    notes: z.string().optional().default(""),
+    normalizedX: z.number().min(0).max(1),
+    normalizedY: z.number().min(0).max(1),
+    colorHex: z.string().trim().min(1),
+    icon: z.string().trim().max(40).regex(/^[a-z0-9-]*$/).optional(),
+    ...annotationKindFields,
+  })
+  .superRefine(validateAnnotationKindFields);
 
 const DeleteSchema = z.object({
   expectedVersion: z.number().int().positive(),

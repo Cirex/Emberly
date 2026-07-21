@@ -5,38 +5,27 @@ import {
   deleteAnnotation,
   listAnnotations,
   updateAnnotation,
-  type RemoteAnnotation,
+  type UtilityPoint,
+  type UtilityType,
 } from "@/lib/api/annotations";
+import { fromRemote, toFields, type MapAnnotation } from "@/lib/annotation-mapping";
+import { UTILITY_COLORS } from "@/lib/utility-lines";
 import type { StaffConfig } from "@/lib/stores/config";
 import { useAnnotationPhotos } from "@/lib/stores/annotation-photos";
 
 type ScannerConfig = StaffConfig;
 
 /**
- * A pin on the property map (normalized 0–1 coordinates), shared with the
- * admin portal's security layer.
+ * Annotations on the property map, shared with the admin portal's layered
+ * annotation channel: plain pins plus the utility layer's pins and drawn
+ * polylines (see lib/annotation-mapping.ts for the model + wire mapping).
  *
  * The store is offline-first: every mutation applies locally and is queued;
  * `sync()` pushes the queue and then pulls the server copy, which is the
  * truth. Edits made in the admin portal land here on the next sync tick, and
- * a guard's pins survive a dead network until one succeeds.
+ * a tech's pins survive a dead network until one succeeds.
  */
-export interface MapAnnotation {
-  id: string;
-  x: number;
-  y: number;
-  title: string;
-  notes: string;
-  color: string;
-  /** Ionicons glyph shown on the pin. */
-  icon: string;
-  /** Server row version; 0 until the pin has been accepted by the server. */
-  version: number;
-  /** Local changes not yet pushed. */
-  dirty?: boolean;
-  /** Deleted locally; awaiting the server round-trip. Hidden from the UI. */
-  removed?: boolean;
-}
+export type { MapAnnotation };
 
 /** Palette for annotation pins (brand + status hues). */
 export const ANNOTATION_COLORS = ["#A2A921", "#D1382E", "#458ADB", "#7A6BC7", "#E38736"];
@@ -44,30 +33,7 @@ export const ANNOTATION_COLORS = ["#A2A921", "#D1382E", "#458ADB", "#7A6BC7", "#
 const KEY = "emberly_map_annotations_v2";
 let seq = 0;
 const isLocal = (id: string) => id.startsWith("local-");
-
-function fromRemote(r: RemoteAnnotation): MapAnnotation {
-  return {
-    id: r.id,
-    x: r.normalizedX,
-    y: r.normalizedY,
-    title: r.title,
-    notes: r.notes,
-    color: r.colorHex,
-    icon: r.icon,
-    version: r.version,
-  };
-}
-
-function toFields(a: MapAnnotation) {
-  return {
-    title: a.title,
-    notes: a.notes,
-    normalizedX: a.x,
-    normalizedY: a.y,
-    colorHex: a.color,
-    icon: a.icon || "document-text",
-  };
-}
+const newLocalId = () => `local-${Date.now()}-${seq++}`;
 
 interface AnnotationsState {
   /** Everything, including queued deletions — use visible() for rendering. */
@@ -82,6 +48,10 @@ interface AnnotationsState {
   hydrate: () => Promise<void>;
   setEditing: (id?: string) => void;
   add: (x: number, y: number) => MapAnnotation;
+  /** Drop a utility pin (kind 'utility_pin'), queued for sync like add(). */
+  addUtilityPin: (x: number, y: number, utilityType: UtilityType) => MapAnnotation;
+  /** Save a drawn utility run (kind 'utility_line', ≥2 vertices), queued for sync. */
+  addUtilityLine: (points: UtilityPoint[], utilityType: UtilityType) => MapAnnotation;
   update: (id: string, patch: Partial<Omit<MapAnnotation, "id">>) => void;
   remove: (id: string) => void;
   /** Push queued mutations, then pull the server state. Safe to call often. */
@@ -101,20 +71,66 @@ export const useAnnotations = create<AnnotationsState>((set, get) => ({
 
   hydrate: async () => {
     const raw = await AsyncStorage.getItem(KEY);
-    set({ annotations: raw ? JSON.parse(raw) : [], hydrated: true });
+    const parsed: MapAnnotation[] = raw ? JSON.parse(raw) : [];
+    // Rows persisted before the utility layer carry no kind — they are pins.
+    set({ annotations: parsed.map((a) => (a.kind ? a : { ...a, kind: "pin" })), hydrated: true });
   },
 
   setEditing: (editingId) => set({ editingId }),
 
   add: (x, y) => {
     const item: MapAnnotation = {
-      id: `local-${Date.now()}-${seq++}`,
+      id: newLocalId(),
       x,
       y,
       title: "",
       notes: "",
       color: ANNOTATION_COLORS[0],
       icon: "document-text",
+      kind: "pin",
+      version: 0,
+      dirty: true,
+    };
+    const annotations = [...get().annotations, item];
+    set({ annotations });
+    persist(annotations);
+    return item;
+  },
+
+  addUtilityPin: (x, y, utilityType) => {
+    const item: MapAnnotation = {
+      id: newLocalId(),
+      x,
+      y,
+      title: "",
+      notes: "",
+      color: UTILITY_COLORS[utilityType],
+      icon: "construct",
+      kind: "utility_pin",
+      utilityType,
+      version: 0,
+      dirty: true,
+    };
+    const annotations = [...get().annotations, item];
+    set({ annotations });
+    persist(annotations);
+    return item;
+  },
+
+  addUtilityLine: (points, utilityType) => {
+    const item: MapAnnotation = {
+      id: newLocalId(),
+      // The server keeps normalized_x/y NOT NULL for every kind — a line
+      // anchors them on its first vertex (contract addendum).
+      x: points[0]?.x ?? 0,
+      y: points[0]?.y ?? 0,
+      title: "",
+      notes: "",
+      color: UTILITY_COLORS[utilityType],
+      icon: "construct",
+      kind: "utility_line",
+      utilityType,
+      points: [...points],
       version: 0,
       dirty: true,
     };

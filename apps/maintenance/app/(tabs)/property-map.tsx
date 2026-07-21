@@ -10,12 +10,16 @@ import { AnnotationEditorDialog } from "@/components/map/AnnotationEditorDialog"
 import { GroupsSheet } from "@/components/map/GroupsSheet";
 import { TagEditorDialog } from "@/components/map/TagEditorDialog";
 import { TourSheet } from "@/components/map/TourSheet";
+import { UtilityAnnotationDialog } from "@/components/map/UtilityAnnotationDialog";
+import { UtilityDrawPill, type UtilityDrawSubMode } from "@/components/map/UtilityDrawPill";
 import { SkiaMapCanvas, type PlaceMode } from "@/components/map/SkiaMapCanvas";
 import { AccountMenu } from "@/components/ui/AccountMenu";
 import { useMapSearch } from "@/lib/stores/map-search";
 import { GlassSurface } from "@/components/ui/GlassSurface";
 import { AppStatusBadge } from "@emberly/ui";
 import type { ResmanUnit } from "@/lib/api/units";
+import type { UtilityPoint, UtilityType } from "@/lib/api/annotations";
+import { UTILITY_COLORS } from "@/lib/utility-lines";
 import { buildColorMap, buildGroupPaint, legendFor, occupancyGroup, unitMatchesSearch } from "@emberly/core";
 import { isNight } from "@/lib/map-daynight";
 import { PLACED_UNITS, UNIT_COUNT } from "@/lib/map-data";
@@ -70,6 +74,14 @@ export default function PropertyMapScreen() {
   const setOccupancyTint = useSettings((s) => s.setMapOccupancyTint);
   const [placeMode, setPlaceMode] = useState<PlaceMode>("none");
   const [tagEditUnit, setTagEditUnit] = useState<string | undefined>();
+  // Utility draw mode: pick a type, then either drop pins or tap out a run's
+  // vertices; the in-progress line lives here and renders through the canvas.
+  const utilityVisible = useSettings((s) => s.utilityLayerVisible);
+  const [utilityType, setUtilityType] = useState<UtilityType>("water");
+  const [utilitySub, setUtilitySub] = useState<UtilityDrawSubMode>("line");
+  const [draftPoints, setDraftPoints] = useState<UtilityPoint[]>([]);
+  // An existing utility pin/run tapped on the map — opens the action dialog.
+  const [utilityActionId, setUtilityActionId] = useState<string | undefined>();
   // Tour Mode (TourRoute.swift): while armed, unit taps toggle stops instead
   // of opening the tooltip. Device-local store, hydrated by zustand persist.
   const tour = useTour();
@@ -111,8 +123,16 @@ export default function PropertyMapScreen() {
   }, [units.allUnits]);
 
   // Queued deletions stay in the store until the server confirms them — the
-  // map should not show a pin the guard already deleted.
-  const visibleAnnotations = useMemo(() => ann.annotations.filter((a) => !a.removed), [ann.annotations]);
+  // map should not show a pin the guard already deleted. With the utility
+  // layer toggled off (Settings · Map), the canvas gets no utility rows at
+  // all: nothing drawn, nothing tappable.
+  const visibleAnnotations = useMemo(
+    () =>
+      ann.annotations.filter(
+        (a) => !a.removed && (utilityVisible || (a.kind ?? "pin") === "pin"),
+      ),
+    [ann.annotations, utilityVisible],
+  );
 
   // Filter color groups take precedence over the single occupancy tint when
   // enabled; the tint survives as the fallback mode (and as prebuilt groups).
@@ -217,11 +237,17 @@ export default function PropertyMapScreen() {
   const selectedGroup = selectedData ? occupancyGroup(selectedData) : undefined;
   const selectedTint = (selectedGroup && OCC_TINT[selectedGroup]) || MUTED;
   const editing = editingId ? ann.annotations.find((a) => a.id === editingId) : undefined;
+  // Resolve fresh each render — if sync() replaces or drops the row while the
+  // dialog is up, the dialog follows the store instead of holding a stale copy.
+  const utilityAction = utilityActionId
+    ? ann.annotations.find((a) => a.id === utilityActionId && !a.removed)
+    : undefined;
 
   const clearOverlays = () => {
     setSelected(undefined);
     setEditingId(undefined);
     setTagEditUnit(undefined);
+    setUtilityActionId(undefined);
   };
 
   const onSelectUnit = (n: string) => {
@@ -245,9 +271,37 @@ export default function PropertyMapScreen() {
     clearOverlays();
     setEditingId(id);
   };
+  const onSelectUtility = (id: string) => {
+    clearOverlays();
+    setUtilityActionId(id);
+  };
+
+  // A tap while utility mode is armed: drop a typed pin (and disarm, like the
+  // annotate flow), or append a vertex to the in-progress run.
+  const onPlaceUtility = (nx: number, ny: number) => {
+    const x = clamp(nx, 0, 1);
+    const y = clamp(ny, 0, 1);
+    if (utilitySub === "pin") {
+      ann.addUtilityPin(x, y, utilityType);
+      setPlaceMode("none");
+      clearOverlays();
+      return;
+    }
+    setDraftPoints((prev) => [...prev, { x, y }]);
+  };
+  const finishUtilityLine = () => {
+    if (draftPoints.length >= 2) ann.addUtilityLine(draftPoints, utilityType);
+    setDraftPoints([]);
+    setPlaceMode("none");
+  };
+  const cancelUtilityDraw = () => {
+    setDraftPoints([]);
+    setPlaceMode("none");
+  };
 
   const toggleMode = (m: PlaceMode) => {
     clearOverlays();
+    setDraftPoints([]);
     setPlaceMode((prev) => (prev === m ? "none" : m));
   };
 
@@ -348,9 +402,16 @@ export default function PropertyMapScreen() {
               />
             ) : null
           }
+          utilityDraft={
+            placeMode === "utility" && utilitySub === "line" && draftPoints.length > 0
+              ? { points: draftPoints, color: UTILITY_COLORS[utilityType] }
+              : undefined
+          }
           onSelect={onSelectUnit}
           onPlacePin={onPlacePin}
           onSelectPin={onSelectPin}
+          onPlaceUtility={onPlaceUtility}
+          onSelectUtility={onSelectUtility}
         />
       </View>
 
@@ -405,10 +466,18 @@ export default function PropertyMapScreen() {
                 label="Annotate"
               />
               <StackBtn
+                icon="construct-outline"
+                active={placeMode === "utility"}
+                onPress={() => toggleMode("utility")}
+                label={t("utility.title")}
+                disabled={!utilityVisible}
+              />
+              <StackBtn
                 icon="footsteps-outline"
                 active={tour.tourMode}
                 onPress={() => {
                   clearOverlays();
+                  setDraftPoints([]);
                   setPlaceMode("none");
                   tour.setTourMode(!tour.tourMode);
                 }}
@@ -426,19 +495,38 @@ export default function PropertyMapScreen() {
           </GlassSurface>
         </View>
 
-        {placeMode !== "none" || tour.tourMode ? (
+        {placeMode === "annotate" || tour.tourMode ? (
           <View pointerEvents="none" style={{ alignItems: "center" }}>
             <View
               className="bg-navy"
               style={{ borderRadius: 999, paddingHorizontal: 16, paddingVertical: 8, opacity: 0.92 }}
             >
               <Text style={{ color: "#FFFFFF", fontSize: 13, fontWeight: "600" }}>
-                {placeMode !== "none" ? "Tap the map to drop a pin" : "Tap units to add tour stops"}
+                {placeMode === "annotate" ? "Tap the map to drop a pin" : "Tap units to add tour stops"}
               </Text>
             </View>
           </View>
         ) : null}
       </View>
+
+      {/* Utility draw pill — top-left, mirroring the control stack's glass. */}
+      {placeMode === "utility" ? (
+        <View style={{ position: "absolute", top: insets.top + HEADER_TOP_PAD + 56, left: hPad }}>
+          <UtilityDrawPill
+            utilityType={utilityType}
+            subMode={utilitySub}
+            vertexCount={draftPoints.length}
+            onSelectType={setUtilityType}
+            onSelectSubMode={(m) => {
+              setUtilitySub(m);
+              setDraftPoints([]);
+            }}
+            onUndo={() => setDraftPoints((prev) => prev.slice(0, -1))}
+            onDone={finishUtilityLine}
+            onCancel={cancelUtilityDraw}
+          />
+        </View>
+      ) : null}
 
       {/* Legend — quiet glass card, bottom-left, only while the tint is on. */}
       {hasData && (occupancyTint || groupsEnabled) && legend.length > 0 && !hasQuery && placeMode === "none" ? (
@@ -462,6 +550,10 @@ export default function PropertyMapScreen() {
 
       {editing ? (
         <AnnotationEditorDialog annotation={editing} onClose={() => setEditingId(undefined)} />
+      ) : null}
+
+      {utilityAction ? (
+        <UtilityAnnotationDialog annotation={utilityAction} onClose={() => setUtilityActionId(undefined)} />
       ) : null}
 
       {tagEditUnit ? (

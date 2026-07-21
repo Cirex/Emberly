@@ -769,6 +769,9 @@ export interface Database {
           layer: string;
           origin: string;
           icon: string;
+          kind: string;
+          utility_type: string | null;
+          points: Json | null;
           created_by_key_id: string | null;
           created_by_display_name: string | null;
           created_by_resman_login_hash: string | null;
@@ -794,6 +797,9 @@ export interface Database {
           layer?: string;
           origin?: string;
           icon?: string;
+          kind?: string;
+          utility_type?: string | null;
+          points?: Json | null;
           created_by_key_id?: string | null;
           created_by_display_name?: string | null;
           created_by_resman_login_hash?: string | null;
@@ -819,6 +825,9 @@ export interface Database {
           layer?: string;
           origin?: string;
           icon?: string;
+          kind?: string;
+          utility_type?: string | null;
+          points?: Json | null;
           created_by_key_id?: string | null;
           created_by_display_name?: string | null;
           created_by_resman_login_hash?: string | null;

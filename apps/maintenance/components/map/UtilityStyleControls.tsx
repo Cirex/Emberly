@@ -6,7 +6,8 @@ import { LINE_STYLES, LINE_WEIGHTS } from "@/lib/api/annotations";
 /**
  * The per-run presentation controls — style, weight, flow — shared by the
  * draw pill (styling the run being drawn) and the run inspector (restyling a
- * committed run). One source so the two surfaces can't drift.
+ * committed run). One source so the two surfaces can't drift. Style and
+ * weight are segmented controls, flow is chips (approved mockup).
  */
 
 export function StyleChip({
@@ -50,11 +51,66 @@ export function StyleChip({
   );
 }
 
-/**
- * A miniature of the stroke a style produces, in the run's color. Composed
- * from segment Views rather than borderStyle — RN's dashed/dotted borders
- * are unreliable on single-edge borders on iOS.
- */
+/** The mockup's segmented control: inset track, white raised active segment. */
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  renderOption,
+  accessibilityLabels,
+  width,
+}: {
+  options: readonly T[];
+  value: T;
+  onChange: (v: T) => void;
+  renderOption: (v: T, selected: boolean) => React.ReactNode;
+  accessibilityLabels: Record<T, string>;
+  /** Fixed width — auto-width parents (the glass pill) collapse flexed rows. */
+  width: number;
+}) {
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        backgroundColor: "rgba(9,27,84,0.055)",
+        borderRadius: 10,
+        padding: 3,
+        gap: 3,
+        width,
+      }}
+    >
+      {options.map((v) => {
+        const selected = v === value;
+        return (
+          <Pressable
+            key={v}
+            onPress={() => onChange(v)}
+            accessibilityRole="button"
+            accessibilityLabel={accessibilityLabels[v]}
+            accessibilityState={{ selected }}
+            style={{
+              flex: 1,
+              alignItems: "center",
+              justifyContent: "center",
+              paddingVertical: 7,
+              borderRadius: 8,
+              backgroundColor: selected ? "#FFFFFF" : "transparent",
+              ...(selected
+                ? { shadowColor: "#091B54", shadowOpacity: 0.12, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } }
+                : {}),
+            }}
+          >
+            {renderOption(v, selected)}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/** A miniature of the stroke a style produces. Composed from segment Views
+ *  rather than borderStyle — RN's dashed/dotted borders are unreliable on
+ *  single-edge borders on iOS. */
 export function LinePreview({
   style,
   color,
@@ -102,17 +158,14 @@ export function StyleRow({
     dotted: t("utility.styleDotted"),
   };
   return (
-    <View className="flex-row items-center" style={{ gap: 6 }}>
-      {LINE_STYLES.map((s) => (
-        <StyleChip
-          key={s}
-          selected={value === s}
-          onPress={() => onChange(s)}
-          accessibilityLabel={labels[s]}
-          preview={<LinePreview style={s} color={color} />}
-        />
-      ))}
-    </View>
+    <Segmented
+      options={LINE_STYLES}
+      value={value}
+      onChange={onChange}
+      accessibilityLabels={labels}
+      width={138}
+      renderOption={(s, selected) => <LinePreview style={s} color={selected ? color : "#8B92A8"} />}
+    />
   );
 }
 
@@ -129,19 +182,25 @@ export function WeightRow({
     medium: t("utility.weightMedium"),
     thick: t("utility.weightThick"),
   };
-  // Display initials; the a11y label carries the full word.
+  // Single-letter faces (S/M/L style); the a11y label carries the full word.
+  const shorts: Record<LineWeight, string> = {
+    thin: t("utility.weightShortThin"),
+    medium: t("utility.weightShortMedium"),
+    thick: t("utility.weightShortThick"),
+  };
   return (
-    <View className="flex-row items-center" style={{ gap: 6 }}>
-      {LINE_WEIGHTS.map((w) => (
-        <StyleChip
-          key={w}
-          label={labels[w][0].toUpperCase()}
-          selected={value === w}
-          onPress={() => onChange(w)}
-          accessibilityLabel={labels[w]}
-        />
-      ))}
-    </View>
+    <Segmented
+      options={LINE_WEIGHTS}
+      value={value}
+      onChange={onChange}
+      accessibilityLabels={labels}
+      width={112}
+      renderOption={(w, selected) => (
+        <Text style={{ fontSize: 11, fontWeight: "800", color: selected ? "#091B54" : "#4C556F" }}>
+          {shorts[w]}
+        </Text>
+      )}
+    />
   );
 }
 

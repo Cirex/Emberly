@@ -55,6 +55,9 @@ export const RemoteAnnotationSchema = z.object({
   lineWeight: z.enum(LINE_WEIGHTS).nullable().catch(null),
   flowArrows: z.boolean().nullable().catch(null),
   createdByDisplayName: z.string().nullable(),
+  // Older servers may omit this — the inspector's "added by … on …" line
+  // simply drops its date segment then.
+  createdAt: z.string().nullable().catch(null),
   updatedAt: z.string().nullable(),
   deletedAt: z.string().nullable(),
   version: z.number(),

@@ -43,6 +43,9 @@ export interface MapAnnotation {
   lineStyle?: LineStyle;
   lineWeight?: LineWeight;
   flowArrows?: boolean;
+  /** Display-only provenance from the server row; absent on local-only rows. */
+  createdBy?: string;
+  createdAt?: string;
   /** Server row version; 0 until the row has been accepted by the server. */
   version: number;
   /** Local changes not yet pushed. */
@@ -70,6 +73,8 @@ export function fromRemote(r: RemoteAnnotation): MapAnnotation {
     lineStyle: (r.kind === "utility_line" && r.lineStyle) || undefined,
     lineWeight: (r.kind === "utility_line" && r.lineWeight) || undefined,
     flowArrows: (r.kind === "utility_line" && r.flowArrows) || undefined,
+    createdBy: r.createdByDisplayName ?? undefined,
+    createdAt: r.createdAt ?? undefined,
     version: r.version,
   };
 }

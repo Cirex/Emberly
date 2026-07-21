@@ -18,6 +18,8 @@ import type { StaffConfig } from "@/lib/stores/config";
 interface WorkOrdersState {
   workOrders: WorkOrder[];
   dataVersion: number;
+  /** Wall-clock ms of the last completed refresh (0 = never this session). */
+  refreshedAt: number;
   loading: boolean;
   error?: string;
   loadAll: (config: StaffConfig) => Promise<void>;
@@ -53,6 +55,7 @@ export const useWorkOrders = create<WorkOrdersState>()(
     (set, get) => ({
       workOrders: [],
       dataVersion: 0,
+      refreshedAt: 0,
       loading: false,
 
       loadAll: async (config) => {
@@ -62,7 +65,7 @@ export const useWorkOrders = create<WorkOrdersState>()(
         set({ loading: get().workOrders.length === 0, error: undefined });
         try {
           const acc = await fetchAll(config);
-          set((s) => ({ workOrders: acc, dataVersion: s.dataVersion + 1, loading: false }));
+          set((s) => ({ workOrders: acc, dataVersion: s.dataVersion + 1, loading: false, refreshedAt: Date.now() }));
         } catch (err) {
           set({ loading: false, error: err instanceof Error ? err.message : "Failed to load work orders" });
         }

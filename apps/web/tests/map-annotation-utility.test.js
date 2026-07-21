@@ -94,6 +94,45 @@ test("utility_line requires utilityType and 2..200 in-range points", () => {
   assert.equal(line(Array.from({ length: 200 }, () => ({ x: 0.5, y: 0.5 }))).success, true);
 });
 
+test("run presentation fields parse on a line, default to absent, and are rejected elsewhere", () => {
+  const line = {
+    kind: "utility_line",
+    utilityType: "sewer",
+    points: [
+      { x: 0.1, y: 0.1 },
+      { x: 0.9, y: 0.9 },
+    ],
+  };
+
+  // Absent fields parse (older clients keep working) …
+  const bare = KindSchema.safeParse(line);
+  assert.equal(bare.success, true);
+  assert.equal(bare.data.lineStyle, undefined);
+
+  // … present fields round the contract …
+  const styled = KindSchema.safeParse({
+    ...line,
+    lineStyle: "dotted",
+    lineWeight: "thick",
+    flowArrows: true,
+  });
+  assert.equal(styled.success, true);
+  assert.equal(styled.data.lineStyle, "dotted");
+  assert.equal(styled.data.lineWeight, "thick");
+  assert.equal(styled.data.flowArrows, true);
+
+  // … out-of-vocabulary values are rejected …
+  assert.equal(KindSchema.safeParse({ ...line, lineStyle: "double" }).success, false);
+  assert.equal(KindSchema.safeParse({ ...line, lineWeight: "hairline" }).success, false);
+
+  // … and style fields are meaningless off a line.
+  assert.equal(
+    KindSchema.safeParse({ kind: "utility_pin", utilityType: "gas", lineStyle: "dashed" }).success,
+    false,
+  );
+  assert.equal(KindSchema.safeParse({ kind: "pin", flowArrows: true }).success, false);
+});
+
 test("sync create insert routes utility kinds to the utility layer", () => {
   const points = [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.4 }];
   const insert = buildAnnotationCreateInsert(

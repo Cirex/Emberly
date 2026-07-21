@@ -39,8 +39,17 @@ import {
   type PlacedUnit,
 } from "@/lib/map-data";
 import type { MapAnnotation } from "@/lib/stores/annotations";
-import type { UtilityPoint } from "@/lib/api/annotations";
-import { UTILITY_COLORS, hitTestUtilityLines } from "@/lib/utility-lines";
+import type { LineStyle, LineWeight, UtilityPoint } from "@/lib/api/annotations";
+import {
+  LINE_WEIGHT_FACTOR,
+  UTILITY_COLORS,
+  effectiveLineStyle,
+  effectiveLineWeight,
+  flowChevrons,
+  hitTestUtilityLines,
+  polylineMidpoint,
+  runLengthLabel,
+} from "@/lib/utility-lines";
 import { buildPlanPicture } from "@emberly/ui";
 
 const DEFAULT_FILL = "rgba(9,27,84,0.10)";
@@ -70,11 +79,19 @@ const HIT_R2 = 4000;
 const UTIL_PIN_R = PIN_R * 0.7;
 const UTIL_PIN_RING = 3.4 * 0.7;
 const UTIL_STROKE = 2.5;
-/** Dash intervals in screen pt — scaled by 1/eff alongside the stroke. */
-const UTIL_DASH_SEWER: [number, number] = [9, 6];
-const UTIL_DASH_GAS: [number, number] = [2.5, 6];
+/** Dash intervals in screen pt — scaled by 1/eff alongside the stroke.
+ *  These are per-run STYLES now (see effectiveLineStyle): historically sewer
+ *  drew dashed and gas dotted, which the style fallback preserves. */
+const UTIL_DASH_DASHED: [number, number] = [9, 6];
+const UTIL_DASH_DOTTED: [number, number] = [2.5, 6];
 /** Vertex discs on the in-progress draw, page space like the pins. */
 const DRAFT_VERTEX_R = 7;
+/** Run labels: page-space pill riding the run's midpoint (like tour badges). */
+const RUN_LABEL_SIZE = 26;
+const RUN_LABEL_PAD_X = 14;
+const RUN_LABEL_PAD_Y = 9;
+/** Lift the pill off the stroke so it doesn't sit on the dashes. */
+const RUN_LABEL_LIFT = 30;
 
 function utilityColor(a: { utilityType?: MapAnnotation["utilityType"] }): string {
   return UTILITY_COLORS[a.utilityType ?? "other"];
@@ -307,7 +324,14 @@ interface SkiaMapCanvasProps {
   selectedTint?: string;
   annotations: MapAnnotation[];
   /** The utility run being drawn right now — rendered live above the saved runs. */
-  utilityDraft?: { points: UtilityPoint[]; color: string };
+  utilityDraft?: {
+    points: UtilityPoint[];
+    color: string;
+    /** Live style preview while drawing; absent falls back to solid/medium. */
+    style?: LineStyle;
+    weight?: LineWeight;
+    arrows?: boolean;
+  };
   /** Tour stops, in route order — each gets a numbered badge at its unit. */
   tourStops?: TourBadgeStop[];
   night: boolean;
@@ -365,6 +389,16 @@ export function SkiaMapCanvas({
       }),
     [],
   );
+  // Run labels use the same face at their own page-space size.
+  const runLabelFont = useMemo(
+    () =>
+      matchFont({
+        fontFamily: Platform.select({ ios: "Helvetica Neue", default: "sans-serif" }),
+        fontSize: RUN_LABEL_SIZE,
+        fontWeight: "bold",
+      }),
+    [],
+  );
   // The dashed route threading the tour stops in order (page space, so it sits
   // under the badges and scales with them). Null until there are two placed
   // stops to connect.
@@ -386,26 +420,56 @@ export function SkiaMapCanvas({
   }, [tourStops]);
 
   // Utility layer, split once per annotations change. Lines carry a prebuilt
-  // page-space path plus their per-type dash treatment; pins and utility pins
-  // render (and hit-test) separately.
+  // page-space path plus their per-RUN presentation (style/weight/arrows from
+  // the record, falling back to the historical per-type defaults); pins and
+  // utility pins render (and hit-test) separately.
   const utilityLines = useMemo(() => {
     const out: {
       id: string;
       color: string;
-      dash: "sewer" | "gas" | null;
+      style: LineStyle;
+      weight: LineWeight;
       path: ReturnType<typeof buildUtilityPath>;
+      /** Prebuilt page-space chevron path; null when arrows are off. */
+      arrows: ReturnType<typeof buildUtilityPath> | null;
+      /** Label pill at the run's midpoint; null when untitled. */
+      label: { text: string; x: number; y: number; w: number } | null;
     }[] = [];
     for (const a of annotations) {
       if (a.kind !== "utility_line" || !a.points || a.points.length < 2) continue;
+
+      let arrows: ReturnType<typeof buildUtilityPath> | null = null;
+      if (a.flowArrows) {
+        const b = Skia.PathBuilder.Make();
+        for (const c of flowChevrons(a.points, PAGE_WIDTH, PAGE_HEIGHT)) {
+          b.moveTo(c.leftX, c.leftY);
+          b.lineTo(c.tipX, c.tipY);
+          b.lineTo(c.rightX, c.rightY);
+        }
+        arrows = b.detach();
+      }
+
+      let label: { text: string; x: number; y: number; w: number } | null = null;
+      const text = [a.title.trim(), runLengthLabel(a.points, PAGE_WIDTH, PAGE_HEIGHT)]
+        .filter(Boolean)
+        .join(" · ");
+      if (text) {
+        const mid = polylineMidpoint(a.points, PAGE_WIDTH, PAGE_HEIGHT);
+        if (mid) label = { text, x: mid.x, y: mid.y - RUN_LABEL_LIFT, w: runLabelFont.getTextWidth(text) };
+      }
+
       out.push({
         id: a.id,
         color: utilityColor(a),
-        dash: a.utilityType === "sewer" || a.utilityType === "gas" ? a.utilityType : null,
+        style: effectiveLineStyle(a),
+        weight: effectiveLineWeight(a),
         path: buildUtilityPath(a.points),
+        arrows,
+        label,
       });
     }
     return out;
-  }, [annotations]);
+  }, [annotations, runLabelFont]);
   const utilityPins = useMemo(() => annotations.filter((a) => a.kind === "utility_pin"), [annotations]);
   const pins = useMemo(
     () => annotations.filter((a) => a.kind !== "utility_pin" && a.kind !== "utility_line"),
@@ -416,6 +480,16 @@ export function SkiaMapCanvas({
       utilityDraft && utilityDraft.points.length >= 2 ? buildUtilityPath(utilityDraft.points) : null,
     [utilityDraft],
   );
+  const draftArrows = useMemo(() => {
+    if (!utilityDraft?.arrows || utilityDraft.points.length < 2) return null;
+    const b = Skia.PathBuilder.Make();
+    for (const c of flowChevrons(utilityDraft.points, PAGE_WIDTH, PAGE_HEIGHT)) {
+      b.moveTo(c.leftX, c.leftY);
+      b.lineTo(c.tipX, c.tipY);
+      b.lineTo(c.rightX, c.rightY);
+    }
+    return b.detach();
+  }, [utilityDraft]);
 
   // Recorded once per scheme; replayed as vectors under the zoom transform
   // every frame. The night variant re-colors every op (see plan-picture.ts)
@@ -634,14 +708,28 @@ export function SkiaMapCanvas({
   // intervals) whatever the zoom, so a gas dotted run doesn't turn into
   // page-sized blobs at 8×.
   const utilityStroke = useDerivedValue(() => UTIL_STROKE / (scale.value * baseScale), [baseScale]);
-  const utilityDashSewer = useDerivedValue(() => {
+  // One derived stroke per weight tier — hooks can't run per line, so each
+  // run picks its tier from this trio at render.
+  const utilityStrokeThin = useDerivedValue(
+    () => (UTIL_STROKE * LINE_WEIGHT_FACTOR.thin) / (scale.value * baseScale),
+    [baseScale],
+  );
+  const utilityStrokeThick = useDerivedValue(
+    () => (UTIL_STROKE * LINE_WEIGHT_FACTOR.thick) / (scale.value * baseScale),
+    [baseScale],
+  );
+  const utilityDashDashed = useDerivedValue(() => {
     const eff = scale.value * baseScale;
-    return [UTIL_DASH_SEWER[0] / eff, UTIL_DASH_SEWER[1] / eff];
+    return [UTIL_DASH_DASHED[0] / eff, UTIL_DASH_DASHED[1] / eff];
   }, [baseScale]);
-  const utilityDashGas = useDerivedValue(() => {
+  const utilityDashDotted = useDerivedValue(() => {
     const eff = scale.value * baseScale;
-    return [UTIL_DASH_GAS[0] / eff, UTIL_DASH_GAS[1] / eff];
+    return [UTIL_DASH_DOTTED[0] / eff, UTIL_DASH_DOTTED[1] / eff];
   }, [baseScale]);
+  // Chevron arms hold ~2pt on screen like the strokes they ride.
+  const utilityArrowStroke = useDerivedValue(() => 2 / (scale.value * baseScale), [baseScale]);
+  const strokeForWeight = (weight: LineWeight) =>
+    weight === "thin" ? utilityStrokeThin : weight === "thick" ? utilityStrokeThick : utilityStroke;
 
   return (
     <View style={{ width, height }}>
@@ -687,24 +775,56 @@ export function SkiaMapCanvas({
               />
             </Group>
           ) : null}
-          {/* Utility runs: beneath the pins, above the plan/units. Solid for
-              water/electrical/other; sewer dashed, gas dotted. */}
+          {/* Utility runs: beneath the pins, above the plan/units. Style,
+              weight, and flow arrows come from the record (effectiveLineStyle
+              keeps pre-style rows on the old sewer-dashed/gas-dotted look). */}
           {utilityLines.map((l) => (
-            <Path
-              key={l.id}
-              path={l.path}
-              style="stroke"
-              strokeWidth={utilityStroke}
-              strokeCap="round"
-              strokeJoin="round"
-              color={l.color}
-            >
-              {l.dash === "sewer" ? (
-                <DashPathEffect intervals={utilityDashSewer} />
-              ) : l.dash === "gas" ? (
-                <DashPathEffect intervals={utilityDashGas} />
+            <Group key={l.id}>
+              <Path
+                path={l.path}
+                style="stroke"
+                strokeWidth={strokeForWeight(l.weight)}
+                strokeCap="round"
+                strokeJoin="round"
+                color={l.color}
+              >
+                {l.style === "dashed" ? (
+                  <DashPathEffect intervals={utilityDashDashed} />
+                ) : l.style === "dotted" ? (
+                  <DashPathEffect intervals={utilityDashDotted} />
+                ) : null}
+              </Path>
+              {l.arrows ? (
+                <Path
+                  path={l.arrows}
+                  style="stroke"
+                  strokeWidth={utilityArrowStroke}
+                  strokeCap="round"
+                  strokeJoin="round"
+                  color={l.color}
+                />
               ) : null}
-            </Path>
+              {l.label ? (
+                <Group>
+                  <RoundedRect
+                    x={l.label.x - l.label.w / 2 - RUN_LABEL_PAD_X}
+                    y={l.label.y - RUN_LABEL_SIZE / 2 - RUN_LABEL_PAD_Y}
+                    width={l.label.w + RUN_LABEL_PAD_X * 2}
+                    height={RUN_LABEL_SIZE + RUN_LABEL_PAD_Y * 2}
+                    r={(RUN_LABEL_SIZE + RUN_LABEL_PAD_Y * 2) / 2}
+                    color={l.color}
+                    opacity={0.92}
+                  />
+                  <SkiaText
+                    x={l.label.x - l.label.w / 2}
+                    y={l.label.y + RUN_LABEL_SIZE * 0.36}
+                    text={l.label.text}
+                    font={runLabelFont}
+                    color="#FFFFFF"
+                  />
+                </Group>
+              ) : null}
+            </Group>
           ))}
 
           {/* The in-progress draw: live polyline plus a disc per vertex, so
@@ -715,7 +835,24 @@ export function SkiaMapCanvas({
                 <Path
                   path={draftPath}
                   style="stroke"
-                  strokeWidth={utilityStroke}
+                  strokeWidth={strokeForWeight(utilityDraft.weight ?? "medium")}
+                  strokeCap="round"
+                  strokeJoin="round"
+                  color={utilityDraft.color}
+                  opacity={0.9}
+                >
+                  {utilityDraft.style === "dashed" ? (
+                    <DashPathEffect intervals={utilityDashDashed} />
+                  ) : utilityDraft.style === "dotted" ? (
+                    <DashPathEffect intervals={utilityDashDotted} />
+                  ) : null}
+                </Path>
+              ) : null}
+              {draftArrows ? (
+                <Path
+                  path={draftArrows}
+                  style="stroke"
+                  strokeWidth={utilityArrowStroke}
                   strokeCap="round"
                   strokeJoin="round"
                   color={utilityDraft.color}

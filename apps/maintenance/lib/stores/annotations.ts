@@ -13,6 +13,7 @@ import { fromRemote, toFields, type MapAnnotation } from "@/lib/annotation-mappi
 import { UTILITY_COLORS } from "@/lib/utility-lines";
 import type { StaffConfig } from "@/lib/stores/config";
 import { useAnnotationPhotos } from "@/lib/stores/annotation-photos";
+import { useUtilityVisibility } from "@/lib/stores/utility-visibility";
 
 type ScannerConfig = StaffConfig;
 
@@ -52,7 +53,11 @@ interface AnnotationsState {
   /** Drop a utility pin (kind 'utility_pin'), queued for sync like add(). */
   addUtilityPin: (x: number, y: number, utilityType: UtilityType) => MapAnnotation;
   /** Save a drawn utility run (kind 'utility_line', ≥2 vertices), queued for sync. */
-  addUtilityLine: (points: UtilityPoint[], utilityType: UtilityType) => MapAnnotation;
+  addUtilityLine: (
+    points: UtilityPoint[],
+    utilityType: UtilityType,
+    presentation?: Pick<MapAnnotation, "lineStyle" | "lineWeight" | "flowArrows">,
+  ) => MapAnnotation;
   update: (id: string, patch: Partial<Omit<MapAnnotation, "id">>) => void;
   remove: (id: string) => void;
   /** Push queued mutations, then pull the server state. Safe to call often. */
@@ -118,7 +123,7 @@ export const useAnnotations = create<AnnotationsState>((set, get) => ({
     return item;
   },
 
-  addUtilityLine: (points, utilityType) => {
+  addUtilityLine: (points, utilityType, presentation) => {
     const item: MapAnnotation = {
       id: newLocalId(),
       // The server keeps normalized_x/y NOT NULL for every kind — a line
@@ -132,6 +137,7 @@ export const useAnnotations = create<AnnotationsState>((set, get) => ({
       kind: "utility_line",
       utilityType,
       points: [...points],
+      ...presentation,
       version: 0,
       dirty: true,
     };
@@ -182,9 +188,10 @@ export const useAnnotations = create<AnnotationsState>((set, get) => ({
             else if (res.conflict) apply((l) => l.map((x) => (x.id === a.id ? { ...x, removed: undefined } : x)));
           } else if (a.dirty && isLocal(a.id)) {
             const created = await createAnnotation(toFields(a), config);
-            // The pin's photos and any open editor are keyed by its id —
-            // both follow the swap to the server id.
+            // The pin's photos, any open editor, and a hidden-run flag are
+            // keyed by its id — all follow the swap to the server id.
             useAnnotationPhotos.getState().reassign(a.id, created.id);
+            useUtilityVisibility.getState().renameId(a.id, created.id);
             if (get().editingId === a.id) set({ editingId: created.id });
             apply((l) => l.map((x) => (x.id === a.id ? fromRemote(created) : x)));
           } else if (a.dirty) {

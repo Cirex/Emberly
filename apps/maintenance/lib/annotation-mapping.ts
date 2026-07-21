@@ -1,6 +1,8 @@
 import type {
   AnnotationFields,
   AnnotationKind,
+  LineStyle,
+  LineWeight,
   RemoteAnnotation,
   UtilityPoint,
   UtilityType,
@@ -33,6 +35,14 @@ export interface MapAnnotation {
   utilityType?: UtilityType;
   /** Vertices of a drawn run — set exactly when kind is 'utility_line'. */
   points?: UtilityPoint[];
+  /**
+   * Per-run presentation, 'utility_line' only. Absent means "type default"
+   * (sewer dashed, gas dotted, others solid; medium; no arrows) so runs drawn
+   * before these fields render exactly as before. The label rides `title`.
+   */
+  lineStyle?: LineStyle;
+  lineWeight?: LineWeight;
+  flowArrows?: boolean;
   /** Server row version; 0 until the row has been accepted by the server. */
   version: number;
   /** Local changes not yet pushed. */
@@ -57,6 +67,9 @@ export function fromRemote(r: RemoteAnnotation): MapAnnotation {
     kind: r.kind,
     utilityType: r.utilityType ?? undefined,
     points: r.kind === "utility_line" && r.points ? r.points : undefined,
+    lineStyle: (r.kind === "utility_line" && r.lineStyle) || undefined,
+    lineWeight: (r.kind === "utility_line" && r.lineWeight) || undefined,
+    flowArrows: (r.kind === "utility_line" && r.flowArrows) || undefined,
     version: r.version,
   };
 }
@@ -78,5 +91,8 @@ export function toFields(a: MapAnnotation): AnnotationFields {
     // kind, points required iff a line — null everywhere else.
     utilityType: kind === "utility_pin" || kind === "utility_line" ? (a.utilityType ?? null) : null,
     points: kind === "utility_line" ? (a.points ?? null) : null,
+    lineStyle: kind === "utility_line" ? (a.lineStyle ?? null) : null,
+    lineWeight: kind === "utility_line" ? (a.lineWeight ?? null) : null,
+    flowArrows: kind === "utility_line" ? (a.flowArrows ?? null) : null,
   };
 }

@@ -11,7 +11,16 @@ import { describe, expect, test } from "bun:test";
 
 import { RemoteAnnotationSchema, type RemoteAnnotation } from "@/lib/api/annotations";
 import { fromRemote, toFields, type MapAnnotation } from "@/lib/annotation-mapping";
-import { UTILITY_LINE_HIT_PX, distToSegmentSq, hitTestUtilityLines } from "@/lib/utility-lines";
+import {
+  UTILITY_LINE_HIT_PX,
+  distToSegmentSq,
+  effectiveLineStyle,
+  effectiveLineWeight,
+  flowChevrons,
+  hitTestUtilityLines,
+  polylineLengthPx,
+  polylineMidpoint,
+} from "@/lib/utility-lines";
 
 function remote(fields: Partial<RemoteAnnotation> = {}): RemoteAnnotation {
   return RemoteAnnotationSchema.parse({
@@ -73,6 +82,9 @@ describe("server row -> MapAnnotation -> payload round-trip", () => {
       kind: "pin",
       utilityType: null,
       points: null,
+      lineStyle: null,
+      lineWeight: null,
+      flowArrows: null,
     });
   });
 
@@ -142,6 +154,100 @@ describe("server row -> MapAnnotation -> payload round-trip", () => {
     const fields = toFields(odd);
     expect(fields.utilityType).toBeNull();
     expect(fields.points).toBeNull();
+  });
+});
+
+describe("run presentation fields", () => {
+  test("schema defaults absent style fields to null (older server)", () => {
+    const r = remote({ kind: "utility_line", utilityType: "water", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] });
+    expect(r.lineStyle).toBeNull();
+    expect(r.lineWeight).toBeNull();
+    expect(r.flowArrows).toBeNull();
+  });
+
+  test("style fields round-trip through the mapping", () => {
+    const r = remote({
+      kind: "utility_line",
+      utilityType: "water",
+      points: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+      lineStyle: "dotted",
+      lineWeight: "thick",
+      flowArrows: true,
+    });
+    const a = fromRemote(r);
+    expect(a.lineStyle).toBe("dotted");
+    expect(a.lineWeight).toBe("thick");
+    expect(a.flowArrows).toBe(true);
+    const fields = toFields(a);
+    expect(fields.lineStyle).toBe("dotted");
+    expect(fields.lineWeight).toBe("thick");
+    expect(fields.flowArrows).toBe(true);
+  });
+
+  test("stray style fields on a non-line kind are nulled in the payload", () => {
+    const odd = fromRemote(remote({ kind: "utility_pin", utilityType: "gas" }));
+    const fields = toFields({ ...odd, lineStyle: "dashed", flowArrows: true });
+    expect(fields.lineStyle).toBeNull();
+    expect(fields.flowArrows).toBeNull();
+  });
+
+  test("effective style keeps the pre-style type defaults", () => {
+    expect(effectiveLineStyle({ utilityType: "sewer" })).toBe("dashed");
+    expect(effectiveLineStyle({ utilityType: "gas" })).toBe("dotted");
+    expect(effectiveLineStyle({ utilityType: "water" })).toBe("solid");
+    expect(effectiveLineStyle({ utilityType: "electrical" })).toBe("solid");
+    // A stored style beats the type default.
+    expect(effectiveLineStyle({ utilityType: "sewer", lineStyle: "solid" })).toBe("solid");
+    expect(effectiveLineWeight({})).toBe("medium");
+    expect(effectiveLineWeight({ lineWeight: "thin" })).toBe("thin");
+  });
+});
+
+describe("run geometry", () => {
+  const PAGE = 1000;
+  const L = [
+    { x: 0.1, y: 0.5 },
+    { x: 0.5, y: 0.5 },
+    { x: 0.5, y: 0.9 },
+  ];
+
+  test("polylineLengthPx sums the segments", () => {
+    expect(polylineLengthPx(L, PAGE, PAGE)).toBe(800);
+    expect(polylineLengthPx([L[0]], PAGE, PAGE)).toBe(0);
+  });
+
+  test("midpoint lands at half the arc length, on the path", () => {
+    // Total 800 → midpoint 400 in: 400 along the first (horizontal) segment.
+    expect(polylineMidpoint(L, PAGE, PAGE)).toEqual({ x: 500, y: 500 });
+    expect(polylineMidpoint([L[0]], PAGE, PAGE)).toBeNull();
+  });
+
+  test("chevrons repeat along the run and point forward", () => {
+    const chevs = flowChevrons(L, PAGE, PAGE, 200, 10);
+    // 800 arc length, first at 100 then every 200 → 100, 300, 500, 700.
+    expect(chevs).toHaveLength(4);
+    // First chevron sits on the horizontal segment, tip further along +x.
+    const first = chevs[0];
+    expect(first.tipY).toBeCloseTo(500);
+    expect(first.tipX).toBeGreaterThan(first.leftX);
+    expect(first.tipX).toBeGreaterThan(first.rightX);
+    // Last chevron is on the vertical segment, pointing down (+y).
+    const last = chevs[3];
+    expect(last.tipX).toBeCloseTo(500);
+    expect(last.tipY).toBeGreaterThan(last.leftY);
+    // Reversing the points reverses the tips.
+    const rev = flowChevrons([...L].reverse(), PAGE, PAGE, 200, 10);
+    expect(rev[0].tipY).toBeLessThan(rev[0].leftY);
+  });
+
+  test("a degenerate run (all points equal) yields no chevrons", () => {
+    expect(flowChevrons([{ x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }], PAGE, PAGE)).toEqual([]);
+  });
+
+  test("a short run still gets one mid-run chevron", () => {
+    const short = flowChevrons([{ x: 0.5, y: 0.5 }, { x: 0.56, y: 0.5 }], PAGE, PAGE, 220, 13);
+    expect(short).toHaveLength(1);
+    expect(short[0].tipY).toBeCloseTo(500);
   });
 });
 

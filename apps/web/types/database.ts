@@ -772,6 +772,9 @@ export interface Database {
           kind: string;
           utility_type: string | null;
           points: Json | null;
+          line_style: string | null;
+          line_weight: string | null;
+          flow_arrows: boolean | null;
           created_by_key_id: string | null;
           created_by_display_name: string | null;
           created_by_resman_login_hash: string | null;
@@ -800,6 +803,9 @@ export interface Database {
           kind?: string;
           utility_type?: string | null;
           points?: Json | null;
+          line_style?: string | null;
+          line_weight?: string | null;
+          flow_arrows?: boolean | null;
           created_by_key_id?: string | null;
           created_by_display_name?: string | null;
           created_by_resman_login_hash?: string | null;
@@ -828,6 +834,9 @@ export interface Database {
           kind?: string;
           utility_type?: string | null;
           points?: Json | null;
+          line_style?: string | null;
+          line_weight?: string | null;
+          flow_arrows?: boolean | null;
           created_by_key_id?: string | null;
           created_by_display_name?: string | null;
           created_by_resman_login_hash?: string | null;

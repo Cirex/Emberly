@@ -1,8 +1,9 @@
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
 import { GlassSurface } from "@/components/ui/GlassSurface";
-import type { UtilityType } from "@/lib/api/annotations";
+import type { LineStyle, LineWeight, UtilityType } from "@/lib/api/annotations";
 import { UTILITY_COLORS } from "@/lib/utility-lines";
+import { FlowRow, StyleRow, WeightRow } from "@/components/map/UtilityStyleControls";
 
 /** The types offered for drawing; 'other' exists on the wire but isn't drawn here. */
 const DRAW_TYPES = ["water", "sewer", "gas", "electrical"] as const satisfies readonly UtilityType[];
@@ -59,8 +60,15 @@ export function UtilityDrawPill({
   utilityType,
   subMode,
   vertexCount,
+  lineStyle,
+  lineWeight,
+  flowArrows,
   onSelectType,
   onSelectSubMode,
+  onSelectStyle,
+  onSelectWeight,
+  onToggleArrows,
+  onReverse,
   onUndo,
   onDone,
   onCancel,
@@ -69,8 +77,17 @@ export function UtilityDrawPill({
   subMode: UtilityDrawSubMode;
   /** Vertices placed so far on the in-progress line. */
   vertexCount: number;
+  /** Live presentation of the run being drawn (line sub-mode only). */
+  lineStyle: LineStyle;
+  lineWeight: LineWeight;
+  flowArrows: boolean;
   onSelectType: (t: UtilityType) => void;
   onSelectSubMode: (m: UtilityDrawSubMode) => void;
+  onSelectStyle: (s: LineStyle) => void;
+  onSelectWeight: (w: LineWeight) => void;
+  onToggleArrows: (on: boolean) => void;
+  /** Flip the draft's direction (drives the flow chevrons). */
+  onReverse: () => void;
   onUndo: () => void;
   onDone: () => void;
   onCancel: () => void;
@@ -108,6 +125,21 @@ export function UtilityDrawPill({
           ) : null}
           <Chip label={t("utility.cancel")} onPress={onCancel} />
         </View>
+
+        {/* The run's presentation, previewing live on the draft as it's drawn. */}
+        {subMode === "line" ? (
+          <View style={{ gap: 6 }}>
+            <View className="flex-row items-center" style={{ gap: 8 }}>
+              <StyleRow value={lineStyle} color={UTILITY_COLORS[utilityType]} onChange={onSelectStyle} />
+              <WeightRow value={lineWeight} onChange={onSelectWeight} />
+            </View>
+            <FlowRow
+              arrows={flowArrows}
+              onToggle={onToggleArrows}
+              onReverse={vertexCount >= 2 ? onReverse : undefined}
+            />
+          </View>
+        ) : null}
 
         <Text className="text-slate dark:text-white/60" style={{ fontSize: 11, fontWeight: "600" }}>
           {subMode === "line" ? t("utility.lineHint") : t("utility.pinHint")}

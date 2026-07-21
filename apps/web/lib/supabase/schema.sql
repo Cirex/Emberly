@@ -489,6 +489,18 @@ create table if not exists public.map_annotations (
   -- For kind='utility_line': ordered array of {x, y} objects, each normalized
   -- 0..1 against the map image. Null for pin kinds.
   points jsonb,
+  -- Per-run presentation (see migrations/20260721_utility_run_styles.sql),
+  -- only for kind='utility_line'. Null means "type default" so pre-existing
+  -- rows render exactly as before: sewer dashed, gas dotted, others solid,
+  -- medium weight, no arrows. The label rides `title`; direction is the order
+  -- of `points`.
+  line_style text
+    constraint map_annotations_line_style_check
+    check (line_style is null or line_style in ('solid', 'dashed', 'dotted')),
+  line_weight text
+    constraint map_annotations_line_weight_check
+    check (line_weight is null or line_weight in ('thin', 'medium', 'thick')),
+  flow_arrows boolean,
   origin text not null default 'sync'
     constraint map_annotations_origin_check check (origin in ('sync', 'admin', 'scanner')),
   created_by_key_id uuid,

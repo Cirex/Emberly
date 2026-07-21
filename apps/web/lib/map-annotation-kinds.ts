@@ -15,6 +15,19 @@ export type AnnotationKind = (typeof ANNOTATION_KINDS)[number];
 export const UTILITY_TYPES = ["water", "sewer", "gas", "electrical", "other"] as const;
 export type UtilityType = (typeof UTILITY_TYPES)[number];
 
+/**
+ * Per-run presentation for kind='utility_line'. Null means "type default" —
+ * the renderers fall back to the pre-style behavior (sewer dashed, gas
+ * dotted, others solid; medium weight; no arrows), so rows and clients that
+ * predate these fields are unaffected. The run's label rides `title`, and
+ * direction is the order of `points` (reversing a run rewrites the array).
+ */
+export const LINE_STYLES = ["solid", "dashed", "dotted"] as const;
+export type LineStyle = (typeof LINE_STYLES)[number];
+
+export const LINE_WEIGHTS = ["thin", "medium", "thick"] as const;
+export type LineWeight = (typeof LINE_WEIGHTS)[number];
+
 /** One vertex of a drawn utility run, normalized 0..1 to the map image. */
 export const UtilityPointSchema = z.object({
   x: z.number().min(0).max(1),
@@ -35,12 +48,18 @@ export const annotationKindFields = {
   kind: z.enum(ANNOTATION_KINDS).optional().default("pin"),
   utilityType: z.enum(UTILITY_TYPES).nullish(),
   points: z.array(UtilityPointSchema).min(2).max(200).nullish(),
+  lineStyle: z.enum(LINE_STYLES).nullish(),
+  lineWeight: z.enum(LINE_WEIGHTS).nullish(),
+  flowArrows: z.boolean().nullish(),
 };
 
 export interface AnnotationKindInput {
   kind: AnnotationKind;
   utilityType?: UtilityType | null;
   points?: UtilityPoint[] | null;
+  lineStyle?: LineStyle | null;
+  lineWeight?: LineWeight | null;
+  flowArrows?: boolean | null;
 }
 
 /**
@@ -81,5 +100,19 @@ export function validateAnnotationKindFields(data: AnnotationKindInput, ctx: z.R
       path: ["points"],
       message: "points must be null unless kind is 'utility_line'",
     });
+  }
+
+  // Presentation fields are optional on a line (null = type default) but
+  // meaningless on anything else.
+  if (data.kind !== "utility_line") {
+    for (const field of ["lineStyle", "lineWeight", "flowArrows"] as const) {
+      if (data[field] != null) {
+        ctx.addIssue({
+          code: "custom",
+          path: [field],
+          message: `${field} must be null unless kind is 'utility_line'`,
+        });
+      }
+    }
   }
 }

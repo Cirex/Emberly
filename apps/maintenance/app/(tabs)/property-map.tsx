@@ -11,6 +11,7 @@ import { AnnotationEditorDialog } from "@/components/map/AnnotationEditorDialog"
 import { GroupsSheet } from "@/components/map/GroupsSheet";
 import { TagEditorDialog } from "@/components/map/TagEditorDialog";
 import { TourSheet } from "@/components/map/TourSheet";
+import { UtilitiesHub } from "@/components/map/UtilitiesHub";
 import { UtilityAnnotationDialog } from "@/components/map/UtilityAnnotationDialog";
 import { UtilityDrawPill, type UtilityDrawSubMode } from "@/components/map/UtilityDrawPill";
 import { SkiaMapCanvas, type PlaceMode } from "@/components/map/SkiaMapCanvas";
@@ -19,8 +20,9 @@ import { useMapSearch } from "@/lib/stores/map-search";
 import { GlassSurface } from "@/components/ui/GlassSurface";
 import { AppStatusBadge } from "@emberly/ui";
 import type { ResmanUnit } from "@/lib/api/units";
-import type { UtilityPoint, UtilityType } from "@/lib/api/annotations";
-import { UTILITY_COLORS } from "@/lib/utility-lines";
+import type { LineStyle, LineWeight, UtilityPoint, UtilityType } from "@/lib/api/annotations";
+import { UTILITY_COLORS, effectiveLineStyle } from "@/lib/utility-lines";
+import { useUtilityVisibility } from "@/lib/stores/utility-visibility";
 import { buildColorMap, buildGroupPaint, legendFor, occupancyGroup, unitMatchesSearch } from "@emberly/core";
 import { isNight } from "@/lib/map-daynight";
 import { PLACED_UNITS, UNIT_COUNT } from "@/lib/map-data";
@@ -81,8 +83,21 @@ export default function PropertyMapScreen() {
   const [utilityType, setUtilityType] = useState<UtilityType>("water");
   const [utilitySub, setUtilitySub] = useState<UtilityDrawSubMode>("line");
   const [draftPoints, setDraftPoints] = useState<UtilityPoint[]>([]);
-  // An existing utility pin/run tapped on the map — opens the action dialog.
+  // The presentation of the run being drawn, previewed live on the draft.
+  // Picking a type re-seeds the style with that type's historical default
+  // (sewer dashed, gas dotted, others solid); the user can override after.
+  const [draftStyle, setDraftStyle] = useState<LineStyle>("solid");
+  const [draftWeight, setDraftWeight] = useState<LineWeight>("medium");
+  const [draftArrows, setDraftArrows] = useState(false);
+  const pickUtilityType = (type: UtilityType) => {
+    setUtilityType(type);
+    setDraftStyle(effectiveLineStyle({ utilityType: type }));
+  };
+  // An existing utility pin/run tapped on the map — opens the inspector.
   const [utilityActionId, setUtilityActionId] = useState<string | undefined>();
+  // The Utilities hub sheet (inventory of runs, per-device visibility).
+  const [utilityHubOpen, setUtilityHubOpen] = useState(false);
+  const hiddenRunIds = useUtilityVisibility((s) => s.hiddenIds);
   // Tour Mode (TourRoute.swift): while armed, unit taps toggle stops instead
   // of opening the tooltip. Device-local store, hydrated by zustand persist.
   const tour = useTour();
@@ -127,12 +142,17 @@ export default function PropertyMapScreen() {
   // map should not show a pin the guard already deleted. With the utility
   // layer toggled off (Settings · Map), the canvas gets no utility rows at
   // all: nothing drawn, nothing tappable.
+  // Per-run hidden flags are a device-local viewing choice: a hidden run is
+  // neither drawn nor tappable here, but stays untouched on the sync channel.
   const visibleAnnotations = useMemo(
     () =>
       ann.annotations.filter(
-        (a) => !a.removed && (utilityVisible || (a.kind ?? "pin") === "pin"),
+        (a) =>
+          !a.removed &&
+          (utilityVisible || (a.kind ?? "pin") === "pin") &&
+          !(a.kind === "utility_line" && hiddenRunIds.includes(a.id)),
       ),
-    [ann.annotations, utilityVisible],
+    [ann.annotations, utilityVisible, hiddenRunIds],
   );
 
   // Filter color groups take precedence over the single occupancy tint when
@@ -295,7 +315,12 @@ export default function PropertyMapScreen() {
   };
   const finishUtilityLine = () => {
     if (draftPoints.length >= 2) {
-      const c = ann.addUtilityLine(draftPoints, utilityType);
+      const c = ann.addUtilityLine(draftPoints, utilityType, {
+        lineStyle: draftStyle,
+        lineWeight: draftWeight,
+        // False stays absent so the payload carries null, not a stored false.
+        flowArrows: draftArrows || undefined,
+      });
       capture("map_annotation_created", { kind: c.kind });
     }
     setDraftPoints([]);
@@ -411,7 +436,13 @@ export default function PropertyMapScreen() {
           }
           utilityDraft={
             placeMode === "utility" && utilitySub === "line" && draftPoints.length > 0
-              ? { points: draftPoints, color: UTILITY_COLORS[utilityType] }
+              ? {
+                  points: draftPoints,
+                  color: UTILITY_COLORS[utilityType],
+                  style: draftStyle,
+                  weight: draftWeight,
+                  arrows: draftArrows,
+                }
               : undefined
           }
           onSelect={onSelectUnit}
@@ -474,8 +505,8 @@ export default function PropertyMapScreen() {
               />
               <StackBtn
                 icon="construct-outline"
-                active={placeMode === "utility"}
-                onPress={() => toggleMode("utility")}
+                active={placeMode === "utility" || utilityHubOpen}
+                onPress={() => setUtilityHubOpen(true)}
                 label={t("utility.title")}
                 disabled={!utilityVisible}
               />
@@ -523,11 +554,18 @@ export default function PropertyMapScreen() {
             utilityType={utilityType}
             subMode={utilitySub}
             vertexCount={draftPoints.length}
-            onSelectType={setUtilityType}
+            lineStyle={draftStyle}
+            lineWeight={draftWeight}
+            flowArrows={draftArrows}
+            onSelectType={pickUtilityType}
             onSelectSubMode={(m) => {
               setUtilitySub(m);
               setDraftPoints([]);
             }}
+            onSelectStyle={setDraftStyle}
+            onSelectWeight={setDraftWeight}
+            onToggleArrows={setDraftArrows}
+            onReverse={() => setDraftPoints((prev) => [...prev].reverse())}
             onUndo={() => setDraftPoints((prev) => prev.slice(0, -1))}
             onDone={finishUtilityLine}
             onCancel={cancelUtilityDraw}
@@ -558,6 +596,30 @@ export default function PropertyMapScreen() {
       {editing ? (
         <AnnotationEditorDialog annotation={editing} onClose={() => setEditingId(undefined)} />
       ) : null}
+
+      <UtilitiesHub
+        visible={utilityHubOpen}
+        onClose={() => setUtilityHubOpen(false)}
+        onDrawRun={() => {
+          setUtilityHubOpen(false);
+          clearOverlays();
+          setDraftPoints([]);
+          setUtilitySub("line");
+          setPlaceMode("utility");
+        }}
+        onDropPin={() => {
+          setUtilityHubOpen(false);
+          clearOverlays();
+          setDraftPoints([]);
+          setUtilitySub("pin");
+          setPlaceMode("utility");
+        }}
+        onSelectRun={(id) => {
+          setUtilityHubOpen(false);
+          clearOverlays();
+          setUtilityActionId(id);
+        }}
+      />
 
       {utilityAction ? (
         <UtilityAnnotationDialog annotation={utilityAction} onClose={() => setUtilityActionId(undefined)} />

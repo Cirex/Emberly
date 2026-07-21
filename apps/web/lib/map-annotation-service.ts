@@ -7,7 +7,14 @@
  * and an audit row per mutation.
  */
 import type { Database, Json } from "../types/database";
-import { isUtilityKind, type AnnotationKind, type UtilityPoint, type UtilityType } from "./map-annotation-kinds";
+import {
+  isUtilityKind,
+  type AnnotationKind,
+  type LineStyle,
+  type LineWeight,
+  type UtilityPoint,
+  type UtilityType,
+} from "./map-annotation-kinds";
 import { buildAnnotationResponse, type AnnotationRow } from "./map-annotations";
 import { MAP_ANNOTATIONS_FEATURE_KEY } from "./map-sync";
 import type { UntypedSupabase } from "./supabase/types";
@@ -66,12 +73,16 @@ export interface LayeredAnnotationInput {
   kind?: AnnotationKind;
   utilityType?: UtilityType | null;
   points?: UtilityPoint[] | null;
+  /** Per-run presentation, utility_line only; null = type default. */
+  lineStyle?: LineStyle | null;
+  lineWeight?: LineWeight | null;
+  flowArrows?: boolean | null;
 }
 
 type LayeredRow = AnnotationRow & { layer: string; origin: string; icon: string };
 
 const SELECT =
-  "id, title, notes, normalized_x, normalized_y, color_hex, kind, utility_type, points, icon, layer, origin, created_by_display_name, created_at, updated_at, deleted_at, version";
+  "id, title, notes, normalized_x, normalized_y, color_hex, kind, utility_type, points, line_style, line_weight, flow_arrows, icon, layer, origin, created_by_display_name, created_at, updated_at, deleted_at, version";
 
 export function serializeLayeredAnnotation(row: LayeredRow) {
   return { ...buildAnnotationResponse(row), layer: row.layer, origin: row.origin, icon: row.icon };
@@ -130,6 +141,9 @@ export async function createLayeredAnnotation(
     kind,
     utility_type: input.utilityType ?? null,
     points: (input.points ?? null) as Json,
+    line_style: input.lineStyle ?? null,
+    line_weight: input.lineWeight ?? null,
+    flow_arrows: input.flowArrows ?? null,
     icon: input.icon?.trim() || "document-text",
     created_by_key_id: null,
     created_by_display_name: actor.displayName,
@@ -188,6 +202,9 @@ export async function updateLayeredAnnotation(
         kind,
         utility_type: input.utilityType ?? null,
         points: (input.points ?? null) as Json,
+        line_style: input.lineStyle ?? null,
+        line_weight: input.lineWeight ?? null,
+        flow_arrows: input.flowArrows ?? null,
         // A row updated to a utility kind must sit on the shared 'utility'
         // layer; plain-pin updates leave the layer untouched.
         ...(isUtilityKind(kind) ? { layer: "utility" } : {}),

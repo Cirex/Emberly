@@ -17,6 +17,18 @@ export type AnnotationKind = (typeof ANNOTATION_KINDS)[number];
 export const UTILITY_TYPES = ["water", "sewer", "gas", "electrical", "other"] as const;
 export type UtilityType = (typeof UTILITY_TYPES)[number];
 
+/**
+ * Per-run presentation for kind 'utility_line'. Null means "type default":
+ * the canvas falls back to the pre-style rendering (sewer dashed, gas dotted,
+ * others solid; medium weight; no arrows). The run's label rides `title`, and
+ * direction is the order of `points` — reversing a run rewrites the array.
+ */
+export const LINE_STYLES = ["solid", "dashed", "dotted"] as const;
+export type LineStyle = (typeof LINE_STYLES)[number];
+
+export const LINE_WEIGHTS = ["thin", "medium", "thick"] as const;
+export type LineWeight = (typeof LINE_WEIGHTS)[number];
+
 /** One vertex of a drawn utility run, normalized 0–1 to the map page. */
 export interface UtilityPoint {
   x: number;
@@ -39,6 +51,9 @@ export const RemoteAnnotationSchema = z.object({
   kind: z.enum(ANNOTATION_KINDS).catch("pin"),
   utilityType: z.enum(UTILITY_TYPES).nullable().catch(null),
   points: z.array(UtilityPointSchema).nullable().catch(null),
+  lineStyle: z.enum(LINE_STYLES).nullable().catch(null),
+  lineWeight: z.enum(LINE_WEIGHTS).nullable().catch(null),
+  flowArrows: z.boolean().nullable().catch(null),
   createdByDisplayName: z.string().nullable(),
   updatedAt: z.string().nullable(),
   deletedAt: z.string().nullable(),
@@ -77,6 +92,10 @@ export interface AnnotationFields {
   utilityType: UtilityType | null;
   /** 2–200 vertices, only for kind 'utility_line'; null otherwise. */
   points: UtilityPoint[] | null;
+  /** Per-run presentation; only for kind 'utility_line', null elsewhere. */
+  lineStyle: LineStyle | null;
+  lineWeight: LineWeight | null;
+  flowArrows: boolean | null;
 }
 
 export async function createAnnotation(

@@ -2,10 +2,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useShallow } from "zustand/react/shallow";
 import { LinearGradient } from "expo-linear-gradient";
 import { useColorScheme } from "nativewind";
+import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnnotationEditorDialog } from "@/components/map/AnnotationEditorDialog";
+import { GroupsSheet } from "@/components/map/GroupsSheet";
 import { TagEditorDialog } from "@/components/map/TagEditorDialog";
 import { TourSheet } from "@/components/map/TourSheet";
 import { SkiaMapCanvas, type PlaceMode } from "@/components/map/SkiaMapCanvas";
@@ -14,11 +16,12 @@ import { useMapSearch } from "@/lib/stores/map-search";
 import { GlassSurface } from "@/components/ui/GlassSurface";
 import { AppStatusBadge } from "@emberly/ui";
 import type { ResmanUnit } from "@/lib/api/units";
-import { buildColorMap, legendFor, occupancyGroup, unitMatchesSearch } from "@emberly/core";
+import { buildColorMap, buildGroupPaint, legendFor, occupancyGroup, unitMatchesSearch } from "@emberly/core";
 import { isNight } from "@/lib/map-daynight";
 import { PLACED_UNITS, UNIT_COUNT } from "@/lib/map-data";
 import { useAnnotationPhotos } from "@/lib/stores/annotation-photos";
 import { useAnnotations } from "@/lib/stores/annotations";
+import { useMapGroups } from "@/lib/stores/map-groups";
 import { useConfig } from "@/lib/stores/config";
 import { useMapJump } from "@emberly/ui";
 import { useSettings } from "@/lib/stores/settings";
@@ -41,6 +44,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), h
 export default function PropertyMapScreen() {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const darkScheme = useColorScheme().colorScheme === "dark";
   const config = useConfig();
   // Select only what the map reads from the units store. It writes on every 60s
@@ -110,13 +114,32 @@ export default function PropertyMapScreen() {
   // map should not show a pin the guard already deleted.
   const visibleAnnotations = useMemo(() => ann.annotations.filter((a) => !a.removed), [ann.annotations]);
 
+  // Filter color groups take precedence over the single occupancy tint when
+  // enabled; the tint survives as the fallback mode (and as prebuilt groups).
+  const groupsEnabled = useMapGroups((s) => s.enabled);
+  const groups = useMapGroups((s) => s.groups);
+  const [groupsSheetOpen, setGroupsSheetOpen] = useState(false);
+  const groupPaint = useMemo(
+    () => buildGroupPaint(groups, units.allUnits, Date.now()),
+    [groups, units.allUnits],
+  );
   const colorMap = useMemo(
-    () => (occupancyTint ? buildColorMap("occupancy", units.allUnits) : new Map()),
-    [occupancyTint, units.allUnits],
+    () =>
+      groupsEnabled
+        ? groupPaint.colorMap
+        : occupancyTint
+          ? buildColorMap("occupancy", units.allUnits)
+          : new Map(),
+    [groupsEnabled, groupPaint, occupancyTint, units.allUnits],
   );
   const legend = useMemo(
-    () => (occupancyTint ? legendFor("occupancy", units.allUnits) : []),
-    [occupancyTint, units.allUnits],
+    () =>
+      groupsEnabled
+        ? groups.filter((g) => g.visible).map((g) => ({ label: g.name, color: g.colorHex }))
+        : occupancyTint
+          ? legendFor("occupancy", units.allUnits)
+          : [],
+    [groupsEnabled, groups, occupancyTint, units.allUnits],
   );
   // Search the synced ResMan record (unit number + street + tenant names), not
   // just the map's bare number — so "kingsgate" or a resident's name finds the
@@ -360,9 +383,19 @@ export default function PropertyMapScreen() {
               <StackBtn
                 icon="people-outline"
                 first
-                active={occupancyTint}
+                active={occupancyTint && !groupsEnabled}
                 onPress={() => setOccupancyTint(!occupancyTint)}
                 label="Occupancy tint"
+                disabled={!hasData || groupsEnabled}
+              />
+              <StackBtn
+                icon="color-filter-outline"
+                active={groupsEnabled}
+                onPress={() => {
+                  if (!groupsEnabled) useMapGroups.getState().setEnabled(true);
+                  setGroupsSheetOpen(true);
+                }}
+                label={t("mapGroups.groupsButton")}
                 disabled={!hasData}
               />
               <StackBtn
@@ -408,7 +441,7 @@ export default function PropertyMapScreen() {
       </View>
 
       {/* Legend — quiet glass card, bottom-left, only while the tint is on. */}
-      {hasData && occupancyTint && !hasQuery && placeMode === "none" ? (
+      {hasData && (occupancyTint || groupsEnabled) && legend.length > 0 && !hasQuery && placeMode === "none" ? (
         <View pointerEvents="none" style={{ position: "absolute", left: hPad, bottom: insets.bottom + 118 }}>
           <GlassSurface radius={14}>
             <View style={{ paddingHorizontal: 12, paddingVertical: 9, gap: 6 }}>
@@ -424,6 +457,8 @@ export default function PropertyMapScreen() {
           </GlassSurface>
         </View>
       ) : null}
+
+      <GroupsSheet visible={groupsSheetOpen} counts={groupPaint.counts} onClose={() => setGroupsSheetOpen(false)} />
 
       {editing ? (
         <AnnotationEditorDialog annotation={editing} onClose={() => setEditingId(undefined)} />

@@ -6,4 +6,5 @@ export * from "./colors";
 export * from "./resman-sync";
 export * from "./tokens";
 export * from "./map-color";
+export * from "./map-groups";
 export * from "./unit-search";

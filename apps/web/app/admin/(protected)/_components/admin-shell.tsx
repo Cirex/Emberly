@@ -36,6 +36,7 @@ const navGroups: Array<{
     items: [
       { href: "/admin/units", label: "Units", icon: "building" },
       { href: "/admin/work-orders", label: "Work Orders", icon: "wrench" },
+      { href: "/admin/pm", label: "Preventive", icon: "wrench" },
       { href: "/admin/property-map", label: "Property Map", icon: "map" },
     ],
   },

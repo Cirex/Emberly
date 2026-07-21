@@ -9,7 +9,7 @@ import type {
   UtilityPayment,
   UtilityUnitFacts,
 } from "@/lib/admin-utilities";
-import { chargeSegmentsOf, newChargesOf } from "@/lib/admin-utilities";
+import { chargeSegmentsOf } from "@/lib/admin-utilities";
 import { HistoryChart } from "./charts";
 import { MicroLabel, NUM, Panel, Pill, SEGMENT_FILL, SEGMENT_INK, Strip, T, money, shortDate } from "./ui";
 
@@ -49,7 +49,14 @@ export function DetailSheet({
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Lock the page scroll behind the sheet — otherwise wheel momentum keeps
+    // scrolling the dashboard underneath the dimmed overlay.
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+    };
   }, [onClose]);
 
   const historyAsc = detail.bills
@@ -105,12 +112,16 @@ export function DetailSheet({
                 href={`/api/admin/utilities/invoice/${encodeURIComponent(current.id)}`}
                 target="_blank"
                 rel="noreferrer"
+                title="Open the bill PDF in a new tab"
                 style={{ display: "inline-block", marginTop: 5, fontSize: 10.5, fontWeight: 800, color: "#fff", background: T.navy, borderRadius: 999, padding: "6px 13px", textDecoration: "none" }}
               >
                 🧾 Open Invoice
               </a>
             ) : (
-              <span style={{ display: "inline-block", marginTop: 5, fontSize: 10.5, fontWeight: 800, color: T.muted, background: T.wash, borderRadius: 999, padding: "6px 13px" }}>
+              <span
+                title="MLGW published no PDF for this bill"
+                style={{ display: "inline-block", marginTop: 5, fontSize: 10.5, fontWeight: 800, color: T.muted, background: T.wash, borderRadius: 999, padding: "6px 13px" }}
+              >
                 🧾 No invoice file
               </span>
             )}
@@ -217,8 +228,14 @@ export function DetailSheet({
                   </tr>
                 </thead>
                 <tbody>
-                  {detail.tree.map((node) => (
-                    <LedgerRow key={node.bill.id} node={node} moveIn={detail.unit?.move_in_date ?? null} moveOut={detail.unit?.move_out_date ?? null} />
+                  {detail.tree.map((node, i) => (
+                    <LedgerRow
+                      key={node.bill.id}
+                      node={node}
+                      moveIn={detail.unit?.move_in_date ?? null}
+                      moveOut={detail.unit?.move_out_date ?? null}
+                      last={i === detail.tree.length - 1}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -236,7 +253,7 @@ export function DetailSheet({
               ]}
             />
             <div style={{ position: "relative", paddingLeft: 26 }}>
-              <span style={{ content: '""', position: "absolute", left: 8, top: 8, bottom: 8, width: 1.5, background: T.line }} />
+              <span style={{ position: "absolute", left: 8, top: 8, bottom: 8, width: 1.5, background: T.line }} />
               {detail.tree.map((node) => (
                 <TreeNode key={node.bill.id} node={node} selected={node.bill.id === current?.id} />
               ))}
@@ -336,17 +353,28 @@ function Field({ k, v }: { k: string; v: string }) {
   );
 }
 
-function LedgerRow({ node, moveIn, moveOut }: { node: LedgerTreeNode; moveIn: string | null; moveOut: string | null }) {
+function LedgerRow({
+  node,
+  moveIn,
+  moveOut,
+  last,
+}: {
+  node: LedgerTreeNode;
+  moveIn: string | null;
+  moveOut: string | null;
+  last: boolean;
+}) {
   const b = node.bill;
   const after = !!moveIn && !!b.bill_date && b.bill_date > moveIn && (!moveOut || moveOut > b.bill_date);
+  const border = last ? "none" : `1px solid ${T.line}`;
   const cell = (v: number | null, key: string): React.ReactNode => (
-    <td style={{ padding: 10, borderBottom: `1px solid ${T.line}`, textAlign: "right", fontWeight: 700, color: v ? SEGMENT_INK[key] ?? T.ink : T.muted, ...NUM }}>
+    <td style={{ padding: 10, borderBottom: border, textAlign: "right", fontWeight: 700, color: v ? SEGMENT_INK[key] ?? T.ink : T.muted, ...NUM }}>
       {v ? money(v) : "–"}
     </td>
   );
   return (
     <tr style={b.is_current ? { background: "rgba(180,181,58,0.06)" } : undefined}>
-      <td style={{ padding: 10, borderBottom: `1px solid ${T.line}`, borderLeft: b.is_current ? `3px solid ${T.accent}` : undefined }}>
+      <td style={{ padding: 10, borderBottom: border, borderLeft: b.is_current ? `3px solid ${T.accent}` : undefined }}>
         <Pill tone={b.is_current ? "current" : "archived"}>{b.is_current ? "Current" : "Archived"}</Pill>
         <b style={{ marginLeft: 6, color: T.ink, ...NUM }}>{shortDate(b.bill_date)}</b>
         {after ? (
@@ -359,11 +387,20 @@ function LedgerRow({ node, moveIn, moveOut }: { node: LedgerTreeNode; moveIn: st
       {cell(b.gas_total, "gas")}
       {cell(b.other_mlgw_total, "other")}
       {cell(b.non_mlgw_total, "nonmlgw")}
-      <td style={{ padding: 10, borderBottom: `1px solid ${T.line}` }}>
+      <td style={{ padding: 10, borderBottom: border }}>
         {b.file_path ? (
-          <a href={`/api/admin/utilities/invoice/${encodeURIComponent(b.id)}`} target="_blank" rel="noreferrer" aria-label="Open invoice">🧾</a>
+          <a
+            href={`/api/admin/utilities/invoice/${encodeURIComponent(b.id)}`}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open invoice"
+            title="Open the bill PDF in a new tab"
+            style={{ textDecoration: "none" }}
+          >
+            🧾
+          </a>
         ) : (
-          <span style={{ opacity: 0.35 }}>🧾</span>
+          <span style={{ opacity: 0.35 }} title="MLGW published no PDF for this bill">🧾</span>
         )}
       </td>
     </tr>

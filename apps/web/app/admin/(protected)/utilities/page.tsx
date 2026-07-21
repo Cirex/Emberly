@@ -43,6 +43,21 @@ function spendGoal(): number | null {
   return Number.isFinite(raw) && raw > 0 ? raw : null;
 }
 
+/** PostgREST caps unbounded selects at 1000 rows; page the full mirror out. */
+const PAGE = 1000;
+async function fetchAll<T>(
+  query: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const res = await query(from, from + PAGE - 1);
+    if (res.error) throw new Error(res.error.message);
+    const page = (res.data ?? []) as T[];
+    rows.push(...page);
+    if (page.length < PAGE) return rows;
+  }
+}
+
 export default async function UtilitiesPage() {
   const client = createUntypedAdminClient();
   const nowMs = Date.now();
@@ -50,23 +65,21 @@ export default async function UtilitiesPage() {
   let payload: UtilitiesPayload | null = null;
   let initialError = "";
   try {
-    const [accountsRes, billsRes, paymentsRes, reviewsRes] = await Promise.all([
-      client.from("mlgw_accounts").select(ACCOUNT_COLUMNS).order("account_number"),
-      client.from("mlgw_bills").select(BILL_COLUMNS).order("bill_date", { ascending: false }),
-      client.from("mlgw_payments").select(PAYMENT_COLUMNS).order("paid_date", { ascending: false }),
-      client.from("mlgw_exception_reviews").select("bill_id, exception_kind"),
-    ]);
-    for (const res of [accountsRes, billsRes, paymentsRes, reviewsRes]) {
-      if (res.error) throw new Error(res.error.message);
-    }
-    const accounts = (accountsRes.data ?? []) as UtilityAccount[];
-    const bills = (billsRes.data ?? []) as UtilityBill[];
-    const payments = (paymentsRes.data ?? []) as UtilityPayment[];
-    const reviewedKeys = new Set(
-      ((reviewsRes.data ?? []) as { bill_id: string; exception_kind: string }[]).map(
-        (r) => `${r.bill_id}|${r.exception_kind}`,
+    const [accounts, bills, payments, reviews] = await Promise.all([
+      fetchAll<UtilityAccount>((from, to) =>
+        client.from("mlgw_accounts").select(ACCOUNT_COLUMNS).order("account_number").order("id").range(from, to),
       ),
-    );
+      fetchAll<UtilityBill>((from, to) =>
+        client.from("mlgw_bills").select(BILL_COLUMNS).order("bill_date", { ascending: false }).order("id").range(from, to),
+      ),
+      fetchAll<UtilityPayment>((from, to) =>
+        client.from("mlgw_payments").select(PAYMENT_COLUMNS).order("paid_date", { ascending: false }).order("id").range(from, to),
+      ),
+      fetchAll<{ bill_id: string; exception_kind: string }>((from, to) =>
+        client.from("mlgw_exception_reviews").select("bill_id, exception_kind").order("bill_id").range(from, to),
+      ),
+    ]);
+    const reviewedKeys = new Set(reviews.map((r) => `${r.bill_id}|${r.exception_kind}`));
 
     // Occupancy overlay: only the units MLGW accounts actually reference.
     const unitIds = [...new Set(accounts.map((a) => a.resman_unit_id).filter(Boolean))];

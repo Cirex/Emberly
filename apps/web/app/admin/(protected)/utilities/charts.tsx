@@ -180,7 +180,9 @@ export function HistoryChart({
     if (idx > 0) moveX = (x(idx - 1) + x(idx)) / 2;
     else if (idx === 0) moveX = left + 4;
   }
-  const gridVals = [max, (max + min) / 2, min > 0 ? min : (max + min) / 4];
+  // Dedupe: with a flat history (every bill the same amount) max, mid, and min
+  // collapse to one value — duplicate keys and stacked labels otherwise.
+  const gridVals = [...new Set([max, (max + min) / 2, min > 0 ? min : (max + min) / 4])];
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="Bill amount history">

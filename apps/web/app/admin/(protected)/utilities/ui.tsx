@@ -177,11 +177,13 @@ export function Callout({
   /** Horizontal anchor within the relative parent, 0–100. */
   leftPct: number;
 }) {
-  const clamped = Math.min(Math.max(leftPct, 12), 88);
+  // px-aware clamp: keep the 240px card inside the positioned parent even when
+  // the anchor sits near an edge (a % clamp alone still overflows narrow bars).
+  const left = `clamp(124px, ${leftPct}%, calc(100% - 124px))`;
   return (
     <div
       style={{
-        position: "absolute", bottom: "calc(100% + 8px)", left: `${clamped}%`, transform: "translateX(-50%)",
+        position: "absolute", bottom: "calc(100% + 8px)", left, transform: "translateX(-50%)",
         zIndex: 30, width: 240, background: "#fff", border: `1px solid ${T.line}`, borderRadius: 12,
         boxShadow: "0 14px 34px rgba(27,37,95,0.22)", padding: 12, pointerEvents: "none",
       }}

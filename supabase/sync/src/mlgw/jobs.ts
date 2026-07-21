@@ -13,7 +13,8 @@
  * from a PDF will surface a clear "not implemented" error at runtime.
  */
 import { upsertMirror, type ServiceClient } from "../db/client";
-import { downloadBillsInBackground, downloadPaymentsInBackground } from "./download";
+import { downloadBillsInBackground, downloadPaymentsInBackground, SupabaseStorageBillFileStore } from "./download";
+import type { BillFileStore } from "./download";
 import { billSummaries, buildBillDTO, parseDownloadedBills, toAccountRow, toBillRow, toPaymentRow, uniqueParsedBills } from "./parse";
 import type { MLGWSyncProperty, MlgwAccountRow, MlgwBillRow, MlgwPaymentRow } from "./types";
 
@@ -30,6 +31,8 @@ export interface SyncMlgwBillsParams {
   credentials: MlgwCredentials;
   workerCount?: number;
   log?: (message: string) => void;
+  /** Byte sink for downloaded invoices (default: the `mlgw-bills` storage bucket). */
+  fileStore?: BillFileStore;
 }
 
 export interface SyncMlgwBillsResult {
@@ -50,6 +53,9 @@ export async function syncMlgwBills(params: SyncMlgwBillsParams): Promise<SyncMl
     password: credentials.password,
     backgroundSyncWorkerCount: params.workerCount,
     progress: log,
+    // Persist invoice PDFs to storage so the admin portal can serve them; the
+    // in-memory default would silently drop the bytes after the run.
+    fileStore: params.fileStore ?? new SupabaseStorageBillFileStore(supabase, undefined, log),
   });
 
   const parsed = uniqueParsedBills(await parseDownloadedBills(result.downloadedBills));

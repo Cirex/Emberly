@@ -9,6 +9,7 @@
 export * from "./logging";
 export * from "./filenames";
 export * from "./file-store";
+export * from "./supabase-file-store";
 export * from "./document-resolver";
 export * from "./targets";
 export * from "./page-loader";

@@ -489,7 +489,7 @@ create table if not exists public.map_annotations (
   -- For kind='utility_line': ordered array of {x, y} objects, each normalized
   -- 0..1 against the map image. Null for pin kinds.
   points jsonb,
-  -- Per-run presentation (see migrations/20260721_utility_run_styles.sql),
+  -- Per-run presentation (see deltas/2026-07-21-utility-run-styles.sql),
   -- only for kind='utility_line'. Null means "type default" so pre-existing
   -- rows render exactly as before: sewer dashed, gas dotted, others solid,
   -- medium weight, no arrows. The label rides `title`; direction is the order

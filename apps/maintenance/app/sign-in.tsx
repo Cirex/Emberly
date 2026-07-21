@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { EmberlyBrandLogo } from "@emberly/ui";
 import { capture, identify } from "@/lib/analytics";
 import { signInWithResman } from "@/lib/api/auth";
+import { registerForEmergencyPush } from "@/lib/push";
 import { useConfig } from "@/lib/stores/config";
 
 const REVEAL_HIT_WIDTH = 24;
@@ -61,6 +62,9 @@ export default function SignIn() {
     // name/PII), then record the sign-in with just their role.
     identify(result.admin.adminId, { role: result.admin.role });
     capture("signed_in", { role: result.admin.role });
+    // Fire-and-forget: ties this device to the new session for emergency
+    // pushes. Idempotent — the tabs layout retries it on mount anyway.
+    void registerForEmergencyPush({ baseUrl: config.baseUrl, token: result.token });
     setBusy(false);
     // Switching users returns where it came from; the first-run gate has
     // nowhere to go back to, so hand off to the tabs the root layout just added.

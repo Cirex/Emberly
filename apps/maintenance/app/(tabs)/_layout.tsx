@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { AppState } from "react-native";
 import { FloatingTabBar } from "@/components/ui/FloatingTabBar";
+import { registerForEmergencyPush } from "@/lib/push";
 import { useAnnotationPhotos } from "@/lib/stores/annotation-photos";
 import { useAnnotations } from "@/lib/stores/annotations";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
@@ -70,6 +71,11 @@ function useServerSync() {
     if (useUnits.getState().allUnits.length === 0) {
       void useUnits.getState().loadAll(config);
     }
+
+    // Emergency push registration for a device already signed in at launch.
+    // Cheap and guarded once-per-session internally, so re-running the effect
+    // (or the sign-in screen having just registered) costs nothing.
+    void registerForEmergencyPush(config);
 
     tick();
     const interval = setInterval(tick, REFRESH_MS);

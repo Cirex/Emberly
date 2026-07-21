@@ -6,6 +6,7 @@ import Constants from "expo-constants";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import { capture, resetAnalytics } from "@/lib/analytics";
 import type { AppLanguage } from "@/lib/i18n";
+import { registerForEmergencyPush, unregisterEmergencyPush } from "@/lib/push";
 import { useConfig } from "@/lib/stores/config";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { useSettings } from "@/lib/stores/settings";
@@ -183,11 +184,22 @@ export default function Settings() {
     setSyncBusy(false);
   };
 
+  const onToggleEmergencyAlerts = (next: boolean) => {
+    settings.setEmergencyAlerts(next);
+    // Fire-and-forget: both calls warn internally and never throw.
+    const config = { baseUrl, token };
+    if (next) void registerForEmergencyPush(config);
+    else void unregisterEmergencyPush(config);
+  };
+
   const onSignOut = async () => {
     // Record the sign-out while still identified, then clear the identity so
     // later events aren't attributed to this staff member.
     capture("signed_out");
     resetAnalytics();
+    // Stop emergency pushes for this device while the token still
+    // authenticates the DELETE — after signOut it couldn't.
+    await unregisterEmergencyPush({ baseUrl, token });
     await signOut();
     // The root layout's guard drops the tabs; land on the sign-in gate.
     router.replace("/sign-in");
@@ -282,6 +294,9 @@ export default function Settings() {
       <AppCardSurface kind="panel" style={{ paddingHorizontal: 18, paddingVertical: 4 }}>
         <Row label={t("settings.friendlyDates")} sub={t("settings.friendlyDatesSub")}>
           <Toggle value={settings.humanReadableDates} onChange={settings.setHumanReadableDates} />
+        </Row>
+        <Row label={t("settings.emergencyAlerts")} sub={t("settings.emergencyAlertsSub")}>
+          <Toggle value={settings.emergencyAlerts} onChange={onToggleEmergencyAlerts} />
         </Row>
       </AppCardSurface>
 

@@ -23,12 +23,15 @@ interface SettingsState {
   mapOccupancyTint: boolean;
   /** Utility layer (pins + drawn runs) on the property map — on by default. */
   utilityLayerVisible: boolean;
+  /** Emergency work-order push notifications — on by default. */
+  emergencyAlerts: boolean;
   setThemePreference: (t: AppThemePreference) => void;
   setAccent: (a: AccentThemeId) => void;
   setHumanReadableDates: (v: boolean) => void;
   setFieldMode: (v: boolean) => void;
   setMapOccupancyTint: (v: boolean) => void;
   setUtilityLayerVisible: (v: boolean) => void;
+  setEmergencyAlerts: (v: boolean) => void;
   setLanguage: (l: AppLanguage) => void;
 }
 
@@ -42,12 +45,14 @@ export const useSettings = create<SettingsState>()(
       fieldMode: false,
       mapOccupancyTint: false,
       utilityLayerVisible: true,
+      emergencyAlerts: true,
       setThemePreference: (themePreference) => set({ themePreference }),
       setAccent: (accentId) => set({ accentId }),
       setHumanReadableDates: (humanReadableDates) => set({ humanReadableDates }),
       setFieldMode: (fieldMode) => set({ fieldMode }),
       setMapOccupancyTint: (mapOccupancyTint) => set({ mapOccupancyTint }),
       setUtilityLayerVisible: (utilityLayerVisible) => set({ utilityLayerVisible }),
+      setEmergencyAlerts: (emergencyAlerts) => set({ emergencyAlerts }),
       setLanguage: (language) => {
         changeAppLanguage(language);
         set({ language });

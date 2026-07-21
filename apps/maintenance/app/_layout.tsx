@@ -17,6 +17,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { PostHogProvider } from "posthog-react-native";
 import { WorkspaceBackdrop } from "@/components/ui/WorkspaceBackdrop";
 import { posthog } from "@/lib/analytics";
+import { useEmergencyNotificationResponses } from "@/lib/push";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
 import { useSettings } from "@/lib/stores/settings";
 import { accentVars } from "@/theme/tokens";
@@ -58,6 +59,11 @@ function RootLayout() {
   useEffect(() => {
     if (!hydrated) void hydrate();
   }, [hydrated, hydrate]);
+
+  // Emergency push taps → the announced work order. Gated on the same
+  // condition that mounts the protected stack: navigating any earlier (cold
+  // start from a killed app) would push before the route exists.
+  useEmergencyNotificationResponses(hydrated && signedIn);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

@@ -238,3 +238,55 @@ export function buildHotSpotRows(input: {
   });
   return rows;
 }
+
+// ── Trend helpers (Hot Spots full-screen redesign) ──────────────────────────
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Weekly ticket counts for one hot-spot row's recent detail — the per-unit
+ * sparkline. `weeks` buckets ending at `nowMs`, oldest first.
+ */
+export function hotSpotSparkline(row: HotSpotRow, nowMs: number, weeks = 6): number[] {
+  const buckets = new Array<number>(weeks).fill(0);
+  const start = nowMs - weeks * WEEK_MS;
+  for (const wo of row.detail) {
+    if (wo.reportedAt === null || wo.reportedAt < start || wo.reportedAt > nowMs) continue;
+    const idx = Math.min(weeks - 1, Math.floor((wo.reportedAt - start) / WEEK_MS));
+    buckets[idx] += 1;
+  }
+  return buckets;
+}
+
+/**
+ * Property-wide signals-per-week across every hot-spot unit — the trend strip
+ * above the list. Oldest first; last entry is the current (partial) week.
+ */
+export function hotSpotWeeklyTrend(rows: HotSpotRow[], nowMs: number, weeks = 8): number[] {
+  const buckets = new Array<number>(weeks).fill(0);
+  const start = nowMs - weeks * WEEK_MS;
+  for (const row of rows) {
+    for (const wo of row.detail) {
+      if (wo.reportedAt === null || wo.reportedAt < start || wo.reportedAt > nowMs) continue;
+      const idx = Math.min(weeks - 1, Math.floor((wo.reportedAt - start) / WEEK_MS));
+      buckets[idx] += 1;
+    }
+  }
+  return buckets;
+}
+
+/**
+ * The row's dominant repeat signal — most frequent tag across recent detail
+ * with at least `min` occurrences ("HVAC ×5 in 90d"). Null when nothing repeats.
+ */
+export function hotSpotTopTrade(row: HotSpotRow, min = 2): { tag: string; count: number } | null {
+  const counts = new Map<string, number>();
+  for (const wo of row.detail) {
+    for (const tag of wo.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  }
+  let best: { tag: string; count: number } | null = null;
+  for (const [tag, count] of counts) {
+    if (count >= min && (best === null || count > best.count)) best = { tag, count };
+  }
+  return best;
+}

@@ -25,7 +25,7 @@ import {
   stagesOf,
   urgencyShowsBadge,
 } from "@/lib/derived/make-ready";
-import { buildHotSpotRows } from "@/lib/derived/hot-spots";
+import { buildHotSpotRows, hotSpotSparkline, hotSpotTopTrade, hotSpotWeeklyTrend } from "@/lib/derived/hot-spots";
 
 // Wed 2026-07-15 noon, device-local — matches the engine's Calendar.current port.
 const NOW = new Date("2026-07-15T12:00:00").getTime();
@@ -428,5 +428,38 @@ describe("buildHotSpotRows", () => {
 
   test("last activity tracks the max activity date", () => {
     expect(rowBy("101").lastActivityMs).toBe(w3.reportedAt as number);
+  });
+});
+
+describe("hot-spot trend helpers", () => {
+  const NOW = new Date("2026-07-15T12:00:00").getTime();
+  const mk = (offsetsDays: number[], tags: string[][] = []) =>
+    ({
+      detail: offsetsDays.map((d, i) => ({
+        reportedAt: NOW - d * 24 * 60 * 60 * 1000,
+        tags: tags[i] ?? [],
+      })),
+    }) as never;
+
+  test("sparkline buckets recent detail into weekly counts, oldest first", () => {
+    const row = mk([1, 2, 9, 40]); // two this week, one last-ish week, one out of 6w? 40d < 42d so in bucket 0
+    const spark = hotSpotSparkline(row, NOW, 6);
+    expect(spark).toHaveLength(6);
+    expect(spark[5]).toBe(2); // 1d + 2d ago land in the newest bucket
+    expect(spark.reduce((a, b) => a + b, 0)).toBe(4);
+  });
+
+  test("weekly trend sums across rows and drops out-of-window tickets", () => {
+    const rows = [mk([1]), mk([3, 100])] as never[];
+    const trend = hotSpotWeeklyTrend(rows as never, NOW, 8);
+    expect(trend).toHaveLength(8);
+    expect(trend.reduce((a, b) => a + b, 0)).toBe(2); // the 100d ticket is outside 8 weeks
+  });
+
+  test("top trade requires a repeat and picks the most frequent tag", () => {
+    const row = mk([1, 2, 3], [["HVAC"], ["HVAC"], ["Plumbing"]]);
+    expect(hotSpotTopTrade(row)).toEqual({ tag: "HVAC", count: 2 });
+    const single = mk([1], [["HVAC"]]);
+    expect(hotSpotTopTrade(single)).toBeNull();
   });
 });

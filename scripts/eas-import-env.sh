@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 #
+# DEPRECATED — use scripts/eas-env-sync.sh instead.
+#
+# This script pushes only the five hardcoded KEYS below and never removes
+# anything, so it silently misses newly added variables and leaves deleted ones
+# live in EAS forever. eas-env-sync.sh mirrors the whole file in both
+# directions (and --prune deletes orphans). Kept only so existing muscle memory
+# and older runbooks don't break.
+#
 # Import an app's observability env vars from its local .env.production into the
 # EAS environment for that app (so cloud builds actually get them — EAS never
 # reads local .env files).

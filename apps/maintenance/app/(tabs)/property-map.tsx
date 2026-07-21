@@ -217,14 +217,6 @@ export default function PropertyMapScreen() {
     setPlaceMode((prev) => (prev === m ? "none" : m));
   };
 
-  // One-shot fly-home; shares the focus channel with search/jump (distinct seq base).
-  const homeSeq = useRef(0);
-  const flyHome = () => {
-    if (!home) return;
-    homeSeq.current += 1;
-    setFocusTarget({ x: home.x, y: home.y, seq: 800_000 + homeSeq.current });
-  };
-
   /** One 44pt button inside the vertical glass control stack (Apple Maps style). */
   const StackBtn = ({
     icon,
@@ -354,9 +346,9 @@ export default function PropertyMapScreen() {
         <View pointerEvents="box-none" className="flex-row" style={{ justifyContent: "flex-end" }}>
           <GlassSurface radius={22} style={{ overflow: "hidden" }}>
             <View>
-              <StackBtn icon="navigate-outline" onPress={flyHome} label="Recenter" first />
               <StackBtn
                 icon="people-outline"
+                first
                 active={occupancyTint}
                 onPress={() => setOccupancyTint(!occupancyTint)}
                 label="Occupancy tint"

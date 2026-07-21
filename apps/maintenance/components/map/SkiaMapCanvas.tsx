@@ -369,9 +369,13 @@ export function SkiaMapCanvas({
     (x: number, y: number, eff: number) => {
       const w = PAGE_WIDTH * eff;
       const h = PAGE_HEIGHT * eff;
+      // Half a viewport of vertical slack: the map's top edge can be pulled
+      // down to the screen center (and the bottom edge up to it), so edge
+      // units are reachable under the floating chrome. Still hard-bounded.
+      const slackY = height / 2;
       return {
         x: Math.min(Math.max(x, Math.min(0, width - w)), Math.max(0, width - w)),
-        y: Math.min(Math.max(y, Math.min(0, height - h)), Math.max(0, height - h)),
+        y: Math.min(Math.max(y, Math.min(0, height - h) - slackY), Math.max(0, height - h) + slackY),
       };
     },
     [width, height],
@@ -420,10 +424,13 @@ export function SkiaMapCanvas({
     "worklet";
     const w = PAGE_WIDTH * eff;
     const h = PAGE_HEIGHT * eff;
+    // Same vertical slack as clampPanJS: top/bottom edges may reach the
+    // screen center so edge units clear the floating chrome.
+    const slackY = height / 2;
     const loX = Math.min(0, width - w);
     const hiX = Math.max(0, width - w);
-    const loY = Math.min(0, height - h);
-    const hiY = Math.max(0, height - h);
+    const loY = Math.min(0, height - h) - slackY;
+    const hiY = Math.max(0, height - h) + slackY;
     return {
       x: Math.min(Math.max(x, loX), hiX),
       y: Math.min(Math.max(y, loY), hiY),

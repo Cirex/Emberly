@@ -173,15 +173,32 @@ export default function PropertyMapScreen() {
           : new Map(),
     [groupsEnabled, groupPaint, occupancyTint, units.allUnits],
   );
-  const legend = useMemo(
-    () =>
-      groupsEnabled
-        ? groups.filter((g) => g.visible).map((g) => ({ label: g.name, color: g.colorHex }))
-        : occupancyTint
-          ? legendFor("occupancy", units.allUnits)
-          : [],
-    [groupsEnabled, groups, occupancyTint, units.allUnits],
-  );
+  // Legend entries carry live unit counts: a group's from buildGroupPaint,
+  // the occupancy tint's tallied from the same bucketing that paints it.
+  const legend = useMemo(() => {
+    if (groupsEnabled) {
+      return groups
+        .filter((g) => g.visible)
+        .map((g) => ({ label: g.name, color: g.colorHex, count: groupPaint.counts.get(g.id) ?? 0 }));
+    }
+    if (!occupancyTint) return [];
+    const buckets = new Map<string, number>();
+    for (const u of units.allUnits) {
+      const b = occupancyGroup(u);
+      if (!b) continue;
+      buckets.set(b, (buckets.get(b) ?? 0) + 1);
+    }
+    const BUCKET_BY_LABEL: Record<string, string> = {
+      Occupied: "Occupied",
+      Vacant: "Vacant",
+      Notice: "Notice",
+      Eviction: "Under Eviction",
+    };
+    return legendFor("occupancy", units.allUnits).map((item) => ({
+      ...item,
+      count: buckets.get(BUCKET_BY_LABEL[item.label] ?? item.label) ?? 0,
+    }));
+  }, [groupsEnabled, groups, groupPaint, occupancyTint, units.allUnits]);
   // Search the synced ResMan record (unit number + street + tenant names), not
   // just the map's bare number — so "kingsgate" or a resident's name finds the
   // right units, falling back to number-only for any unit without synced data.
@@ -583,6 +600,12 @@ export default function PropertyMapScreen() {
                   <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: l.color }} />
                   <Text className="text-slate dark:text-white/70" style={{ fontSize: 11, fontWeight: "600" }}>
                     {l.label}
+                  </Text>
+                  <Text
+                    className="text-muted dark:text-white/45"
+                    style={{ fontSize: 11, fontWeight: "700", fontVariant: ["tabular-nums"] }}
+                  >
+                    · {l.count}
                   </Text>
                 </View>
               ))}

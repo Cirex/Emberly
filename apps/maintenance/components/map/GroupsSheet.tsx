@@ -5,6 +5,7 @@ import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-nativ
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { GroupCondition, GroupUnit, MapFilterGroup } from "@emberly/core";
 import { GroupConditionBuilder } from "@/components/map/GroupConditionBuilder";
+import { conditionSummary } from "@/lib/map-group-conditions";
 import { useMapGroups } from "@/lib/stores/map-groups";
 
 const NAVY = "#091B54";
@@ -117,9 +118,37 @@ export function GroupsSheet({
                     </Pressable>
                   </View>
                   <View style={{ width: 22, height: 22, borderRadius: 7, backgroundColor: g.colorHex, borderWidth: 1, borderColor: "rgba(9,27,84,0.2)" }} />
-                  <Text style={{ flex: 1, fontSize: 13.5, fontWeight: "700", color: NAVY }} numberOfLines={1}>
-                    {g.name}
-                  </Text>
+                  <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                    <Text style={{ fontSize: 13.5, fontWeight: "700", color: NAVY }} numberOfLines={1}>
+                      {g.name}
+                    </Text>
+                    {g.conditions.length > 0 ? (
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
+                        {g.conditions.map((c) => {
+                          const s = conditionSummary(c);
+                          return (
+                            <Text
+                              key={c.kind}
+                              style={{
+                                fontSize: 9.5,
+                                fontWeight: "600",
+                                color: "#4C556F",
+                                backgroundColor: "rgba(9,27,84,0.05)",
+                                borderWidth: 1,
+                                borderColor: "rgba(9,27,84,0.12)",
+                                borderRadius: 999,
+                                paddingHorizontal: 7,
+                                paddingVertical: 2,
+                                overflow: "hidden",
+                              }}
+                            >
+                              {t(`mapGroups.summary.${s.key}`, s.params)}
+                            </Text>
+                          );
+                        })}
+                      </View>
+                    ) : null}
+                  </View>
                   <Text style={{ fontSize: 12, fontWeight: "800", color: "#4C556F", fontVariant: ["tabular-nums"] }}>
                     {counts.get(g.id) ?? 0}
                   </Text>

@@ -13,6 +13,7 @@ import { unitMatchesGroup, type GroupCondition, type MapFilterGroup } from "@emb
 import {
   CONDITION_KINDS,
   buildConditionVocabulary,
+  conditionParts,
   conditionSummary,
   defaultConditionFor,
 } from "@/lib/map-group-conditions";
@@ -100,5 +101,44 @@ describe("conditionSummary", () => {
       params: { values: "2x1.5" },
     });
     expect(conditionSummary({ kind: "evictionFlag" })).toEqual({ key: "evictionFlag" });
+  });
+});
+
+describe("conditionParts (the editor's field · op · value rows)", () => {
+  test("maps each kind to its row anatomy", () => {
+    expect(conditionParts({ kind: "occupancy", value: "Vacant" })).toEqual({
+      fieldKey: "occupancy",
+      opKey: "is",
+      value: "Vacant",
+    });
+    expect(conditionParts({ kind: "balanceOverZero" })).toEqual({
+      fieldKey: "balance",
+      opKey: "isOver",
+      value: "$0",
+    });
+    expect(conditionParts({ kind: "balanceBand", min: 300, max: 800 })).toEqual({
+      fieldKey: "balance",
+      opKey: "between",
+      value: "$300–$800",
+    });
+    expect(conditionParts({ kind: "balanceBand", min: 1500, max: null })).toEqual({
+      fieldKey: "balance",
+      opKey: "isOver",
+      value: "$1500",
+    });
+    expect(conditionParts({ kind: "leaseEndsWithin", days: 60 })).toEqual({
+      fieldKey: "leaseEnd",
+      opKey: "within",
+      value: "60d",
+    });
+    // Single value reads "is", several read "is one of".
+    expect(conditionParts({ kind: "classificationIn", values: ["Ruby"] }).opKey).toBe("is");
+    expect(conditionParts({ kind: "layoutIn", values: ["1x1", "2x1.5"] })).toEqual({
+      fieldKey: "layout",
+      opKey: "isOneOf",
+      value: "1x1, 2x1.5",
+    });
+    // Parameterless: field chip only.
+    expect(conditionParts({ kind: "evictionFlag" })).toEqual({ fieldKey: "evictionFlag" });
   });
 });

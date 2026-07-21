@@ -87,6 +87,41 @@ export function buildConditionVocabulary(units: GroupUnit[]): ConditionVocabular
   };
 }
 
+/**
+ * The mockup's field · OPERATOR · value row anatomy. `fieldKey` is an i18n
+ * key under mapGroups.fields.*; `opKey` under mapGroups.ops.*; `value` is
+ * data text shown as-is (machine values are never translated).
+ * Parameterless conditions carry only the field chip.
+ */
+export interface ConditionParts {
+  fieldKey: "occupancy" | "balance" | "leaseEnd" | "availability" | "classification" | "layout" | "evictionFlag";
+  opKey?: "is" | "isOver" | "between" | "within" | "isOneOf";
+  value?: string;
+}
+
+export function conditionParts(c: GroupCondition): ConditionParts {
+  switch (c.kind) {
+    case "occupancy":
+      return { fieldKey: "occupancy", opKey: "is", value: c.value };
+    case "balanceOverZero":
+      return { fieldKey: "balance", opKey: "isOver", value: "$0" };
+    case "balanceBand":
+      return c.max === null
+        ? { fieldKey: "balance", opKey: "isOver", value: `$${c.min}` }
+        : { fieldKey: "balance", opKey: "between", value: `$${c.min}–$${c.max}` };
+    case "leaseEndsWithin":
+      return { fieldKey: "leaseEnd", opKey: "within", value: `${c.days}d` };
+    case "availabilityIn":
+      return { fieldKey: "availability", opKey: c.values.length > 1 ? "isOneOf" : "is", value: c.values.join(", ") };
+    case "classificationIn":
+      return { fieldKey: "classification", opKey: c.values.length > 1 ? "isOneOf" : "is", value: c.values.join(", ") };
+    case "layoutIn":
+      return { fieldKey: "layout", opKey: c.values.length > 1 ? "isOneOf" : "is", value: c.values.join(", ") };
+    case "evictionFlag":
+      return { fieldKey: "evictionFlag" };
+  }
+}
+
 export interface ConditionSummary {
   /** i18n key under mapGroups.summary.* */
   key: string;

@@ -7,7 +7,7 @@ import {
   LEASE_WINDOW_PRESETS,
   OCCUPANCY_VALUES,
   buildConditionVocabulary,
-  conditionSummary,
+  conditionParts,
   defaultConditionFor,
   type ConditionKind,
 } from "@/lib/map-group-conditions";
@@ -109,10 +109,6 @@ export function GroupConditionBuilder({
     [units, group, nowMs],
   );
 
-  const summaryText = (c: GroupCondition) => {
-    const s = conditionSummary(c);
-    return t(`mapGroups.summary.${s.key}`, s.params);
-  };
 
   /** The per-kind parameter editor, shown under an expanded row. */
   const editorFor = (c: GroupCondition) => {
@@ -216,36 +212,24 @@ export function GroupConditionBuilder({
         {t("mapGroups.conditionsLabel").toUpperCase()}
       </Text>
 
+      {/* Mockup row anatomy: [Field] OPERATOR [value] · ✕ — tapping the
+          field or value chip opens that condition's parameter editor. */}
       {group.conditions.map((c) => {
         const open = openKind === c.kind;
         const hasParams = c.kind !== "balanceOverZero" && c.kind !== "evictionFlag";
+        const parts = conditionParts(c);
+        const toggle = () => hasParams && setOpenKind(open ? null : c.kind);
         return (
           <View key={c.kind} style={{ gap: 6 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Pressable
-                onPress={() => hasParams && setOpenKind(open ? null : c.kind)}
-                accessibilityRole="button"
-                accessibilityState={{ expanded: open }}
-                style={{
-                  flex: 1,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 6,
-                  borderWidth: 1,
-                  borderColor: open ? "rgba(162,169,33,0.55)" : "rgba(9,27,84,0.14)",
-                  borderRadius: 10,
-                  paddingHorizontal: 10,
-                  paddingVertical: 7,
-                  backgroundColor: open ? "rgba(162,169,33,0.08)" : "rgba(9,27,84,0.03)",
-                }}
-              >
-                <Text style={{ flex: 1, fontSize: 12, fontWeight: "600", color: NAVY }} numberOfLines={1}>
-                  {summaryText(c)}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <Chip label={t(`mapGroups.fields.${parts.fieldKey}`)} on={open} onPress={toggle} />
+              {parts.opKey ? (
+                <Text style={{ fontSize: 9, fontWeight: "700", letterSpacing: 0.5, color: MUTED }}>
+                  {t(`mapGroups.ops.${parts.opKey}`).toUpperCase()}
                 </Text>
-                {hasParams ? (
-                  <Text style={{ fontSize: 10, color: MUTED, fontWeight: "700" }}>{open ? "▴" : "▾"}</Text>
-                ) : null}
-              </Pressable>
+              ) : null}
+              {parts.value ? <Chip label={parts.value} on={open} onPress={toggle} /> : null}
+              <View style={{ flex: 1 }} />
               <Pressable
                 hitSlop={8}
                 onPress={() => {
@@ -255,7 +239,7 @@ export function GroupConditionBuilder({
                 accessibilityRole="button"
                 accessibilityLabel={t("mapGroups.removeCondition")}
               >
-                <Text style={{ color: "#D1382E", fontSize: 13, fontWeight: "700" }}>✕</Text>
+                <Text style={{ color: "#D1382E", fontSize: 12, fontWeight: "700" }}>✕</Text>
               </Pressable>
             </View>
             {open ? editorFor(c) : null}

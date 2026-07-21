@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { AccountSummary } from "@/lib/admin-utilities";
-import { ChargeBar, NUM, Panel, SEGMENT_FILL, T, money, shortDate } from "./ui";
+import { feeItemsOf, type AccountSummary } from "@/lib/admin-utilities";
+import { ChargeBar, NUM, Panel, SEGMENT_FILL, T, money, shortDate, type BarSegment } from "./ui";
 
 /**
  * The Ledger tab (artifact): All / Units / House filter chips with live
@@ -76,6 +76,11 @@ export function AccountRow({
   statusBadge?: React.ReactNode;
 }) {
   const { account } = summary;
+  // The "Other" segment carries XMS's itemized-fee popover.
+  const fees = summary.currentBill ? feeItemsOf(summary.currentBill) : [];
+  const segments: BarSegment[] = summary.segments.map((s) =>
+    s.key === "other" && fees.length > 0 ? { ...s, feeItems: fees } : s,
+  );
   return (
     <button
       type="button"
@@ -120,7 +125,7 @@ export function AccountRow({
           {money(summary.dueNow)}
         </span>
         <span style={{ display: "block", margin: "5px 0 4px" }}>
-          <ChargeBar segments={summary.segments} height={7} />
+          <ChargeBar segments={segments} height={7} />
         </span>
         <span style={{ fontSize: 9.5, color: T.muted, display: "flex", gap: 9, justifyContent: "flex-end", flexWrap: "wrap" }}>
           {summary.segments.map((s) => (

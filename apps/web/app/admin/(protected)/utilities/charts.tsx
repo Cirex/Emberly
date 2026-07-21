@@ -1,5 +1,17 @@
+"use client";
+
+import { useState } from "react";
 import type { MonthPoint, UtilityBill } from "@/lib/admin-utilities";
-import { T, compactMoney, monthLabel } from "./ui";
+import { Callout, NUM, SEGMENT_FILL, T, compactMoney, money, monthLabel } from "./ui";
+
+const SERVICE_ROWS: Array<{ key: keyof MonthPoint["services"]; label: string }> = [
+  { key: "balfwd", label: "Bal Fwd" },
+  { key: "electric", label: "Electric" },
+  { key: "water", label: "Water + Sewer" },
+  { key: "gas", label: "Gas" },
+  { key: "other", label: "Other MLGW" },
+  { key: "nonmlgw", label: "Non-MLGW" },
+];
 
 /**
  * The artifact's two SVG charts, dependency-free: the goal-lined monthly
@@ -19,9 +31,41 @@ export function SpendChart({ series, goal }: { series: MonthPoint[]; goal: numbe
   const band = (right - left) / Math.max(series.length, 1);
   const barW = Math.min(30, band * 0.7);
   const gridVals = [max, max / 2];
+  const [hover, setHover] = useState<number | null>(null);
+  const active = hover !== null ? series[hover] : null;
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="Monthly spend, last 12 months">
+    <div style={{ position: "relative" }}>
+      {active ? (
+        <Callout leftPct={((left + band * hover! + band / 2) / W) * 100}>
+          <div style={{ display: "flex", alignItems: "baseline", fontSize: 11.5, fontWeight: 800, color: T.ink }}>
+            {monthLabel(active.month)}
+            <span style={{ marginLeft: "auto", ...NUM }}>{money(active.total)}</span>
+          </div>
+          <div style={{ fontSize: 10, color: T.muted, marginTop: 2, ...NUM }}>
+            {active.billCount} {active.billCount === 1 ? "bill" : "bills"}
+          </div>
+          <div style={{ borderTop: `1px solid ${T.line}`, marginTop: 8, paddingTop: 6 }}>
+            {SERVICE_ROWS.filter((row) => active.services[row.key] > 0).map((row) => (
+              <div key={row.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, padding: "2px 0" }}>
+                <span style={{ width: 6, height: 6, borderRadius: 3, background: SEGMENT_FILL[row.key] }} />
+                <span style={{ color: T.muted }}>{row.label}</span>
+                <span style={{ marginLeft: "auto", fontWeight: 700, color: T.ink, ...NUM }}>{money(active.services[row.key])}</span>
+              </div>
+            ))}
+            {SERVICE_ROWS.every((row) => active.services[row.key] === 0) ? (
+              <div style={{ fontSize: 10.5, color: T.muted }}>No charge breakdown this month.</div>
+            ) : null}
+          </div>
+        </Callout>
+      ) : null}
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ width: "100%", height: "auto", display: "block" }}
+        role="img"
+        aria-label="Monthly spend, last 12 months"
+        onMouseLeave={() => setHover(null)}
+      >
       {gridVals.map((v) => (
         <g key={v}>
           <line x1={left - 6} y1={scaleY(v)} x2={right} y2={scaleY(v)} stroke={T.navy} opacity={0.1} />
@@ -46,8 +90,32 @@ export function SpendChart({ series, goal }: { series: MonthPoint[]; goal: numbe
       {series.map((p, i) => {
         const x = left + band * i + (band - barW) / 2;
         const y = p.total > 0 ? scaleY(p.total) : floorY - 2;
-        return <rect key={p.month} x={x} y={y} width={barW} height={Math.max(floorY - y, 2)} rx={4} fill={T.water} />;
+        return (
+          <rect
+            key={p.month}
+            x={x}
+            y={y}
+            width={barW}
+            height={Math.max(floorY - y, 2)}
+            rx={4}
+            fill={T.water}
+            opacity={hover === null || hover === i ? 1 : 0.55}
+          />
+        );
       })}
+      {/* Full-height invisible hover bands: the whole month column is a
+          target, so short bars are as hoverable as tall ones. */}
+      {series.map((p, i) => (
+        <rect
+          key={`h-${p.month}`}
+          x={left + band * i}
+          y={topY - 8}
+          width={band}
+          height={floorY - topY + 8}
+          fill="transparent"
+          onMouseEnter={() => setHover(i)}
+        />
+      ))}
       {series.map((p, i) =>
         i % 2 === 0 ? (
           <text key={`l-${p.month}`} x={left + band * i + band / 2} y={144} fontSize={7.5} fill={T.muted} textAnchor="middle">
@@ -55,7 +123,8 @@ export function SpendChart({ series, goal }: { series: MonthPoint[]; goal: numbe
           </text>
         ) : null,
       )}
-    </svg>
+      </svg>
+    </div>
   );
 }
 

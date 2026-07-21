@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useState, type ReactNode } from "react";
 
 /**
  * Visual vocabulary for /admin/utilities, transcribed from the approved
@@ -166,19 +168,99 @@ export function Pill({ tone, children }: { tone: "current" | "archived" | "proce
   );
 }
 
-/** The stacked capsule charge bar (heights 10 in mix, 7 in ledger rows). */
+/** The XMS hover callout: white card, hairline, shadow, downward arrow. */
+export function Callout({
+  children,
+  leftPct,
+}: {
+  children: ReactNode;
+  /** Horizontal anchor within the relative parent, 0–100. */
+  leftPct: number;
+}) {
+  const clamped = Math.min(Math.max(leftPct, 12), 88);
+  return (
+    <div
+      style={{
+        position: "absolute", bottom: "calc(100% + 8px)", left: `${clamped}%`, transform: "translateX(-50%)",
+        zIndex: 30, width: 240, background: "#fff", border: `1px solid ${T.line}`, borderRadius: 12,
+        boxShadow: "0 14px 34px rgba(27,37,95,0.22)", padding: 12, pointerEvents: "none",
+      }}
+      role="status"
+    >
+      {children}
+      <span
+        style={{
+          position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)",
+          width: 0, height: 0, borderLeft: "7px solid transparent", borderRight: "7px solid transparent",
+          borderTop: "7px solid #fff",
+        }}
+      />
+    </div>
+  );
+}
+
+export interface BarSegment {
+  key: string;
+  label: string;
+  amount: number;
+  share: number;
+  /** Itemized fee lines shown under the segment (the "Other" popover). */
+  feeItems?: Array<{ label: string; amount: number }>;
+}
+
+/** The stacked capsule charge bar (heights 10 in mix, 7 in ledger rows),
+ *  with XMS's per-segment hover popover. */
 export function ChargeBar({
   segments,
   height,
 }: {
-  segments: Array<{ key: string; share: number }>;
+  segments: BarSegment[];
   height: number;
 }) {
+  const [hover, setHover] = useState<number | null>(null);
+  // Segment centers for anchoring the callout.
+  let acc = 0;
+  const centers = segments.map((s) => {
+    const w = Math.max(s.share * 100, 1);
+    const center = acc + w / 2;
+    acc += w;
+    return center;
+  });
+  const active = hover !== null ? segments[hover] : null;
   return (
-    <span style={{ display: "flex", height, borderRadius: height * 0.6, overflow: "hidden", background: T.track }}>
-      {segments.map((s) => (
-        <span key={s.key} style={{ width: `${Math.max(s.share * 100, 1)}%`, background: SEGMENT_FILL[s.key] }} />
-      ))}
+    <span style={{ position: "relative", display: "block" }}>
+      {active ? (
+        <Callout leftPct={centers[hover!]}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 800, color: T.ink }}>
+            <span style={{ width: 7, height: 7, borderRadius: 3, background: SEGMENT_FILL[active.key] }} />
+            {active.label}
+            <span style={{ marginLeft: "auto", ...NUM }}>{money(active.amount)}</span>
+          </div>
+          <div style={{ fontSize: 10, color: T.muted, marginTop: 2, ...NUM }}>{Math.round(active.share * 100)}% of this bill</div>
+          {active.feeItems && active.feeItems.length > 0 ? (
+            <div style={{ borderTop: `1px dashed ${T.line}`, marginTop: 8, paddingTop: 6 }}>
+              {active.feeItems.map((f) => (
+                <div key={f.label} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, padding: "2px 0" }}>
+                  <span style={{ color: T.muted }}>{f.label}</span>
+                  <span style={{ fontWeight: 700, color: T.ink, ...NUM }}>{money(f.amount)}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </Callout>
+      ) : null}
+      <span
+        style={{ display: "flex", height, borderRadius: height * 0.6, overflow: "hidden", background: T.track }}
+        onMouseLeave={() => setHover(null)}
+      >
+        {segments.map((s, i) => (
+          <span
+            key={s.key}
+            onMouseEnter={() => setHover(i)}
+            style={{ width: `${Math.max(s.share * 100, 1)}%`, background: SEGMENT_FILL[s.key] }}
+          />
+        ))}
+      </span>
     </span>
   );
 }

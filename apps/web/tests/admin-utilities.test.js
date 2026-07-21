@@ -3,6 +3,7 @@ const test = require("node:test");
 
 const {
   HIGH_ELECTRIC_ABSOLUTE,
+  feeItemsOf,
   accountSummaries,
   billDetailStats,
   buildLedgerTree,
@@ -78,6 +79,38 @@ test("monthly series zero-fills the full 12-month axis", () => {
   assert.equal(series.at(-1).total, 263.77);
   assert.equal(series.find((p) => p.month === "2026-05").total, 100);
   assert.equal(series.find((p) => p.month === "2026-01").total, 0);
+});
+
+test("monthly series carries per-service sums for the hover callout", () => {
+  const series = monthlySpendSeries([bill(), bill({ id: "b-2", electric_total: 45 })], NOW);
+  const jul = series.at(-1);
+  assert.equal(jul.services.electric, 200); // 155 + 45
+  assert.equal(jul.services.water, 63.86); // 2 × 31.93
+  assert.equal(jul.services.gas, 13.84);
+  assert.equal(jul.services.other, 0);
+  // Empty months carry a zeroed service map, not undefined.
+  assert.deepEqual(series.find((p) => p.month === "2026-01").services.electric, 0);
+});
+
+test("fee items itemize nonzero fees and expose the unclassified remainder", () => {
+  const rich = bill({
+    other_mlgw_total: 50,
+    street_light_fee_total: 4.3,
+    storm_water_fee_total: 12.15,
+    solid_waste_fee_total: 30,
+  });
+  const items = feeItemsOf(rich);
+  assert.deepEqual(items.map((f) => f.label), [
+    "Street light fee",
+    "Storm water fee",
+    "Solid waste fee",
+    "Unclassified",
+  ]);
+  assert.equal(items.at(-1).amount, 3.55); // 50 − 46.45 itemized
+  // No fees at all → empty (no zero-noise rows, no negative remainder).
+  assert.deepEqual(feeItemsOf(bill()), []);
+  const overItemized = bill({ other_mlgw_total: 10, solid_waste_fee_total: 30 });
+  assert.deepEqual(feeItemsOf(overItemized).map((f) => f.label), ["Solid waste fee"]);
 });
 
 test("current month mix splits units vs house on the latest current month", () => {

@@ -28,7 +28,10 @@ const ACCOUNT_COLUMNS =
 const BILL_COLUMNS =
   "id, mlgw_account_id, document_id, is_current, bill_date, due_date, amount_due, balance_forward, " +
   "bill_for, file_path, gas_total, electric_total, water_total, sewer_total, other_mlgw_total, " +
-  "non_mlgw_total, sewer_charge_total";
+  "non_mlgw_total, sewer_charge_total, street_light_fee_total, electrical_late_fee_total, " +
+  "security_deposit_total, smart_meter_connect_charge_total, credit_balance_transfer_total, " +
+  "share_the_pennies_total, water_cross_connection_fee_total, leasing_outdoor_lighting_total, " +
+  "mosquito_rodent_control_fee_total, storm_water_fee_total, solid_waste_fee_total";
 const PAYMENT_COLUMNS =
   "id, mlgw_account_id, reference_number, status, amount, paid_date, payment_method, authorization_number";
 const UNIT_COLUMNS =

@@ -43,7 +43,16 @@ export type UtilityBill = Pick<
   | "amount_due" | "balance_forward" | "bill_for" | "file_path"
   | "gas_total" | "electric_total" | "water_total" | "sewer_total"
   | "other_mlgw_total" | "non_mlgw_total" | "sewer_charge_total"
->;
+> &
+  Partial<
+    Pick<
+      BillRow,
+      | "street_light_fee_total" | "electrical_late_fee_total" | "security_deposit_total"
+      | "smart_meter_connect_charge_total" | "credit_balance_transfer_total" | "share_the_pennies_total"
+      | "water_cross_connection_fee_total" | "leasing_outdoor_lighting_total"
+      | "mosquito_rodent_control_fee_total" | "storm_water_fee_total" | "solid_waste_fee_total"
+    >
+  >;
 
 export type UtilityPayment = Pick<
   PaymentRow,
@@ -101,12 +110,44 @@ export function chargeSegmentsOf(bill: UtilityBill): ChargeSegment[] {
   return all.filter((s) => s.amount > 0).map((s) => ({ ...s, amount: round2(s.amount) }));
 }
 
+export interface FeeItem {
+  label: string;
+  amount: number;
+}
+
+/**
+ * The itemized fee lines behind a bill's "Other" charges — XMS's segment
+ * popover. Returns nonzero fees plus an "Unclassified" remainder when the
+ * other_mlgw_total exceeds the itemized fees (the PDF-extraction seam).
+ */
+export function feeItemsOf(bill: UtilityBill): FeeItem[] {
+  const fees: FeeItem[] = [
+    { label: "Street light fee", amount: n(bill.street_light_fee_total) },
+    { label: "Electrical late fee", amount: n(bill.electrical_late_fee_total) },
+    { label: "Security deposit", amount: n(bill.security_deposit_total) },
+    { label: "Smart meter connect", amount: n(bill.smart_meter_connect_charge_total) },
+    { label: "Credit balance transfer", amount: n(bill.credit_balance_transfer_total) },
+    { label: "Share the Pennies", amount: n(bill.share_the_pennies_total) },
+    { label: "Water cross connection", amount: n(bill.water_cross_connection_fee_total) },
+    { label: "Outdoor lighting", amount: n(bill.leasing_outdoor_lighting_total) },
+    { label: "Mosquito / rodent control", amount: n(bill.mosquito_rodent_control_fee_total) },
+    { label: "Storm water fee", amount: n(bill.storm_water_fee_total) },
+    { label: "Solid waste fee", amount: n(bill.solid_waste_fee_total) },
+  ].filter((f) => f.amount > 0);
+  const itemized = fees.reduce((acc, f) => acc + f.amount, 0);
+  const remainder = round2(n(bill.other_mlgw_total) - itemized);
+  if (remainder > 0.005) fees.push({ label: "Unclassified", amount: remainder });
+  return fees.map((f) => ({ ...f, amount: round2(f.amount) }));
+}
+
 // ---- monthly series --------------------------------------------------------
 
 export interface MonthPoint {
   month: string; // "YYYY-MM"
   total: number;
   billCount: number;
+  /** Per-service sums for the month — the hover callout's breakdown rows. */
+  services: Record<"balfwd" | "electric" | "water" | "gas" | "other" | "nonmlgw", number>;
 }
 
 /**
@@ -120,7 +161,12 @@ export function monthlySpendSeries(bills: readonly UtilityBill[], nowMs: number,
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1));
     keys.push(d.toISOString().slice(0, 7));
   }
-  const byMonth = new Map<string, { total: number; billCount: number }>(keys.map((k) => [k, { total: 0, billCount: 0 }]));
+  const empty = () => ({
+    total: 0,
+    billCount: 0,
+    services: { balfwd: 0, electric: 0, water: 0, gas: 0, other: 0, nonmlgw: 0 },
+  });
+  const byMonth = new Map(keys.map((k) => [k, empty()]));
   for (const bill of bills) {
     const month = monthOf(bill.bill_date);
     if (!month) continue;
@@ -128,10 +174,21 @@ export function monthlySpendSeries(bills: readonly UtilityBill[], nowMs: number,
     if (!bucket) continue;
     bucket.total += n(bill.amount_due);
     bucket.billCount += 1;
+    bucket.services.balfwd += Math.max(n(bill.balance_forward), 0);
+    bucket.services.electric += n(bill.electric_total);
+    bucket.services.water += waterTotalOf(bill);
+    bucket.services.gas += n(bill.gas_total);
+    bucket.services.other += n(bill.other_mlgw_total);
+    bucket.services.nonmlgw += n(bill.non_mlgw_total);
   }
   return keys.map((month) => {
     const b = byMonth.get(month)!;
-    return { month, total: round2(b.total), billCount: b.billCount };
+    return {
+      month,
+      total: round2(b.total),
+      billCount: b.billCount,
+      services: Object.fromEntries(Object.entries(b.services).map(([k, v]) => [k, round2(v)])) as MonthPoint["services"],
+    };
   });
 }
 

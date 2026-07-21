@@ -68,6 +68,25 @@ COPY . .
 RUN bun run --filter '@emberly/core' build \
   && bun run --filter '@emberly/web' build
 
+# Stage sharp for the runtime image. The camera snapshot route resolves sharp
+# through createRequire at runtime, which output-file tracing cannot follow, so
+# sharp never lands in the standalone output on its own. Bun installs into
+# node_modules/.bun and symlinks to it; that store directory holds sharp
+# alongside its own dependencies (@img/* platform binaries, detect-libc,
+# semver), which is exactly the layout Node's resolver needs. Resolving the
+# symlink instead of hardcoding `sharp@<version>` keeps this working across
+# upgrades, and @img carries whichever binary bun selected for the build
+# platform, so nothing here is architecture-specific.
+# -L dereferences: inside the store only `sharp` itself is a real directory —
+# its siblings (@img, detect-libc, semver) are symlinks to their own store
+# entries, and copying those as links yields danglers that fail at require time.
+RUN SHARP_DEPS="$(dirname "$(readlink -f /app/apps/web/node_modules/sharp)")" \
+  && mkdir -p /sharp-runtime \
+  && cp -RL "$SHARP_DEPS"/. /sharp-runtime/ \
+  && for d in sharp @img detect-libc semver; do \
+       test -d "/sharp-runtime/$d" || { echo "sharp staging incomplete: $d missing"; exit 1; }; \
+     done
+
 # ---------- runtime: minimal non-root Node image serving standalone server -----
 FROM node:${NODE_VERSION}-alpine AS runtime
 WORKDIR /app
@@ -87,6 +106,14 @@ RUN addgroup -g 1001 -S nodejs \
 COPY --from=build --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
+
+# sharp + its platform binaries, staged in the build stage above. The
+# standalone server chdirs to apps/web, so this is the first place Node's
+# resolver looks. Failure here is SILENT at runtime — the route catches it and
+# serves full-size frames — so verify explicitly after changing this:
+#   docker run --rm --entrypoint sh <image> \
+#     -c 'cd /app/apps/web && node -e "require(\"sharp\");console.log(\"ok\")"'
+COPY --from=build --chown=nextjs:nodejs /sharp-runtime ./apps/web/node_modules
 
 USER nextjs
 EXPOSE 3000

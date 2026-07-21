@@ -16,7 +16,15 @@ const nextConfig = {
   // Ensure the traced standalone output includes ../emberly-shared.
   outputFileTracingRoot: workspaceRoot,
   allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.0.22"],
-  serverExternalPackages: ["otpauth"],
+  // sharp is a native module: never bundle it, always require it at runtime.
+  // The camera snapshot route resolves it through createRequire (Turbopack's
+  // dev-mode externals copy of sharp is broken — see the route), which output
+  // tracing cannot follow. Rather than tracing it, the Dockerfile copies sharp
+  // and its @img platform binaries into the runtime image explicitly: bun
+  // installs packages into node_modules/.bun and symlinks to them, and tracing
+  // copies files without recreating those links, so a traced sharp is present
+  // on disk but unresolvable. See apps/web/Dockerfile.
+  serverExternalPackages: ["otpauth", "sharp"],
   turbopack: {
     root: workspaceRoot,
   },

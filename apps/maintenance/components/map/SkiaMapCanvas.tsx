@@ -350,6 +350,8 @@ interface SkiaMapCanvasProps {
   onPlaceUtility: (nx: number, ny: number) => void;
   /** A tap landed on an existing utility pin or run. */
   onSelectUtility: (id: string) => void;
+  /** The run open in the inspector — drawn with the mockup's halo + vertex dots. */
+  selectedUtilityId?: string;
 }
 
 export function SkiaMapCanvas({
@@ -374,6 +376,7 @@ export function SkiaMapCanvas({
   onSelectPin,
   onPlaceUtility,
   onSelectUtility,
+  selectedUtilityId,
 }: SkiaMapCanvasProps) {
   const dark = useColorScheme().colorScheme === "dark";
   const pinIconFont = useFont(IONICONS_TTF, PIN_ICON_SIZE);
@@ -434,6 +437,9 @@ export function SkiaMapCanvas({
       arrows: ReturnType<typeof buildUtilityPath> | null;
       /** Label pill at the run's midpoint; null when untitled. */
       label: { text: string; x: number; y: number; w: number } | null;
+      /** Vertices, for the selection treatment (mockup: white dots on the
+       *  inspected run). */
+      points: UtilityPoint[];
     }[] = [];
     for (const a of annotations) {
       if (a.kind !== "utility_line" || !a.points || a.points.length < 2) continue;
@@ -466,6 +472,7 @@ export function SkiaMapCanvas({
         path: buildUtilityPath(a.points),
         arrows,
         label,
+        points: a.points,
       });
     }
     return out;
@@ -728,6 +735,8 @@ export function SkiaMapCanvas({
   }, [baseScale]);
   // Chevron arms hold ~2pt on screen like the strokes they ride.
   const utilityArrowStroke = useDerivedValue(() => 2 / (scale.value * baseScale), [baseScale]);
+  // The selection halo: a wide soft band under the inspected run.
+  const utilityHaloStroke = useDerivedValue(() => (UTIL_STROKE * 3.2) / (scale.value * baseScale), [baseScale]);
   const strokeForWeight = (weight: LineWeight) =>
     weight === "thin" ? utilityStrokeThin : weight === "thick" ? utilityStrokeThick : utilityStroke;
 
@@ -780,6 +789,19 @@ export function SkiaMapCanvas({
               keeps pre-style rows on the old sewer-dashed/gas-dotted look). */}
           {utilityLines.map((l) => (
             <Group key={l.id}>
+              {/* Selection treatment (mockup): a soft same-hue halo under the
+                  inspected run, white vertex dots on top of it below. */}
+              {l.id === selectedUtilityId ? (
+                <Path
+                  path={l.path}
+                  style="stroke"
+                  strokeWidth={utilityHaloStroke}
+                  strokeCap="round"
+                  strokeJoin="round"
+                  color={l.color}
+                  opacity={0.16}
+                />
+              ) : null}
               <Path
                 path={l.path}
                 style="stroke"
@@ -804,6 +826,21 @@ export function SkiaMapCanvas({
                   color={l.color}
                 />
               ) : null}
+              {l.id === selectedUtilityId
+                ? l.points.map((p, i) => (
+                    <Group key={i}>
+                      <Circle cx={p.x * PAGE_WIDTH} cy={p.y * PAGE_HEIGHT} r={DRAFT_VERTEX_R} color="#FFFFFF" />
+                      <Circle
+                        cx={p.x * PAGE_WIDTH}
+                        cy={p.y * PAGE_HEIGHT}
+                        r={DRAFT_VERTEX_R}
+                        color={l.color}
+                        style="stroke"
+                        strokeWidth={2.6}
+                      />
+                    </Group>
+                  ))
+                : null}
               {l.label ? (
                 <Group>
                   <RoundedRect

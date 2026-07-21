@@ -96,6 +96,13 @@ export default function PropertyMapScreen() {
   // The Utilities hub sheet (inventory of runs, per-device visibility).
   const [utilityHubOpen, setUtilityHubOpen] = useState(false);
   const hiddenRunIds = useUtilityVisibility((s) => s.hiddenIds);
+  /** Drawn runs on the layer (hidden ones included — they still exist). */
+  const runCount = useMemo(
+    () =>
+      ann.annotations.filter((a) => !a.removed && a.kind === "utility_line" && (a.points?.length ?? 0) >= 2)
+        .length,
+    [ann.annotations],
+  );
   // Tour Mode (TourRoute.swift): while armed, unit taps toggle stops instead
   // of opening the tooltip. Device-local store, hydrated by zustand persist.
   const tour = useTour();
@@ -447,6 +454,7 @@ export default function PropertyMapScreen() {
           onSelectPin={onSelectPin}
           onPlaceUtility={onPlaceUtility}
           onSelectUtility={onSelectUtility}
+          selectedUtilityId={utilityActionId}
         />
       </View>
 
@@ -536,6 +544,23 @@ export default function PropertyMapScreen() {
           </View>
         ) : null}
       </View>
+
+      {/* The layer's title pill (mockup phone 1): "Utilities · 4 runs",
+          top-left while browsing — tap opens the hub. */}
+      {utilityVisible && runCount > 0 && placeMode === "none" && !hasQuery ? (
+        <View style={{ position: "absolute", top: insets.top + HEADER_TOP_PAD + 56, left: hPad }}>
+          <GlassSurface radius={999}>
+            <Pressable onPress={() => setUtilityHubOpen(true)} accessibilityRole="button">
+              <Text
+                className="text-navy dark:text-white"
+                style={{ paddingHorizontal: 13, paddingVertical: 7, fontSize: 11, fontWeight: "800" }}
+              >
+                {t("utility.titleWithCount", { count: runCount })}
+              </Text>
+            </Pressable>
+          </GlassSurface>
+        </View>
+      ) : null}
 
       {/* Draw mode (approved mockup): a small status pill top-left, with the
           controls in the non-modal "New run" sheet at the bottom — the map in

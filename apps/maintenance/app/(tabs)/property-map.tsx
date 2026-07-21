@@ -591,7 +591,12 @@ export default function PropertyMapScreen() {
         </View>
       ) : null}
 
-      <GroupsSheet visible={groupsSheetOpen} counts={groupPaint.counts} onClose={() => setGroupsSheetOpen(false)} />
+      <GroupsSheet
+        visible={groupsSheetOpen}
+        counts={groupPaint.counts}
+        units={units.allUnits}
+        onClose={() => setGroupsSheetOpen(false)}
+      />
 
       {editing ? (
         <AnnotationEditorDialog annotation={editing} onClose={() => setEditingId(undefined)} />

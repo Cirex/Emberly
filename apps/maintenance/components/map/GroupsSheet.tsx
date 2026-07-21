@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { GroupCondition, MapFilterGroup } from "@emberly/core";
+import type { GroupCondition, GroupUnit, MapFilterGroup } from "@emberly/core";
+import { GroupConditionBuilder } from "@/components/map/GroupConditionBuilder";
 import { useMapGroups } from "@/lib/stores/map-groups";
 
 const NAVY = "#091B54";
@@ -11,33 +12,6 @@ const MUTED = "#70788F";
 const HAIRLINE = "rgba(9,27,84,0.08)";
 
 const PALETTE = ["#E24B4A", "#EF9F27", "#97C459", "#1D9E75", "#378ADD", "#7F77DD", "#D4537E", "#888780"];
-const OCCUPANCY_VALUES = ["Occupied", "Vacant", "Notice to Vacate", "Under Eviction"] as const;
-const LEASE_WINDOWS = [30, 60, 90] as const;
-
-function conditionOf(group: MapFilterGroup, kind: GroupCondition["kind"]): GroupCondition | undefined {
-  return group.conditions.find((c) => c.kind === kind);
-}
-
-/** Small pill chip used by the editor's condition pickers. */
-function PickChip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={on ? { selected: true } : {}}
-      style={{
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 999,
-        borderWidth: 1,
-        backgroundColor: on ? "rgba(162,169,33,0.14)" : "rgba(9,27,84,0.04)",
-        borderColor: on ? "rgba(162,169,33,0.55)" : "rgba(9,27,84,0.12)",
-      }}
-    >
-      <Text style={{ fontSize: 11, fontWeight: "600", color: on ? "#767B24" : "#4C556F" }}>{label}</Text>
-    </Pressable>
-  );
-}
 
 /**
  * The Color groups sheet (approved mockup): list of groups — swatch, name,
@@ -47,11 +21,14 @@ function PickChip({ label, on, onPress }: { label: string; on: boolean; onPress:
 export function GroupsSheet({
   visible,
   counts,
+  units,
   onClose,
 }: {
   visible: boolean;
   /** group id → live matching-unit count (from buildGroupPaint). */
   counts: Map<string, number>;
+  /** The synced units — the condition builder's vocabulary and live counts. */
+  units: GroupUnit[];
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -59,6 +36,8 @@ export function GroupsSheet({
   const store = useMapGroups();
   const [editingId, setEditingId] = useState<string | null>(null);
   const editing = editingId ? store.groups.find((g) => g.id === editingId) : undefined;
+  // Frozen per open — the live match count shouldn't drift mid-edit.
+  const nowMs = useMemo(() => Date.now(), [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setCondition = (group: MapFilterGroup, kind: GroupCondition["kind"], next: GroupCondition | null) => {
     const rest = group.conditions.filter((c) => c.kind !== kind);
@@ -211,50 +190,12 @@ export function GroupsSheet({
                       ))}
                     </View>
 
-                    <Text style={{ fontSize: 9.5, fontWeight: "700", letterSpacing: 1, color: MUTED }}>
-                      {t("mapGroups.conditionsLabel").toUpperCase()}
-                    </Text>
-                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                      {OCCUPANCY_VALUES.map((v) => {
-                        const cur = conditionOf(editing, "occupancy");
-                        const on = cur?.kind === "occupancy" && cur.value === v;
-                        return (
-                          <PickChip
-                            key={v}
-                            label={v}
-                            on={on}
-                            onPress={() => setCondition(editing, "occupancy", on ? null : { kind: "occupancy", value: v })}
-                          />
-                        );
-                      })}
-                    </View>
-                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                      <PickChip
-                        label={t("mapGroups.balanceOverZero")}
-                        on={Boolean(conditionOf(editing, "balanceOverZero"))}
-                        onPress={() =>
-                          setCondition(
-                            editing,
-                            "balanceOverZero",
-                            conditionOf(editing, "balanceOverZero") ? null : { kind: "balanceOverZero" },
-                          )
-                        }
-                      />
-                      {LEASE_WINDOWS.map((days) => {
-                        const cur = conditionOf(editing, "leaseEndsWithin");
-                        const on = cur?.kind === "leaseEndsWithin" && cur.days === days;
-                        return (
-                          <PickChip
-                            key={days}
-                            label={t("mapGroups.leaseEndsWithin", { count: days })}
-                            on={on}
-                            onPress={() =>
-                              setCondition(editing, "leaseEndsWithin", on ? null : { kind: "leaseEndsWithin", days })
-                            }
-                          />
-                        );
-                      })}
-                    </View>
+                    <GroupConditionBuilder
+                      group={editing}
+                      units={units}
+                      nowMs={nowMs}
+                      onSet={(kind, next) => setCondition(editing, kind, next)}
+                    />
 
                     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
                       <Pressable

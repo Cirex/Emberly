@@ -34,7 +34,7 @@ the data fresh; and a shared package holds the framework-free domain logic.
         HTTPS /api  │      │      │  HTTPS /api
           ┌─────────┘      │      └─────────┐
           │                │                │
-   @emberly/mobile  @emberly/security  @emberly/maintenance
+   @emberly/resident  @emberly/security  @emberly/maintenance
     (resident iOS)   (guard iPad/iOS)   (maintenance iOS)
 ```
 
@@ -77,7 +77,7 @@ intentional status codes. The REST API and MCP server are gated per-caller by a 
 token (`eapi_…` / `emcp_…`) or a per-scanner credential — there is no shared key, and access
 fails closed.
 
-### `@emberly/mobile` — Resident (Expo / React Native)
+### `@emberly/resident` — Resident (Expo / React Native)
 
 Residents sign in with their ResMan portal credentials (gated to active lease statuses) and
 create, view, and manage time-boxed QR guest passes.

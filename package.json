@@ -18,7 +18,7 @@
     "test": "turbo run test",
     "web:dev": "bun run --filter '@emberly/web' dev",
     "web:build": "bun run --filter '@emberly/web' build",
-    "mobile:start": "bun run --filter '@emberly/mobile' start",
+    "resident:start": "bun run --filter '@emberly/resident' start",
     "sync:build": "bun run --filter '@emberly/sync' build"
   },
   "devDependencies": {

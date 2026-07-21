@@ -23,7 +23,7 @@ repository [README](https://github.com/Cirex/Emberly#readme).
 | App | Package | Platform | Purpose |
 | --- | --- | --- | --- |
 | Web | `@emberly/web` | Next.js on Coolify | Staff admin portal, resident web, and the backend API every mobile app calls. |
-| Resident | `@emberly/mobile` | Expo / iOS (EAS) | Residents manage their guest passes. |
+| Resident | `@emberly/resident` | Expo / iOS (EAS) | Residents manage their guest passes. |
 | Security | `@emberly/security` | Expo / iPad + iPhone (EAS) | Guard app: tenants, property map, QR scanner, guest passes. |
 | Maintenance | `@emberly/maintenance` | Expo / iOS (EAS) | Work orders, make-ready board, property map, "My Day" routing. |
 | Sync worker | `@emberly/sync` | Coolify cron worker | Mirrors ResMan + MLGW into Supabase. |

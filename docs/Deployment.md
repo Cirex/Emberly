@@ -13,7 +13,7 @@ deployed MCP server, see [[MCP Server Setup]].
 | --- | --- | --- | --- |
 | Admin + resident web + API | `@emberly/web` | Coolify (Dockerfile, build context = **repo root**) | `apps/web/.env.production` |
 | ResMan/MLGW sync worker | `@emberly/sync` | Coolify (cron worker, base dir `supabase/sync`) | `supabase/sync/.env` (secret store) |
-| Resident iOS app | `@emberly/mobile` | EAS Build → App Store | `apps/mobile/.env.production` |
+| Resident iOS app | `@emberly/resident` | EAS Build → App Store | `apps/resident/.env.production` |
 | Security/guard iOS app | `@emberly/security` | EAS Build → App Store | `apps/security/.env.production` |
 | Maintenance iOS app | `@emberly/maintenance` | EAS Build → App Store | `apps/maintenance/.env.production` |
 
@@ -229,7 +229,7 @@ The mobile apps build with **EAS Build** and are configured through `EXPO_PUBLIC
 
 ### Already in place (committed)
 
-- **`eas.json`** in each app (`apps/mobile`, `apps/security`, `apps/maintenance`) with
+- **`eas.json`** in each app (`apps/resident`, `apps/security`, `apps/maintenance`) with
   `development` (simulator), `preview` (internal device), and `production` (`autoIncrement`)
   profiles. `appVersionSource` is `remote`, so EAS manages build numbers server-side.
 - `app.json` bundle IDs: `com.emberly.resident` / `.security` / `.maintenance` (maintenance

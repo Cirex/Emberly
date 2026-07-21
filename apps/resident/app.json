@@ -33,6 +33,13 @@
         }
       ],
       "@sentry/react-native/expo"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "46f19e78-4a44-4782-857e-a9e830201248"
+      }
+    },
+    "owner": "buildwithsora"
   }
 }

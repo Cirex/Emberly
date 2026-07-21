@@ -64,7 +64,7 @@ emberly/
   .env.example
 
   apps/
-    mobile/                 # Expo React Native
+    resident/               # Expo React Native
       app/                  # Expo Router routes only
       src/{features,primitives,navigation,services,state,styles,test}/
       app.config.ts | app.json
@@ -90,15 +90,15 @@ emberly/
 
 Rules:
 
-- `apps/mobile` is Expo React Native; `apps/web` is Next.js.
-- Mobile routes stay in `apps/mobile/app`. Do not add a second app-level navigation root.
+- `apps/resident` is Expo React Native; `apps/web` is Next.js.
+- Mobile routes stay in `apps/resident/app`. Do not add a second app-level navigation root.
 - Keep code app-local until a second real consumer exists.
 - Avoid Git submodules unless the code is independently owned and released.
 
 Allowed imports:
 
 ```text
-apps/mobile  -> packages/api, core, ui, config
+apps/resident  -> packages/api, core, ui, config
 apps/web     -> packages/api, core, ui, config
 packages/api -> packages/core
 packages/ui  -> packages/core only when unavoidable
@@ -114,7 +114,7 @@ Apps may import packages; packages must not import app code. Consume features th
 ### Mobile MVVM
 
 ```text
-apps/mobile/src/features/<feature>/
+apps/resident/src/features/<feature>/
   screens/  components/  view-models/  repositories/
   services/  models/  hooks/  __tests__/  index.ts
 ```
@@ -213,7 +213,7 @@ Keep dependencies in the narrowest owning workspace. Commit `bun.lock`. Do not c
 
 ### Expo and EAS
 
-Prefer Expo-compatible libraries and Development Builds for unsupported native modules. Use Expo Router conventions and explicit platform files or `Platform.select`. Keep `eas.json` in `apps/mobile` with development, preview, and production profiles. Native configuration changes require a new binary, not an OTA update. Only intentionally public values belong in app client configuration.
+Prefer Expo-compatible libraries and Development Builds for unsupported native modules. Use Expo Router conventions and explicit platform files or `Platform.select`. Keep `eas.json` in `apps/resident` with development, preview, and production profiles. Native configuration changes require a new binary, not an OTA update. Only intentionally public values belong in app client configuration.
 
 ### Next.js and Coolify
 
@@ -258,7 +258,7 @@ bun run lint
 bun run typecheck
 bun run test
 bun run web:build
-bun run --filter '@emberly/mobile' test
+bun run --filter '@emberly/resident' test
 bun run --filter '@emberly/web' typecheck
 ```
 

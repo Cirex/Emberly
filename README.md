@@ -41,7 +41,7 @@ background sync worker.
 | App | Package | Platform | Purpose |
 | --- | --- | --- | --- |
 | **Web** | `@emberly/web` | Next.js on Coolify | Staff admin portal, resident web, **and the backend API** every mobile app calls. |
-| **Resident** | `@emberly/mobile` | Expo / iOS (EAS) | Residents sign in and manage their guest passes ("My Pass"). |
+| **Resident** | `@emberly/resident` | Expo / iOS (EAS) | Residents sign in and manage their guest passes ("My Pass"). |
 | **Security** | `@emberly/security` | Expo / iPad + iPhone (EAS) | Guard app: tenant directory, property map with camera snapshots, QR scanner, guest passes. |
 | **Maintenance** | `@emberly/maintenance` | Expo / iOS (EAS) | Maintenance app: work orders, make-ready board, property map, "My Day" routing. |
 | **Sync worker** | `@emberly/sync` | Coolify cron worker | Continuously mirrors ResMan + MLGW data into Supabase. |
@@ -61,7 +61,7 @@ The web app is three things at once:
   dependency-free health check (`/api/health`). **All three mobile apps talk only to this
   API** — they never reach Supabase directly.
 
-### Resident — `@emberly/mobile`
+### Resident — `@emberly/resident`
 
 The resident iOS app ("Emberly Apartments"). Residents sign in with their ResMan portal
 credentials (gated to active lease statuses) and create, view, and manage time-boxed QR
@@ -106,7 +106,7 @@ Run an app locally:
 
 ```bash
 bun run web:dev                                   # Next.js admin + resident web + API
-bun run mobile:start                              # Resident app (Expo)
+bun run resident:start                              # Resident app (Expo)
 bun run --filter '@emberly/security' start        # Security app (Expo)
 bun run --filter '@emberly/maintenance' start     # Maintenance app (Expo)
 ```
@@ -123,7 +123,7 @@ Variables](../../wiki/Environment-Variables) page for the full reference.
 ```
 apps/
   web/          @emberly/web          Next.js admin + resident web + backend API (Coolify)
-  mobile/       @emberly/mobile       Resident iOS app (EAS)
+  resident/     @emberly/resident     Resident iOS app (EAS)
   security/     @emberly/security     Guard iOS app (EAS)
   maintenance/  @emberly/maintenance  Maintenance iOS app (EAS)
 packages/

@@ -40,7 +40,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # --frozen-lockfile install to reconcile against bun.lock.
 COPY package.json bun.lock turbo.json tsconfig.base.json ./
 COPY apps/web/package.json ./apps/web/
-COPY apps/mobile/package.json ./apps/mobile/
+COPY apps/resident/package.json ./apps/resident/
 COPY apps/security/package.json ./apps/security/
 COPY apps/maintenance/package.json ./apps/maintenance/
 COPY packages/core/package.json ./packages/core/

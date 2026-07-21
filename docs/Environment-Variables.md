@@ -6,7 +6,7 @@ committed template — copy it and fill in what you need:
 | App | Local template | Production template |
 | --- | --- | --- |
 | `@emberly/web` | `apps/web/.env.example` → `.env.local` | `apps/web/.env.production.example` → `.env.production` |
-| `@emberly/mobile` | `apps/mobile/.env.example` → `.env.local` | `apps/mobile/.env.production.example` → `.env.production` |
+| `@emberly/resident` | `apps/resident/.env.example` → `.env.local` | `apps/resident/.env.production.example` → `.env.production` |
 | `@emberly/security` | `apps/security/.env.example` → `.env.local` | `apps/security/.env.production.example` → `.env.production` |
 | `@emberly/maintenance` | `apps/maintenance/.env.example` → `.env.local` | `apps/maintenance/.env.production.example` → `.env.production` |
 | `@emberly/sync` | `supabase/sync/.env.example` → `.env` | (Coolify secret store) |
@@ -121,7 +121,7 @@ Do **not** store ResMan API credentials in the web env — the sync worker owns 
 
 ---
 
-## The three iOS apps (`@emberly/mobile`, `@emberly/security`, `@emberly/maintenance`)
+## The three iOS apps (`@emberly/resident`, `@emberly/security`, `@emberly/maintenance`)
 
 All three share the same shape. `EXPO_PUBLIC_*` vars are embedded in the app bundle at build
 time (never secret); the build-only Sentry vars upload source maps during `eas build` and are

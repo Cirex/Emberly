@@ -9,6 +9,7 @@ import { useAnnotations } from "@/lib/stores/annotations";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { usePendingEdits } from "@/lib/stores/pending-edits";
+import { usePm } from "@/lib/stores/pm";
 import { useWorkOrderPhotos } from "@/lib/stores/work-order-photos";
 import { useTags } from "@/lib/stores/tags";
 import { useUnits } from "@/lib/stores/units";
@@ -67,6 +68,9 @@ function useServerSync() {
         .sync(config)
         .then(() => useAnnotationPhotos.getState().sync(config));
       void useTags.getState().sync(config);
+      // Preventive rounds follow the same beat; the store skips its state
+      // write when the server round is unchanged, so a quiet tick is free.
+      void usePm.getState().refresh(config);
     };
 
     // First run on a cold cache shows the spinner path instead of a silent
@@ -76,6 +80,9 @@ function useServerSync() {
     }
     if (useUnits.getState().allUnits.length === 0) {
       void useUnits.getState().loadAll(config);
+    }
+    if (usePm.getState().templates.length === 0) {
+      void usePm.getState().loadAll(config);
     }
 
     // Emergency push registration for a device already signed in at launch.

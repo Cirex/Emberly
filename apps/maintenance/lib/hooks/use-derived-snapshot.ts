@@ -38,7 +38,10 @@ export function useDerivedSnapshot(modeOverride?: DisplayMode): DerivedSnapshot 
   const dataVersion = useWorkOrders((s) => s.dataVersion);
   const units = useUnits((s) => s.allUnits);
   const storeMode = useWorkOrdersView((s) => s.displayMode);
-  const mode = modeOverride ?? storeMode;
+  // "preventive" is a board mode, not a derived-engine mode (the PM board
+  // renders from the PM store) — build the snapshot as "open" so the engine
+  // never sees it and the cached open snapshot stays warm for the switch back.
+  const mode = modeOverride ?? (storeMode === "preventive" ? "open" : storeMode);
   const sortOption = useWorkOrdersView((s) => s.sortOption);
   const search = useWorkOrdersView((s) => s.debouncedSearch);
   const openFilters = useWorkOrdersView((s) => s.openFilters);

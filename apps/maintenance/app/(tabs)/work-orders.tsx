@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FlatList, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useShallow } from "zustand/react/shallow";
@@ -8,8 +9,12 @@ import { AnalyticsOverlayHost } from "@/components/work-orders/analytics/Overlay
 import { ClosedRow, LoadingMoreFooter } from "@/components/work-orders/closed/ClosedRow";
 import { HotSpots } from "@/components/work-orders/hot-spots/HotSpots";
 import { OpenGroupCard } from "@/components/work-orders/open/OpenBoard";
+import { PreventiveBoard } from "@/components/work-orders/preventive/PreventiveBoard";
 import { ColumnHeader } from "@/components/work-orders/rows";
+import { buildPreventiveScoreCards, pmRoundTotals } from "@/lib/derived/pm-cards";
 import { useDerivedSnapshot } from "@/lib/hooks/use-derived-snapshot";
+import { isSignedIn, useConfig } from "@/lib/stores/config";
+import { usePm } from "@/lib/stores/pm";
 import { useWorkOrders } from "@/lib/stores/work-orders";
 import { activeFilterCount, useWorkOrdersView } from "@/lib/stores/work-orders-view";
 
@@ -30,6 +35,7 @@ function ZoneGap() {
  * Long lists still extend their render window as the scroll nears the bottom.
  */
 export default function WorkOrdersScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const pad = width >= 1040 ? 34 : 20;
@@ -60,7 +66,20 @@ export default function WorkOrdersScreen() {
   const snapshot = useDerivedSnapshot();
   const loading = useWorkOrders((s) => s.loading);
   const error = useWorkOrders((s) => s.error);
+  const pmTemplates = usePm((s) => s.templates);
+  const pmLoading = usePm((s) => s.loading);
+  const pmError = usePm((s) => s.error);
+  const token = useConfig((s) => s.token);
+  const baseUrl = useConfig((s) => s.baseUrl);
+  const techName = useConfig((s) => s.admin?.displayName ?? "");
   const nowMs = Date.now();
+
+  // Entering Preventive pulls a fresh round (a no-op re-render when the server
+  // has nothing new); the sync tick keeps it live afterwards.
+  useEffect(() => {
+    if (view.displayMode !== "preventive" || !isSignedIn({ token })) return;
+    void usePm.getState().refresh({ baseUrl, token });
+  }, [view.displayMode, token, baseUrl]);
 
   // The glass header's measured height; the list pads itself beneath it.
   const [headerH, setHeaderH] = useState(insets.top + 150);
@@ -77,17 +96,31 @@ export default function WorkOrdersScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.displayMode]);
 
-  // The pill count is the mode's visible-row count (mirrors the old card[0]).
+  // The pill count is the mode's visible-row count (mirrors the old card[0]);
+  // Preventive counts the round's still-pending unit tasks.
   const pillCount = useMemo(() => {
     switch (view.displayMode) {
       case "closed":
         return snapshot.closedRows.length;
       case "hotSpots":
         return snapshot.hotSpotRows.length;
+      case "preventive":
+        return pmRoundTotals(pmTemplates, nowMs).pending;
       default:
         return snapshot.openGroups.reduce((n, g) => n + g.workOrders.length, 0);
     }
-  }, [view.displayMode, snapshot]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.displayMode, snapshot, pmTemplates]);
+
+  // Preventive's score strip comes from the PM store, not the snapshot.
+  const cards = useMemo(
+    () =>
+      view.displayMode === "preventive"
+        ? buildPreventiveScoreCards(pmTemplates, nowMs)
+        : snapshot.scoreCards,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [view.displayMode, pmTemplates, snapshot.scoreCards],
+  );
 
   const facetMode = view.displayMode === "open" || view.displayMode === "closed";
 
@@ -96,7 +129,7 @@ export default function WorkOrdersScreen() {
       mode={view.displayMode}
       onMode={view.setDisplayMode}
       count={pillCount}
-      cards={snapshot.scoreCards}
+      cards={cards}
       onAction={(a) => view.setActiveOverlay(a)}
       showFilters={facetMode}
       filterCount={filterCount}
@@ -197,6 +230,45 @@ export default function WorkOrdersScreen() {
           onEndReached={() => setRenderLimit((l) => (l < rows.length ? l + RENDER_PAGE : l))}
           ListFooterComponent={<LoadingMoreFooter visible={renderLimit < rows.length} />}
           renderItem={({ item }) => <ClosedRow row={item} />}
+        />
+        {header}
+        {modals}
+      </View>
+    );
+  }
+
+  // ----- Preventive: Emberly PM rounds (PM store, not the snapshot) -------
+  if (view.displayMode === "preventive") {
+    return (
+      <View style={{ flex: 1 }}>
+        <FlatList
+          data={[]}
+          renderItem={() => null}
+          contentContainerStyle={contentStyle}
+          ListHeaderComponent={
+            <View>
+              {pmLoading || pmError ? (
+                <View style={{ paddingHorizontal: pad, paddingBottom: 8, gap: 4 }}>
+                  {pmLoading ? (
+                    <Text className="text-muted" style={{ fontSize: 12, textAlign: "center" }}>
+                      {t("preventive.loading")}
+                    </Text>
+                  ) : null}
+                  {pmError ? (
+                    <Text style={{ color: "#D1382E", fontSize: 12, textAlign: "center" }}>{pmError}</Text>
+                  ) : null}
+                </View>
+              ) : null}
+              <PreventiveBoard
+                templates={pmTemplates}
+                nowMs={nowMs}
+                pad={pad}
+                onSetStatus={(taskId, status) =>
+                  void usePm.getState().checkOff(taskId, status, { baseUrl, token }, techName)
+                }
+              />
+            </View>
+          }
         />
         {header}
         {modals}

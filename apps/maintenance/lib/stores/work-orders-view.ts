@@ -12,6 +12,14 @@ export type { SignalFilter };
  * sortOption survive restarts; filters and search are momentary inputs.
  */
 
+/**
+ * The header dropdown's mode set: the derived engine's work-order modes plus
+ * "preventive" — the Emberly PM board, which renders from the PM store
+ * (lib/stores/pm.ts) rather than the work-order snapshot, so it deliberately
+ * stays OUT of DisplayMode and the derived engine.
+ */
+export type WorkOrdersBoardMode = DisplayMode | "preventive";
+
 export type AnalyticsOverlay =
   | null
   | "openMonthly"
@@ -23,7 +31,7 @@ export type AnalyticsOverlay =
   | "closedInsights";
 
 interface WorkOrdersViewState {
-  displayMode: DisplayMode;
+  displayMode: WorkOrdersBoardMode;
   sortOption: WorkOrderSortOption;
   /** Immediate input value (TextInput binds here). */
   search: string;
@@ -39,7 +47,7 @@ interface WorkOrdersViewState {
   activeOverlay: AnalyticsOverlay;
   filterSheetOpen: boolean;
 
-  setDisplayMode: (m: DisplayMode) => void;
+  setDisplayMode: (m: WorkOrdersBoardMode) => void;
   setSortOption: (s: WorkOrderSortOption) => void;
   setSearch: (q: string) => void;
   setFilters: (mode: "open" | "closed", f: FilterSets) => void;
@@ -119,12 +127,14 @@ export const useWorkOrdersView = create<WorkOrdersViewState>()(
 /** Count of active facet selections for the current mode (the Filters chip badge).
  *  The signal filter lives in the sheet too now, so it counts as one facet. */
 export function activeFilterCount(s: {
-  displayMode: DisplayMode;
+  displayMode: WorkOrdersBoardMode;
   openFilters: FilterSets;
   closedFilters: FilterSets;
   signalFilter: SignalFilter;
 }): number {
-  if (s.displayMode === "makeReady" || s.displayMode === "hotSpots") return 0;
+  if (s.displayMode === "makeReady" || s.displayMode === "hotSpots" || s.displayMode === "preventive") {
+    return 0;
+  }
   const f = s.displayMode === "closed" ? s.closedFilters : s.openFilters;
   const signal = s.displayMode === "open" && s.signalFilter !== "all" ? 1 : 0;
   return f.status.length + f.classification.length + f.occupancy.length + f.technician.length + f.tags.length + signal;

@@ -7,13 +7,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AccountMenu } from "@/components/ui/AccountMenu";
 import { Chip } from "@/components/work-orders/Chip";
 import type { ScoreCard } from "@/lib/derived/score-cards";
-import type { DisplayMode } from "@/lib/derived/types";
 import { useFieldMode } from "@/lib/stores/settings";
+import type { WorkOrdersBoardMode } from "@/lib/stores/work-orders-view";
 import { HAIRLINE, HEADER_TOP_PAD, MUTED, NAVY, OLIVE_GLASS, screenHPad } from "@/theme/tokens";
 
-const MODES: { id: DisplayMode; labelKey: string; icon: string }[] = [
+const MODES: { id: WorkOrdersBoardMode; labelKey: string; icon: string }[] = [
   { id: "open", labelKey: "workOrders.modes.open", icon: "file-tray-full-outline" },
   { id: "closed", labelKey: "workOrders.modes.closed", icon: "checkmark-circle-outline" },
+  { id: "preventive", labelKey: "workOrders.modes.preventive", icon: "sync-outline" },
   { id: "hotSpots", labelKey: "workOrders.modes.hotSpots", icon: "flame-outline" },
 ];
 
@@ -36,8 +37,8 @@ export function GlassHeader({
   onOpenInsights,
   onHeight,
 }: {
-  mode: DisplayMode;
-  onMode: (mode: DisplayMode) => void;
+  mode: WorkOrdersBoardMode;
+  onMode: (mode: WorkOrdersBoardMode) => void;
   /** The visible row count for the pill (mode-aware). */
   count: number;
   /** The mode's score cards; card[0]'s count lives in the pill, 1..3 render as the strip. */

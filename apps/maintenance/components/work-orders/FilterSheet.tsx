@@ -203,7 +203,9 @@ export function FilterSheet() {
             {/* Sort by ------------------------------------------------------ */}
             <SectionLabel text="Sort by" />
             <ChipWrapRow>
-              {sortOptionsFor(view.displayMode).map((option) => (
+              {/* The sheet only opens on the open/closed facet modes; modeKey
+                  folds every other board mode onto "open" for the sort list. */}
+              {sortOptionsFor(modeKey).map((option) => (
                 <SheetChip
                   key={option}
                   label={SORT_LABELS[option]}

@@ -9,7 +9,7 @@ import { Chip } from "@/components/work-orders/Chip";
 import type { ScoreCard } from "@/lib/derived/score-cards";
 import type { DisplayMode } from "@/lib/derived/types";
 import { useFieldMode } from "@/lib/stores/settings";
-import { HAIRLINE, MUTED, NAVY, OLIVE_GLASS } from "@/theme/tokens";
+import { HAIRLINE, HEADER_TOP_PAD, MUTED, NAVY, OLIVE_GLASS, screenHPad } from "@/theme/tokens";
 
 const MODES: { id: DisplayMode; labelKey: string; icon: string }[] = [
   { id: "open", labelKey: "workOrders.modes.open", icon: "file-tray-full-outline" },
@@ -88,13 +88,13 @@ export function GlassHeader({
       }}
     >
       {!field ? <BlurView intensity={42} tint="light" style={StyleSheet.absoluteFill} /> : null}
-      <View style={{ paddingTop: insets.top + 6 }}>
+      <View style={{ paddingTop: insets.top + HEADER_TOP_PAD }}>
         {/* Row 1: mode dropdown pill · funnel · account */}
         <View
           style={{
             flexDirection: "row",
             alignItems: "center",
-            paddingHorizontal: screenW >= 1040 ? 34 : 18,
+            paddingHorizontal: screenHPad(screenW),
             gap: 8,
           }}
         >
@@ -174,7 +174,7 @@ export function GlassHeader({
         <View
           style={{
             flexDirection: "row",
-            paddingHorizontal: screenW >= 1040 ? 34 : 18,
+            paddingHorizontal: screenHPad(screenW),
             paddingTop: 10,
             paddingBottom: 10,
           }}

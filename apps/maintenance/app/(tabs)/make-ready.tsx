@@ -5,6 +5,7 @@ import { ScoreCardGrid } from "@/components/work-orders/ScoreCardGrid";
 import { AnalyticsOverlayHost } from "@/components/work-orders/analytics/OverlayHost";
 import { MakeReadyBoard } from "@/components/work-orders/make-ready/MakeReadyBoard";
 import { useDerivedSnapshot } from "@/lib/hooks/use-derived-snapshot";
+import { screenHPad } from "@/theme/tokens";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkOrdersView } from "@/lib/stores/work-orders-view";
 
@@ -17,7 +18,7 @@ import { useWorkOrdersView } from "@/lib/stores/work-orders-view";
 export default function MakeReadyScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const pad = width >= 1040 ? 34 : 20;
+  const pad = screenHPad(width);
 
   // Only the make-ready slices — so search keystrokes, filter/overlay toggles,
   // and open/closed-board state don't re-render this board.

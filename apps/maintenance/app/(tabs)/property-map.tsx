@@ -27,7 +27,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useMyDay } from "@/lib/stores/my-day";
 import { useTour } from "@/lib/stores/tour";
 import { useUnits } from "@/lib/stores/units";
-import { CLASSIFICATION_TINT, MUTED, OLIVE, OLIVE_TEXT, STATUS_TINT } from "@/theme/tokens";
+import { CLASSIFICATION_TINT, MUTED, OLIVE, OLIVE_TEXT, STATUS_TINT, HEADER_TOP_PAD, screenHPad } from "@/theme/tokens";
 
 const OCC_TINT: Record<string, string> = {
   Occupied: STATUS_TINT.ready,
@@ -80,7 +80,7 @@ export default function PropertyMapScreen() {
   const editingId = useAnnotations((s) => s.editingId);
   const setEditingId = useAnnotations((s) => s.setEditing);
 
-  const hPad = width >= 1040 ? 34 : 24;
+  const hPad = screenHPad(width);
   const [canvas, setCanvas] = useState({ w: width, h: height });
   const hasData = units.allUnits.length > 0;
   const night = isNight();
@@ -345,7 +345,7 @@ export default function PropertyMapScreen() {
           the tab bar), then a single vertical glass control stack. */}
       <View
         pointerEvents="box-none"
-        style={{ position: "absolute", top: insets.top + 12, left: hPad, right: hPad, gap: 10 }}
+        style={{ position: "absolute", top: insets.top + HEADER_TOP_PAD, left: hPad, right: hPad, gap: 10 }}
       >
         <View pointerEvents="box-none" className="flex-row" style={{ justifyContent: "flex-end" }}>
           <AccountMenu />

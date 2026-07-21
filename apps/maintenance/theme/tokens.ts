@@ -28,3 +28,12 @@ export type {
   StatusTint,
   AppThemePreference,
 } from "@emberly/core";
+
+/**
+ * Shared screen-chrome geometry. Every tab places the AccountMenu pill (and
+ * its surrounding header chrome) with THESE values so the pill sits at the
+ * exact same spot on all four screens instead of jumping a few points per tab:
+ * top = safe-area inset + HEADER_TOP_PAD, side inset = screenHPad(width).
+ */
+export const HEADER_TOP_PAD = 10;
+export const screenHPad = (width: number): number => (width >= 1040 ? 34 : 20);

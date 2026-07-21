@@ -25,7 +25,7 @@ import { isSignedIn, useConfig } from "@/lib/stores/config";
 import { useMyDay, type MyDayStop } from "@/lib/stores/my-day";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { useWorkOrders } from "@/lib/stores/work-orders";
-import { HAIRLINE, MUTED, NAVY, OLIVE, OLIVE_TEXT } from "@/theme/tokens";
+import { HAIRLINE, MUTED, NAVY, OLIVE, OLIVE_TEXT, screenHPad } from "@/theme/tokens";
 
 const GREEN = "#33A666";
 const RED = "#D1382E";
@@ -47,7 +47,7 @@ const FLOWER = require("@/assets/logo-flower.png");
 export default function MyDayScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const pad = width >= 1040 ? 34 : 20;
+  const pad = screenHPad(width);
   const router = useRouter();
   const { t } = useTranslation();
   const dark = useColorScheme().colorScheme === "dark";
@@ -173,9 +173,7 @@ export default function MyDayScreen() {
             {t("myDay.assigned", { count: mine.length })}
           </Text>
         </View>
-        <View style={{ marginTop: 4 }}>
-          <AccountMenu />
-        </View>
+        <AccountMenu />
       </View>
 
       {/* Inline metric strip — bare numbers, hairline dividers, no boxes. */}

@@ -5,7 +5,14 @@
  *   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
  *   bun run sync:mlgw-payments
  *
- * ⚠ Blind port: never run against the live MLGW portal.
+ * DRY RUN (recommended first): scrape + parse the live portal and print the
+ * parsed rows WITHOUT writing to any database. Needs no Supabase config at all —
+ * only the MLGW credentials and the property id:
+ *
+ *   MLGW_DRY_RUN=1 bun run sync:mlgw-payments
+ *
+ * ⚠ Blind port: this has never been validated against the live MLGW portal, so
+ * do the dry run first and eyeball the parsed rows before writing anywhere.
  */
 import { ENV } from "./config/env";
 import { createServiceClient } from "./db/client";
@@ -16,18 +23,26 @@ async function main(): Promise<void> {
   const username = env[ENV.MLGW_SYNC_USERNAME]?.trim();
   const password = env[ENV.MLGW_SYNC_PASSWORD];
   const propertyId = env[ENV.RESMAN_PROPERTY_ID]?.trim();
+  const dryRun = /^(1|true|yes)$/i.test(env.MLGW_DRY_RUN ?? "");
   if (!username || !password) {
     throw new Error(`Missing ${ENV.MLGW_SYNC_USERNAME} / ${ENV.MLGW_SYNC_PASSWORD}`);
   }
   if (!propertyId) {
     throw new Error(`Missing required environment variable: ${ENV.RESMAN_PROPERTY_ID}`);
   }
-  const supabase = createServiceClient(env);
+
+  // A dry run writes nothing, so it deliberately never builds a Supabase client
+  // — no SUPABASE_URL / service-role key required, and no way to touch a database.
+  if (dryRun) {
+    console.log("[run-mlgw-payments] DRY RUN — scrape + parse only, no database writes.");
+  }
+  const supabase = dryRun ? null : createServiceClient(env);
 
   const result = await syncMlgwPayments({
     supabase,
     propertyId,
     credentials: { username, password },
+    dryRun,
     log: (m) => console.log(m),
   });
 

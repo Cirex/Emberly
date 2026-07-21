@@ -96,21 +96,31 @@ export async function syncMlgwBills(params: SyncMlgwBillsParams): Promise<SyncMl
 }
 
 export interface SyncMlgwPaymentsParams {
-  supabase: ServiceClient;
+  /** The mirror-write target. Pass `null` (with `dryRun`) to scrape+parse only. */
+  supabase: ServiceClient | null;
   propertyId: string;
   credentials: MlgwCredentials;
   workerCount?: number;
+  /**
+   * Scrape the live portal and parse payment history but write NOTHING — logs
+   * the parsed rows for inspection. The safe way to validate this blind port
+   * against real data before letting it touch a database. Implied when
+   * `supabase` is null.
+   */
+  dryRun?: boolean;
   log?: (message: string) => void;
 }
 
 export interface SyncMlgwPaymentsResult {
   payments: number;
   targets: number;
+  dryRun: boolean;
 }
 
 export async function syncMlgwPayments(params: SyncMlgwPaymentsParams): Promise<SyncMlgwPaymentsResult> {
   const { supabase, propertyId, credentials } = params;
   const log = params.log ?? (() => {});
+  const dryRun = params.dryRun ?? supabase === null;
 
   const result = await downloadPaymentsInBackground({
     username: credentials.username,
@@ -123,6 +133,17 @@ export async function syncMlgwPayments(params: SyncMlgwPaymentsParams): Promise<
     .map((payment) => toPaymentRow(payment, propertyId))
     .filter((row): row is MlgwPaymentRow => row !== null);
 
+  if (dryRun || supabase === null) {
+    log(
+      `[mlgw-payments] DRY RUN — parsed ${paymentRows.length} payment row(s) from ` +
+        `${result.paymentTargets} target(s); nothing written.`,
+    );
+    // Log a small sample so the parse can be eyeballed against the real portal.
+    for (const row of paymentRows.slice(0, 5)) log(`  · ${JSON.stringify(row)}`);
+    if (paymentRows.length > 5) log(`  · … and ${paymentRows.length - 5} more`);
+    return { payments: paymentRows.length, targets: result.paymentTargets, dryRun: true };
+  }
+
   const out = await upsertMirror(
     supabase,
     "mlgw_payments",
@@ -131,5 +152,5 @@ export async function syncMlgwPayments(params: SyncMlgwPaymentsParams): Promise<
   );
   log(`[mlgw-payments] payments=${out.upserted} targets=${result.paymentTargets}`);
 
-  return { payments: out.upserted, targets: result.paymentTargets };
+  return { payments: out.upserted, targets: result.paymentTargets, dryRun: false };
 }

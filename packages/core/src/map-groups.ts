@@ -1,5 +1,5 @@
 import type { RectColor } from "./map-color";
-import { occupancyGroup, type MapColorUnit } from "./map-color";
+import { occupancyGroup, withAlpha, type MapColorUnit } from "./map-color";
 
 /**
  * User-defined map filter color groups — the return of the original app's
@@ -99,6 +99,15 @@ export function unitMatchesGroup(unit: GroupUnit, group: MapFilterGroup, nowMs: 
   return group.conditions.every((c) => unitMatchesCondition(unit, c, nowMs));
 }
 
+/**
+ * Painted fill opacity for a matching unit. The map draws group fills OVER the
+ * vector site plan, and the plan is what renders the unit numbers — an opaque
+ * fill hides them. Matches the 0.38–0.42 band buildColorMap uses for the
+ * occupancy tint that groups replaced, so a painted unit still reads as a unit.
+ * The group's own colorHex stays solid for swatches and the legend.
+ */
+export const GROUP_FILL_ALPHA = 0.4;
+
 /** #RRGGBB fill → a slightly darkened stroke of the same hue. */
 export function strokeFor(fillHex: string): string {
   const m = /^#?([0-9a-f]{6})$/i.exec(fillHex.trim());
@@ -121,7 +130,9 @@ export interface GroupPaintResult {
 export function buildGroupPaint(groups: MapFilterGroup[], units: GroupUnit[], nowMs: number): GroupPaintResult {
   const colorMap = new Map<string, RectColor>();
   const counts = new Map<string, number>(groups.map((g) => [g.id, 0]));
-  const paints = new Map(groups.map((g) => [g.id, { fill: g.colorHex, stroke: strokeFor(g.colorHex) }]));
+  const paints = new Map(
+    groups.map((g) => [g.id, { fill: withAlpha(g.colorHex, GROUP_FILL_ALPHA), stroke: strokeFor(g.colorHex) }]),
+  );
 
   for (const unit of units) {
     for (const group of groups) {

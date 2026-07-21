@@ -1,3 +1,4 @@
+import React from "react";
 import { Text, View } from "react-native";
 import Svg, { Circle, Line, Path, Rect, Text as SvgText } from "react-native-svg";
 import { CALLBACK_TINT, NAVY } from "@/theme/tokens";
@@ -140,6 +141,62 @@ export function BarChart({
           textAnchor="middle"
         >
           {b.label}
+        </SvgText>
+      ))}
+    </Svg>
+  );
+}
+
+/** Two bars per bucket (e.g. reported vs closed per week) sharing one scale. */
+export function PairedBarChart({
+  pairs,
+  colorA,
+  colorB,
+  height = 150,
+  width = 560,
+}: {
+  pairs: { label: string; a: number; b: number }[];
+  colorA: string;
+  colorB: string;
+  height?: number;
+  width?: number;
+}) {
+  const padB = 18;
+  const padT = 14;
+  const h = height - padT - padB;
+  const maxV = niceMax(Math.max(...pairs.flatMap((p) => [p.a, p.b]), 1));
+  const slot = width / pairs.length;
+  const barW = Math.min(slot * 0.28, 26);
+  const gap = 3;
+  return (
+    <Svg width={width} height={height}>
+      {pairs.map((p, i) => {
+        const ah = (p.a / maxV) * h;
+        const bh = (p.b / maxV) * h;
+        const cx = slot * i + slot / 2;
+        return (
+          <React.Fragment key={p.label}>
+            <Rect x={cx - barW - gap / 2} y={padT + h - ah} width={barW} height={Math.max(ah, 2)} rx={5} fill={colorA} opacity={0.85} />
+            <Rect x={cx + gap / 2} y={padT + h - bh} width={barW} height={Math.max(bh, 2)} rx={5} fill={colorB} opacity={0.9} />
+          </React.Fragment>
+        );
+      })}
+      {pairs.map((p, i) => (
+        <SvgText
+          key={`v${p.label}`}
+          x={slot * i + slot / 2}
+          y={padT + h - (Math.max(p.a, p.b) / maxV) * h - 4}
+          fontSize={9}
+          fontWeight="700"
+          fill={NAVY}
+          textAnchor="middle"
+        >
+          {`${p.a}·${p.b}`}
+        </SvgText>
+      ))}
+      {pairs.map((p, i) => (
+        <SvgText key={`l${p.label}`} x={slot * i + slot / 2} y={height - 4} fontSize={9} fill={AXIS} textAnchor="middle">
+          {p.label}
         </SvgText>
       ))}
     </Svg>

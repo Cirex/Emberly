@@ -101,6 +101,7 @@ export default function WorkOrdersScreen() {
       showFilters={facetMode}
       filterCount={filterCount}
       onOpenFilters={() => view.setFilterSheetOpen(true)}
+      onOpenInsights={() => view.setActiveOverlay("closedInsights")}
       onHeight={setHeaderH}
     />
   );

@@ -33,6 +33,7 @@ export function GlassHeader({
   showFilters,
   filterCount,
   onOpenFilters,
+  onOpenInsights,
   onHeight,
 }: {
   mode: DisplayMode;
@@ -45,6 +46,8 @@ export function GlassHeader({
   showFilters: boolean;
   filterCount: number;
   onOpenFilters: () => void;
+  /** Opens the Closed insights sheet; the chip renders on the closed mode only. */
+  onOpenInsights?: () => void;
   onHeight: (h: number) => void;
 }) {
   const { t } = useTranslation();
@@ -150,6 +153,9 @@ export function GlassHeader({
             <Ionicons name="chevron-down" size={12} color={MUTED} />
           </Pressable>
           <View style={{ flex: 1 }} />
+          {mode === "closed" && onOpenInsights ? (
+            <Chip icon="stats-chart-outline" onPress={onOpenInsights} accessibilityLabel={t("workOrders.insightsA11y")} />
+          ) : null}
           {showFilters ? (
             <Chip
               icon="funnel-outline"

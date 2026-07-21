@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { WorkOrderSchema, type WorkOrder } from "@/lib/api/work-orders";
 import { buildCallbackAnalytics } from "@/lib/derived/callbacks";
+import { buildClosedInsights } from "@/lib/derived/closed-insights";
 import { buildDaysToCloseDistribution } from "@/lib/derived/days-to-close";
 import type { HotSpotRow } from "@/lib/derived/hot-spots";
 import { buildMakeReadyGroups } from "@/lib/derived/make-ready";
@@ -681,5 +682,77 @@ describe("buildScoreCards", () => {
     expect(result[1].caption).toBe("No high-risk hot spots");
     expect(result[2].caption).toBe("No open work on hot spots");
     expect(result[3].caption).toBe("0 recent tickets in 90 days");
+  });
+});
+
+describe("buildClosedInsights", () => {
+  test("weeks bucket reported vs closed on local Monday boundaries", () => {
+    const insideReported = makeWo({ status: "Open", date_reported: "2026-06-16" });
+    const closedInWindow = makeWo({ date_reported: "2026-06-16", date_completed: "2026-07-14" });
+    const outside = makeWo({ status: "Open", date_reported: "2026-04-01" });
+    const all = [insideReported, closedInWindow, outside];
+    const { weeks } = buildClosedInsights({ allNonMakeReady: all, closedFiltered: [closedInWindow], nowMs: NOW });
+
+    expect(weeks).toHaveLength(6);
+    expect(weeks[0].startMs).toBe(localMs("2026-06-08T00:00:00"));
+    expect(weeks[5].startMs).toBe(localMs("2026-07-13T00:00:00"));
+    // Jun 16 falls in the Jun 15 week (index 1) — both fixtures reported there.
+    expect(weeks[1].reported).toBe(2);
+    // Jul 14 completion lands in the current (Jul 13) week.
+    expect(weeks[5].closed).toBe(1);
+    // The April report is outside the 6-week window entirely — only the two
+    // Jun 16 reports count.
+    expect(weeks.reduce((n, w) => n + w.reported, 0)).toBe(2);
+  });
+
+  test("callback rate counts closures a signal ticket points back at, per month", () => {
+    const juneClosed = makeWo({ date_completed: "2026-06-10" });
+    const juneClean = makeWo({ date_completed: "2026-06-20" });
+    const julyClosed = makeWo({ date_completed: "2026-07-02" });
+    const signal = makeWo({
+      status: "Open",
+      date_reported: "2026-06-25",
+      callback_status: "confirmed",
+      callback_matched_work_order_id: juneClosed.id,
+    });
+    const closed = [juneClosed, juneClean, julyClosed];
+    const { callbackMonths } = buildClosedInsights({
+      allNonMakeReady: [...closed, signal],
+      closedFiltered: closed,
+      nowMs: NOW,
+    });
+
+    expect(callbackMonths).toHaveLength(3);
+    const [may, june, july] = callbackMonths;
+    expect(may.closed).toBe(0);
+    expect(may.rate).toBe(0);
+    expect(june.closed).toBe(2);
+    expect(june.callbacks).toBe(1);
+    expect(june.rate).toBeCloseTo(0.5);
+    expect(july.closed).toBe(1);
+    expect(july.callbacks).toBe(0);
+  });
+
+  test("category mix ranks 90-day closures and folds blanks into Other", () => {
+    const rows = [
+      makeWo({ date_completed: "2026-07-01", category: "Plumbing" }),
+      makeWo({ date_completed: "2026-07-02", category: "Plumbing" }),
+      makeWo({ date_completed: "2026-07-03", category: "HVAC" }),
+      makeWo({ date_completed: "2026-07-04" }),
+      // Outside the 90-day window: ignored entirely.
+      makeWo({ date_completed: "2025-12-01", category: "Plumbing" }),
+    ];
+    const { categoryMix, recentClosedCount } = buildClosedInsights({
+      allNonMakeReady: rows,
+      closedFiltered: rows,
+      nowMs: NOW,
+    });
+
+    expect(recentClosedCount).toBe(4);
+    expect(categoryMix[0]).toMatchObject({ category: "Plumbing", count: 2 });
+    expect(categoryMix[0].fraction).toBeCloseTo(0.5);
+    expect(categoryMix[1]).toMatchObject({ category: "HVAC", count: 1 });
+    // The uncategorized closure folds into the trailing Other slice.
+    expect(categoryMix[categoryMix.length - 1]).toMatchObject({ category: null, count: 1 });
   });
 });

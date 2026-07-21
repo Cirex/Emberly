@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { BlurView } from "expo-blur";
 import { Modal, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BarChart, LineChart, ScatterChart } from "@/components/charts/charts";
+import { BarChart, LineChart, PairedBarChart, ScatterChart } from "@/components/charts/charts";
 import { TechBadge } from "@/components/work-orders/rows";
 import type { DerivedSnapshot } from "@/lib/derived/snapshot";
+import { activeLocale } from "@/lib/i18n";
 import { BREAKDOWN_COPY, type TechnicianSummary } from "@/lib/derived/technician-summary";
 import { useWorkOrdersView, type AnalyticsOverlay } from "@/lib/stores/work-orders-view";
 import { CALLBACK_TINT, CLASSIFICATION_TINT, HAIRLINE, MUTED, NAVY, OLIVE, OLIVE_TEXT } from "@/theme/tokens";
@@ -583,6 +585,126 @@ function TechnicianPanel({
   );
 }
 
+
+/** Colors for the category-mix stacked bar; index-stable, Other is last. */
+const MIX_TINTS = ["#2563B4", "#B05E14", "#8348B5", "#0E7D7D"];
+const MIX_OTHER = "rgba(112,120,143,0.6)";
+
+/**
+ * The Closed insights sheet (header chart chip): reported-vs-closed inflow,
+ * the days-to-close distribution, monthly callback rate, and category mix.
+ */
+function ClosedInsightsPanel({ snapshot, onClose, width }: { snapshot: DerivedSnapshot; onClose: () => void; width: number }) {
+  const { t } = useTranslation();
+  const ins = snapshot.closedInsights;
+  const locale = activeLocale();
+
+  const net = ins.weeks.reduce((n, w) => n + w.reported - w.closed, 0);
+  const backlogLine =
+    net > 0 ? t("insights.backlogGrew", { count: net }) : net < 0 ? t("insights.backlogShrank", { count: -net }) : t("insights.backlogFlat");
+  const weekLabel = (ms: number) => new Date(ms).toLocaleDateString(locale, { month: "numeric", day: "numeric" });
+  const monthLabel = (ms: number) => new Date(ms).toLocaleDateString(locale, { month: "long" });
+  const maxRate = Math.max(...ins.callbackMonths.map((m) => m.rate), CALLBACK_TARGET);
+
+  return (
+    <>
+      <PanelHeader
+        icon="stats-chart-outline"
+        tint={OLIVE_TEXT}
+        title={t("insights.title")}
+        subtitle={t("insights.subtitle")}
+        onClose={onClose}
+      />
+
+      <SectionLabel>{t("insights.reportedVsClosed")}</SectionLabel>
+      <Text style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
+        {t("insights.reportedVsClosedSub")} · {backlogLine}
+      </Text>
+      <View style={{ flexDirection: "row", gap: 14, marginTop: 8 }}>
+        <LegendDot color="rgba(9,27,84,0.45)" label={t("insights.reported")} />
+        <LegendDot color="#33A666" label={t("insights.closed")} />
+      </View>
+      <PairedBarChart
+        width={width}
+        pairs={ins.weeks.map((w) => ({ label: weekLabel(w.startMs), a: w.reported, b: w.closed }))}
+        colorA="rgba(9,27,84,0.45)"
+        colorB="#33A666"
+      />
+
+      <SectionLabel>{t("insights.daysToClose")}</SectionLabel>
+      <BarChart
+        width={width}
+        bars={snapshot.daysToClose.buckets.map((b) => ({ label: b.key, value: b.count }))}
+        color="#3D87E0"
+      />
+
+      <SectionLabel>{t("insights.callbackRate")}</SectionLabel>
+      <Text style={{ fontSize: 11, color: MUTED, marginTop: 2, marginBottom: 8 }}>{t("insights.callbackRateSub")}</Text>
+      {ins.callbackMonths.map((m) => {
+        const over = m.rate > CALLBACK_TARGET;
+        return (
+          <View key={m.startMs} style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 7 }}>
+            <Text style={{ width: 84, fontSize: 12, fontWeight: "600", color: "#4C556F", textTransform: "capitalize" }}>
+              {monthLabel(m.startMs)}
+            </Text>
+            <View style={{ flex: 1, height: 12, borderRadius: 6, backgroundColor: "rgba(9,27,84,0.06)", overflow: "hidden" }}>
+              <View
+                style={{
+                  width: `${maxRate > 0 ? Math.min((m.rate / maxRate) * 100, 100) : 0}%`,
+                  height: "100%",
+                  borderRadius: 6,
+                  backgroundColor: m.closed === 0 ? "rgba(9,27,84,0.10)" : over ? CALLBACK_TINT : "#33A666",
+                }}
+              />
+            </View>
+            <Text style={{ width: 52, textAlign: "right", fontSize: 12, fontWeight: "700", color: NAVY, fontVariant: ["tabular-nums"] }}>
+              {m.closed === 0 ? t("insights.noClosures") : `${(m.rate * 100).toFixed(1)}%`}
+            </Text>
+          </View>
+        );
+      })}
+
+      <SectionLabel>{t("insights.categoryMix")}</SectionLabel>
+      <Text style={{ fontSize: 11, color: MUTED, marginTop: 2, marginBottom: 8 }}>
+        {t("insights.categoryMixSub", { count: ins.recentClosedCount })}
+      </Text>
+      {ins.categoryMix.length > 0 ? (
+        <>
+          <View style={{ flexDirection: "row", height: 14, borderRadius: 7, overflow: "hidden" }}>
+            {ins.categoryMix.map((slice, i) => (
+              <View
+                key={slice.category ?? "__other"}
+                style={{
+                  flex: Math.max(slice.fraction, 0.02),
+                  backgroundColor: slice.category === null ? MIX_OTHER : MIX_TINTS[i % MIX_TINTS.length],
+                }}
+              />
+            ))}
+          </View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 8 }}>
+            {ins.categoryMix.map((slice, i) => (
+              <LegendDot
+                key={slice.category ?? "__other"}
+                color={slice.category === null ? MIX_OTHER : MIX_TINTS[i % MIX_TINTS.length]}
+                label={`${slice.category ?? t("insights.otherCategory")} ${(slice.fraction * 100).toFixed(0)}%`}
+              />
+            ))}
+          </View>
+        </>
+      ) : null}
+    </>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+      <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: color }} />
+      <Text style={{ fontSize: 10.5, fontWeight: "600", color: "#4C556F" }}>{label}</Text>
+    </View>
+  );
+}
+
 // ---------------------------------------------------------------------------
 
 export function AnalyticsOverlayHost({ snapshot }: { snapshot: DerivedSnapshot }) {
@@ -609,6 +731,8 @@ export function AnalyticsOverlayHost({ snapshot }: { snapshot: DerivedSnapshot }
         return <TechnicianPanel summary={snapshot.weeklySummary} period="week" onClose={close} />;
       case "technicianMonth":
         return <TechnicianPanel summary={snapshot.monthlySummary} period="month" onClose={close} />;
+      case "closedInsights":
+        return <ClosedInsightsPanel snapshot={snapshot} onClose={close} width={chartWidth} />;
     }
   };
 

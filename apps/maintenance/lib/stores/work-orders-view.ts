@@ -19,7 +19,8 @@ export type AnalyticsOverlay =
   | "daysToClose"
   | "callbacks"
   | "technicianWeek"
-  | "technicianMonth";
+  | "technicianMonth"
+  | "closedInsights";
 
 interface WorkOrdersViewState {
   displayMode: DisplayMode;

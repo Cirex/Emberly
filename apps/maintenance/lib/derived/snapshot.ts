@@ -10,6 +10,7 @@ import { buildMonthlyClassification, type MonthlyClassificationSummary, type Mon
 import { buildOpenGroups, type OpenWorkOrderGroup } from "./open-groups";
 import { parseAll } from "./parse";
 import { buildSameWeekTimeline, type SameWeekMetrics, type SameWeekPoint } from "./same-week-timeline";
+import { buildClosedInsights, type ClosedInsights } from "./closed-insights";
 import { buildScoreCards, type ScoreCard } from "./score-cards";
 import type { WorkOrderSortOption } from "./sort";
 import { buildMonthlyTechnicianSummary, buildWeeklyTechnicianSummary, type TechnicianSummary } from "./technician-summary";
@@ -71,6 +72,8 @@ export interface DerivedSnapshot {
   sameWeek: { points: SameWeekPoint[]; metrics: SameWeekMetrics };
   daysToClose: { buckets: DaysToCloseBucket[]; metrics: DaysToCloseMetrics };
   callbacks: CallbackAnalytics;
+  /** Aggregates for the Closed board's insights sheet. */
+  closedInsights: ClosedInsights;
   /** Same-unit index for "Related Work Orders" on the detail screen. */
   byUnit: Map<string, ParsedWorkOrder[]>;
   unitIndex: UnitIndex;
@@ -177,6 +180,7 @@ export function buildSnapshot(input: SnapshotInput): DerivedSnapshot {
   const monthlyClassification = buildMonthlyClassification({ workOrders: allNonMakeReady, unitIndex, nowMs });
   const sameWeek = buildSameWeekTimeline(closed.filtered, nowMs);
   const daysToClose = buildDaysToCloseDistribution(closed.filtered);
+  const closedInsights = buildClosedInsights({ allNonMakeReady, closedFiltered: closed.filtered, nowMs });
   const callbacks = buildCallbackAnalytics({ workOrders: allNonMakeReady, nowMs });
 
   const visible =
@@ -216,6 +220,7 @@ export function buildSnapshot(input: SnapshotInput): DerivedSnapshot {
     sameWeek,
     daysToClose,
     callbacks,
+    closedInsights,
     byUnit,
     unitIndex,
   };

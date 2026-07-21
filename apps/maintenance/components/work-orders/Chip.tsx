@@ -15,6 +15,7 @@ export function Chip({
   onPress,
   tint = "#4C556F",
   activeTint = OLIVE_TEXT,
+  accessibilityLabel,
 }: {
   label?: string;
   icon: string;
@@ -23,12 +24,15 @@ export function Chip({
   onPress: () => void;
   tint?: string;
   activeTint?: string;
+  /** Required for icon-only chips (no visible label for the reader to use). */
+  accessibilityLabel?: string;
 }) {
   const color = active ? activeTint : tint;
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
       style={{
         flexDirection: "row",
         alignItems: "center",

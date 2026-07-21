@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { FlatList, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useShallow } from "zustand/react/shallow";
+import { capture } from "@/lib/analytics";
 import { FilterSheet } from "@/components/work-orders/FilterSheet";
 import { GlassHeader } from "@/components/work-orders/GlassHeader";
 import { AnalyticsOverlayHost } from "@/components/work-orders/analytics/OverlayHost";
@@ -127,14 +128,21 @@ export default function WorkOrdersScreen() {
   const header = (
     <GlassHeader
       mode={view.displayMode}
-      onMode={view.setDisplayMode}
+      onMode={(m) => {
+        // The dropdown only, so the stale-mode migration effect above can't fire it.
+        capture("board_mode_switched", { mode: m });
+        view.setDisplayMode(m);
+      }}
       count={pillCount}
       cards={cards}
       onAction={(a) => view.setActiveOverlay(a)}
       showFilters={facetMode}
       filterCount={filterCount}
       onOpenFilters={() => view.setFilterSheetOpen(true)}
-      onOpenInsights={() => view.setActiveOverlay("closedInsights")}
+      onOpenInsights={() => {
+        capture("insights_viewed");
+        view.setActiveOverlay("closedInsights");
+      }}
       onHeight={setHeaderH}
     />
   );

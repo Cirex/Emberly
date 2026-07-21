@@ -155,6 +155,7 @@ export default function WorkOrderDetail() {
   const canClose = isOpen && !pendingClose;
 
   const onShowOnMap = () => {
+    capture("show_on_map_used");
     if (wo.unitNumber.trim().length > 0) requestJump(wo.unitNumber.trim());
     router.push("/(tabs)/property-map");
   };

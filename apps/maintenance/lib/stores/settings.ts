@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { capture } from "@/lib/analytics";
 import { changeAppLanguage, type AppLanguage } from "@/lib/i18n";
 import { DEFAULT_ACCENT, type AccentThemeId, type AppThemePreference } from "@/theme/tokens";
 
@@ -37,7 +38,7 @@ interface SettingsState {
 
 export const useSettings = create<SettingsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       language: "en",
       themePreference: "system",
       accentId: DEFAULT_ACCENT,
@@ -54,6 +55,9 @@ export const useSettings = create<SettingsState>()(
       setUtilityLayerVisible: (utilityLayerVisible) => set({ utilityLayerVisible }),
       setEmergencyAlerts: (emergencyAlerts) => set({ emergencyAlerts }),
       setLanguage: (language) => {
+        // Only user-initiated changes report — rehydrate applies the persisted
+        // language via onRehydrateStorage below, never through this setter.
+        if (language !== get().language) capture("language_changed", { language });
         changeAppLanguage(language);
         set({ language });
       },

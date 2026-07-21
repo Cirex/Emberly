@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { reportSyncFailed, reportSyncSucceeded } from "@/lib/analytics";
 import { listWorkOrders, type WorkOrder } from "@/lib/api/work-orders";
 import type { StaffConfig } from "@/lib/stores/config";
 
@@ -82,9 +83,11 @@ export const useWorkOrders = create<WorkOrdersState>()(
           if (JSON.stringify(acc) !== JSON.stringify(prev.workOrders)) {
             set((s) => ({ workOrders: acc, dataVersion: s.dataVersion + 1 }));
           }
+          reportSyncSucceeded("workOrders");
         } catch {
           // Background sync failing is not an error state the UI should enter —
           // the cached data stands, and the next tick retries.
+          reportSyncFailed("workOrders");
         } finally {
           refreshing = false;
         }

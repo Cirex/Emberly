@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { reportSyncFailed, reportSyncSucceeded } from "@/lib/analytics";
 import {
   type LeaseStatusFilter,
   type ResmanConfig,
@@ -122,9 +123,11 @@ export const useUnits = create<UnitsState>()(
           ) {
             set({ units: page.data, total: page.pagination.count });
           }
+          reportSyncSucceeded("units");
         } catch {
           // Background sync failing is not an error state the UI should enter —
           // the cached data stands, and the next tick retries.
+          reportSyncFailed("units");
         } finally {
           refreshing = false;
         }

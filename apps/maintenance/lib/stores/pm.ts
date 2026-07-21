@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { capture } from "@/lib/analytics";
+import { capture, reportSyncFailed, reportSyncSucceeded } from "@/lib/analytics";
 import {
   listPmTemplateRounds,
   updatePmTaskStatus,
@@ -113,9 +113,11 @@ export const usePm = create<PmState>()(
           } else {
             set({ refreshedAt: Date.now() });
           }
+          reportSyncSucceeded("pm");
         } catch {
           // Background sync failing is not an error state the UI should enter —
           // the cached round stands, and the next tick retries.
+          reportSyncFailed("pm");
         } finally {
           refreshing = false;
         }

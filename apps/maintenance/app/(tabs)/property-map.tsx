@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { capture } from "@/lib/analytics";
 import { AnnotationEditorDialog } from "@/components/map/AnnotationEditorDialog";
 import { GroupsSheet } from "@/components/map/GroupsSheet";
 import { TagEditorDialog } from "@/components/map/TagEditorDialog";
@@ -263,6 +264,8 @@ export default function PropertyMapScreen() {
   };
   const onPlacePin = (nx: number, ny: number) => {
     const c = ann.add(nx, ny);
+    // No PII: the annotation kind only, never titles/notes.
+    capture("map_annotation_created", { kind: c.kind });
     setPlaceMode("none");
     clearOverlays();
     setEditingId(c.id);
@@ -282,7 +285,8 @@ export default function PropertyMapScreen() {
     const x = clamp(nx, 0, 1);
     const y = clamp(ny, 0, 1);
     if (utilitySub === "pin") {
-      ann.addUtilityPin(x, y, utilityType);
+      const c = ann.addUtilityPin(x, y, utilityType);
+      capture("map_annotation_created", { kind: c.kind });
       setPlaceMode("none");
       clearOverlays();
       return;
@@ -290,7 +294,10 @@ export default function PropertyMapScreen() {
     setDraftPoints((prev) => [...prev, { x, y }]);
   };
   const finishUtilityLine = () => {
-    if (draftPoints.length >= 2) ann.addUtilityLine(draftPoints, utilityType);
+    if (draftPoints.length >= 2) {
+      const c = ann.addUtilityLine(draftPoints, utilityType);
+      capture("map_annotation_created", { kind: c.kind });
+    }
     setDraftPoints([]);
     setPlaceMode("none");
   };

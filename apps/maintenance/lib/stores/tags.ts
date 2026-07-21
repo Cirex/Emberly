@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { z } from "zod";
 import { create } from "zustand";
+import { reportSyncFailed, reportSyncSucceeded } from "@/lib/analytics";
 import type { StaffConfig } from "@/lib/stores/config";
 
 type ScannerConfig = StaffConfig;
@@ -86,14 +87,20 @@ export const useTags = create<TagsState>((set, get) => ({
       const res = await fetch(`${config.baseUrl}/api/admin/unit-tags`, {
         headers: { Authorization: `Bearer ${config.token}` },
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        // A reachable server that answers non-2xx is still a failed sync.
+        reportSyncFailed("tags");
+        return;
+      }
       const byUnit = groupByUnit(ListSchema.parse(await res.json()).tags);
       if (JSON.stringify(byUnit) !== JSON.stringify(get().byUnit)) {
         set({ byUnit });
         void AsyncStorage.setItem(KEY, JSON.stringify(byUnit));
       }
+      reportSyncSucceeded("tags");
     } catch {
       // Offline — the cached set stands until a tick succeeds.
+      reportSyncFailed("tags");
     } finally {
       set({ syncing: false });
     }

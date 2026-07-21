@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
 import { useMapJump } from "@emberly/ui";
+import { capture } from "@/lib/analytics";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import { ClassificationChip, ColumnHeader, WorkOrderRow } from "@/components/work-orders/rows";
 import {
@@ -496,7 +497,10 @@ export function HotSpots({
   // Same jump pattern as the work-order detail screen's "show on map".
   const showOnMap = (unitNumber: string) => {
     const unit = unitNumber.trim();
-    if (unit.length > 0) useMapJump.getState().request(unit);
+    if (unit.length > 0) {
+      capture("show_on_map_used");
+      useMapJump.getState().request(unit);
+    }
     router.push("/(tabs)/property-map");
   };
 

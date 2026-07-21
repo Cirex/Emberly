@@ -4,6 +4,7 @@ import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { useEffect } from "react";
 import { Platform } from "react-native";
+import { capture } from "@/lib/analytics";
 import { registerPushToken, unregisterPushToken } from "@/lib/api/push-tokens";
 import { emergencyWorkOrderIdFrom } from "@/lib/push-routing";
 import type { StaffConfig } from "@/lib/stores/config";
@@ -118,6 +119,8 @@ function openWorkOrderFrom(response: Notifications.NotificationResponse | null):
   const receivedAt = response?.notification.date ?? 0;
   if (handledResponseDate === receivedAt) return;
   handledResponseDate = receivedAt;
+  // Past the dedupe latch, so a cold-start replay can't double-report.
+  capture("emergency_push_opened");
   router.push({ pathname: "/work-order/[id]", params: { id } });
 }
 

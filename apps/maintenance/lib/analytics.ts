@@ -57,6 +57,23 @@ export function capture(event: AnalyticsEvent, properties?: AnalyticsProperties)
   posthog?.capture(event, properties);
 }
 
+// Transition-into-failure latch for `sync_failed`: during a long outage the
+// 60s tick would otherwise fire the event every minute per store. Only the
+// first failure after a success reports; a successful sync re-arms its store.
+const failedSyncStores = new Set<string>();
+
+/** Report a background refresh/sync failure, once per outage per store. */
+export function reportSyncFailed(store: string): void {
+  if (failedSyncStores.has(store)) return;
+  failedSyncStores.add(store);
+  capture("sync_failed", { store });
+}
+
+/** Re-arm the failure latch for a store after a successful refresh/sync. */
+export function reportSyncSucceeded(store: string): void {
+  failedSyncStores.delete(store);
+}
+
 /** Associate subsequent events with a user. No-op when analytics is disabled. */
 export function identify(distinctId: string, properties?: AnalyticsProperties): void {
   posthog?.identify(distinctId, properties);

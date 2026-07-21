@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
+import { reportSyncFailed, reportSyncSucceeded } from "@/lib/analytics";
 import {
   createAnnotation,
   deleteAnnotation,
@@ -217,8 +218,10 @@ export const useAnnotations = create<AnnotationsState>((set, get) => ({
       const merged = remote.map((r) => queuedById.get(r.id) ?? fromRemote(r)).concat(queuedLocal);
       set({ annotations: merged });
       persist(merged);
+      reportSyncSucceeded("annotations");
     } catch {
       // Pull failed (offline) — cached pins stand, queue intact.
+      reportSyncFailed("annotations");
     } finally {
       syncing = false;
     }

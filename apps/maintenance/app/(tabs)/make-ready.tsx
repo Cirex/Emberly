@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { FlatList, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { capture } from "@/lib/analytics";
 import { AccountMenu } from "@/components/ui/AccountMenu";
 import { ScoreCardGrid } from "@/components/work-orders/ScoreCardGrid";
 import { AnalyticsOverlayHost } from "@/components/work-orders/analytics/OverlayHost";
@@ -73,7 +74,15 @@ export default function MakeReadyScreen() {
           <View style={{ gap: 12 }}>
             <View style={{ paddingHorizontal: pad, gap: 12 }}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <MakeReadyModePill mode={mode} onMode={setMode} count={pillCount} />
+                <MakeReadyModePill
+                  mode={mode}
+                  onMode={(m) => {
+                    // Namespaced so the Work Orders board's mode strings stay distinct.
+                    capture("board_mode_switched", { mode: `makeReady:${m}` });
+                    setMode(m);
+                  }}
+                  count={pillCount}
+                />
                 <View style={{ flex: 1 }} />
                 <AccountMenu />
               </View>

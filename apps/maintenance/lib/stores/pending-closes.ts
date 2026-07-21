@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { capture } from "@/lib/analytics";
 import { closeWorkOrder } from "@/lib/api/work-orders";
 import type { StaffConfig } from "@/lib/stores/config";
 
@@ -19,6 +20,12 @@ export interface PendingClose {
   queuedAt: number;
   /** True once the server accepted (even as a stub); false = local-only, retry. */
   acked: boolean;
+  /**
+   * Close attempts made so far (the immediate try plus flush retries). Rows
+   * persisted before this field exists have made at least the immediate
+   * attempt, so a missing value reads as 1.
+   */
+  attempts?: number;
 }
 
 /** A pending close older than this is dropped at hydrate/prune — with the
@@ -46,7 +53,7 @@ export const usePendingCloses = create<PendingClosesState>()(
         set((s) => ({
           pending: {
             ...s.pending,
-            [workOrderId]: { workOrderId, note, queuedAt: Date.now(), acked: false },
+            [workOrderId]: { workOrderId, note, queuedAt: Date.now(), acked: false, attempts: 1 },
           },
         }));
         try {
@@ -64,15 +71,28 @@ export const usePendingCloses = create<PendingClosesState>()(
       flush: async (config) => {
         const unacked = Object.values(get().pending).filter((p) => !p.acked);
         for (const entry of unacked) {
+          // This flush try is one more attempt on top of whatever the entry
+          // has already made (missing = the immediate try in queueClose).
+          const attempts = (entry.attempts ?? 1) + 1;
           try {
             await closeWorkOrder(entry.workOrderId, entry.note, config);
             set((s) => {
               const cur = s.pending[entry.workOrderId];
               if (!cur) return s;
-              return { pending: { ...s.pending, [entry.workOrderId]: { ...cur, acked: true } } };
+              return { pending: { ...s.pending, [entry.workOrderId]: { ...cur, acked: true, attempts } } };
+            });
+            // No PII: retry accounting + queue latency only.
+            capture("pending_close_flushed", {
+              retry_count: attempts,
+              queued_ms: Date.now() - entry.queuedAt,
             });
           } catch {
-            /* still unreachable — next tick */
+            // Still unreachable — persist the attempt count for the next tick.
+            set((s) => {
+              const cur = s.pending[entry.workOrderId];
+              if (!cur || cur.acked) return s;
+              return { pending: { ...s.pending, [entry.workOrderId]: { ...cur, attempts } } };
+            });
           }
         }
       },

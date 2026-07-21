@@ -523,7 +523,7 @@ describe("buildScoreCards", () => {
     ];
     const result = cards({ mode: "open", visible: open, openFiltered: open, allNonMakeReady: submitted });
 
-    expect(result.map((c) => c.title)).toEqual(["Open Work Orders", "Submitted in Month", "Aging Risk", "Callbacks"]);
+    expect(result.map((c) => c.title)).toEqual(["Open work orders", "Submitted in month", "Aging risk", "Callbacks"]);
     expect(result.map((c) => c.interactive)).toEqual([true, false, false, true]);
     expect(result[0].value).toBe("3");
     expect(result[0].caption).toBe("2 units with open work");
@@ -562,10 +562,10 @@ describe("buildScoreCards", () => {
     const result = cards({ mode: "closed", visible: closed, closedFiltered: closed, weeklySummary: weekly });
 
     expect(result.map((c) => c.title)).toEqual([
-      "Closed Same Week",
-      "Avg Days to Close",
-      "Closed This Week",
-      "Closed This Month",
+      "Closed same week",
+      "Avg days to close",
+      "Closed this week",
+      "Closed this month",
     ]);
     expect(result.every((c) => c.interactive)).toBe(true);
     expect(result.map((c) => c.action)).toEqual(["sameWeek", "daysToClose", "technicianWeek", "technicianMonth"]);
@@ -632,10 +632,10 @@ describe("buildScoreCards", () => {
     const result = cards({ mode: "makeReady", makeReadyGroups: groups });
 
     expect(result.map((c) => c.title)).toEqual([
-      "Turns in Progress",
-      "Completed This Month",
-      "Avg Days in Turn",
-      "Overdue Turns",
+      "Turns in progress",
+      "Completed this month",
+      "Avg days in turn",
+      "Overdue turns",
     ]);
     expect(result.every((c) => !c.interactive)).toBe(true);
     expect(result[0].value).toBe("1"); // M2 not "Ready"
@@ -662,10 +662,10 @@ describe("buildScoreCards", () => {
     const result = cards({ mode: "hotSpots", hotSpotRows: rows });
 
     expect(result.map((c) => c.title)).toEqual([
-      "Hot Spot Units",
-      "High Risk Units",
-      "Open on Hot Spots",
-      "Callback Signals",
+      "Hot spot units",
+      "High risk units",
+      "Open on hot spots",
+      "Callback signals",
     ]);
     expect(result.every((c) => !c.interactive)).toBe(true);
     expect(result[0].value).toBe("2");

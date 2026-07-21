@@ -23,6 +23,7 @@ import {
   quickFilterCounts,
   quickFilterIncludes,
   stagesOf,
+  unitIsReady,
   urgencyShowsBadge,
 } from "@/lib/derived/make-ready";
 import { buildHotSpotRows, hotSpotSparkline, hotSpotTopTrade, hotSpotWeeklyTrend } from "@/lib/derived/hot-spots";
@@ -277,6 +278,21 @@ describe("make-ready quick filters", () => {
       incomplete: 3,
       noMoveInDate: 2,
     });
+  });
+});
+
+describe("unitIsReady (the schedule's stale-ticket guard)", () => {
+  test("exact-matches the ResMan 'Ready' availability", () => {
+    expect(unitIsReady(groupBy("C1"))).toBe(true);
+    expect(unitIsReady(groupBy("A1"))).toBe(false); // "Not Ready"
+    expect(unitIsReady(groupBy("B1"))).toBe(false); // no facts → "—"
+  });
+
+  test("filtering the schedule drops Ready units even with open tickets", () => {
+    // C1's availability is "Ready" — whatever its tickets say, the schedule
+    // must not show it. The others all survive.
+    const schedule = groups.filter((g) => !unitIsReady(g));
+    expect(schedule.map((g) => g.unitNumber)).toEqual(["A1", "B1", "D1"]);
   });
 });
 

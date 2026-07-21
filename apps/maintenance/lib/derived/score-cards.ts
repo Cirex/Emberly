@@ -2,7 +2,7 @@ import type { DisplayMode, ParsedWorkOrder } from "./types";
 import type { MakeReadyGroup } from "./make-ready";
 import type { HotSpotRow } from "./hot-spots";
 import type { TechnicianSummary } from "./technician-summary";
-import { earliestReportedDate, isFullyCompletedTurn, latestCompletedDate } from "./make-ready";
+import { earliestReportedDate, isFullyCompletedTurn, latestCompletedDate, unitIsReady } from "./make-ready";
 import { TINT } from "./status";
 import { DAY_MS, addDays, calendarDaysBetween, sameCalendarMonth, sameCalendarWeek, startOfDay, startOfWeek } from "./time";
 import i18n from "@/lib/i18n";
@@ -236,7 +236,7 @@ function closedCards(closedFiltered: ParsedWorkOrder[], weeklySummary: Technicia
 // ── Make-ready mode ─────────────────────────────────────────────────────────
 
 function makeReadyCards(groups: MakeReadyGroup[], nowMs: number): ScoreCard[] {
-  const inProgress = groups.filter((g) => g.unitStatus !== "Ready").length;
+  const inProgress = groups.filter((g) => !unitIsReady(g)).length;
 
   const fullyCompleted = groups.filter(isFullyCompletedTurn);
   const completedThisMonth = fullyCompleted.filter((g) => {

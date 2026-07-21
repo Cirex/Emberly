@@ -192,6 +192,18 @@ export function isStageCompleted(wo: ParsedWorkOrder | null): boolean {
   return wo !== null && isCompleted(wo);
 }
 
+/**
+ * ResMan has flipped the unit's availability to "Ready" — the turn is done in
+ * the system of record even if make-ready tickets were never closed out. The
+ * board hides these behind its "show completed" toggle; the SCHEDULE excludes
+ * them unconditionally, because a stale ticket on a Ready unit is noise on a
+ * planning view. (Exact-match on the ResMan availability text, same as the
+ * Swift rule this ports.)
+ */
+export function unitIsReady(g: Pick<MakeReadyGroup, "unitStatus">): boolean {
+  return g.unitStatus === "Ready";
+}
+
 /** The stage a turn is currently working — the first slot not yet completed —
  *  or null when every stage is done. */
 export function currentStageOf(g: MakeReadyGroup): MakeReadyStage | null {

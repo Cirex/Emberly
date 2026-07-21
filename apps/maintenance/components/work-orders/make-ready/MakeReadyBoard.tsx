@@ -13,6 +13,7 @@ import {
   currentStageOf,
   isStageCompleted,
   quickFilterIncludes,
+  unitIsReady,
   urgencyShowsBadge,
 } from "@/lib/derived/make-ready";
 import { TINT } from "@/lib/derived/status";
@@ -546,7 +547,7 @@ export function MakeReadyBoard({
   const visible = useMemo(
     () =>
       groups.filter(
-        (g) => quickFilterIncludes(quickFilter, g) && (showCompleted || g.unitStatus !== "Ready"),
+        (g) => quickFilterIncludes(quickFilter, g) && (showCompleted || !unitIsReady(g)),
       ),
     [groups, quickFilter, showCompleted],
   );

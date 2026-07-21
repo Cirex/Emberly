@@ -9,7 +9,7 @@ import { HistoryList } from "@/components/work-orders/make-ready/HistoryList";
 import { MakeReadyBoard } from "@/components/work-orders/make-ready/MakeReadyBoard";
 import { MakeReadyModePill, type MakeReadyMode } from "@/components/work-orders/make-ready/MakeReadyModePill";
 import { ScheduleList } from "@/components/work-orders/make-ready/ScheduleList";
-import { isFullyCompletedTurn } from "@/lib/derived/make-ready";
+import { isFullyCompletedTurn, unitIsReady } from "@/lib/derived/make-ready";
 import { useDerivedSnapshot } from "@/lib/hooks/use-derived-snapshot";
 import { screenHPad } from "@/theme/tokens";
 import { useShallow } from "zustand/react/shallow";
@@ -50,9 +50,17 @@ export default function MakeReadyScreen() {
     () => snapshot.makeReadyGroups.filter(isFullyCompletedTurn),
     [snapshot.makeReadyGroups],
   );
-  const scheduledCount = useMemo(
-    () => snapshot.makeReadyGroups.filter((g) => g.moveInAt !== null).length,
+  // The schedule plans upcoming turns. A unit ResMan already flipped to
+  // "Ready" is done in the system of record — stale tickets that never got
+  // closed out must not keep it on the planning view, so unlike the turns
+  // board there is no toggle to reveal these.
+  const scheduleGroups = useMemo(
+    () => snapshot.makeReadyGroups.filter((g) => !unitIsReady(g)),
     [snapshot.makeReadyGroups],
+  );
+  const scheduledCount = useMemo(
+    () => scheduleGroups.filter((g) => g.moveInAt !== null).length,
+    [scheduleGroups],
   );
   const pillCount =
     mode === "turns"
@@ -101,7 +109,7 @@ export default function MakeReadyScreen() {
                 pad={pad}
               />
             ) : mode === "schedule" ? (
-              <ScheduleList groups={snapshot.makeReadyGroups} nowMs={nowMs} pad={pad} />
+              <ScheduleList groups={scheduleGroups} nowMs={nowMs} pad={pad} />
             ) : (
               <HistoryList groups={completedTurns} nowMs={nowMs} pad={pad} />
             )}

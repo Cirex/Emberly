@@ -34,8 +34,9 @@ const BILL_COLUMNS =
   "mosquito_rodent_control_fee_total, storm_water_fee_total, solid_waste_fee_total";
 const PAYMENT_COLUMNS =
   "id, mlgw_account_id, reference_number, status, amount, paid_date, payment_method, authorization_number";
+// resman_units names its unit column `number`; alias to the facts shape.
 const UNIT_COLUMNS =
-  "resman_unit_id, unit_number, occupancy_status, tenant_names, move_in_date, move_out_date, lease_start_date, lease_end_date";
+  "resman_unit_id, unit_number:number, occupancy_status, tenant_names, move_in_date, move_out_date, lease_start_date, lease_end_date";
 
 /** The portal's spend goal; unset draws no goal line, matching XMS. */
 function spendGoal(): number | null {
@@ -81,13 +82,17 @@ export default async function UtilitiesPage() {
     ]);
     const reviewedKeys = new Set(reviews.map((r) => `${r.bill_id}|${r.exception_kind}`));
 
-    // Occupancy overlay: only the units MLGW accounts actually reference.
-    const unitIds = [...new Set(accounts.map((a) => a.resman_unit_id).filter(Boolean))];
+    // Occupancy overlay. Whole-table read: 600+ linked accounts would build a
+    // ~24KB `.in()` URL, and the mirror is under a thousand rows anyway.
+    const referencedUnitIds = new Set(accounts.map((a) => a.resman_unit_id).filter(Boolean));
     const facts = new Map<string, UtilityUnitFacts>();
-    if (unitIds.length > 0) {
-      const unitsRes = await client.from("resman_units").select(UNIT_COLUMNS).in("resman_unit_id", unitIds);
-      if (unitsRes.error) throw new Error(unitsRes.error.message);
-      for (const u of (unitsRes.data ?? []) as UtilityUnitFacts[]) facts.set(u.resman_unit_id, u);
+    if (referencedUnitIds.size > 0) {
+      const units = await fetchAll<UtilityUnitFacts>((from, to) =>
+        client.from("resman_units").select(UNIT_COLUMNS).order("resman_unit_id").range(from, to),
+      );
+      for (const u of units) {
+        if (referencedUnitIds.has(u.resman_unit_id)) facts.set(u.resman_unit_id, u);
+      }
     }
     const vacantUnitIds = new Set(
       [...facts.values()].filter((u) => (u.occupancy_status ?? "").toLowerCase().includes("vacant")).map((u) => u.resman_unit_id),

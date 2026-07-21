@@ -282,9 +282,6 @@ export default function Settings() {
 
       <SectionLabel>{t("settings.map")}</SectionLabel>
       <AppCardSurface kind="panel" style={{ paddingHorizontal: 18, paddingVertical: 4 }}>
-        <Row label={t("settings.occupancyTint")} sub={t("settings.occupancyTintSub")}>
-          <Toggle value={settings.mapOccupancyTint} onChange={settings.setMapOccupancyTint} />
-        </Row>
         <Row label={t("settings.utilityLayer")} sub={t("settings.utilityLayerSub")}>
           <Toggle value={settings.utilityLayerVisible} onChange={settings.setUtilityLayerVisible} />
         </Row>

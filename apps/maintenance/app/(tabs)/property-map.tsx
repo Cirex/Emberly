@@ -23,7 +23,7 @@ import type { ResmanUnit } from "@/lib/api/units";
 import type { LineStyle, LineWeight, UtilityPoint, UtilityType } from "@/lib/api/annotations";
 import { UTILITY_COLORS, effectiveLineStyle } from "@/lib/utility-lines";
 import { useUtilityVisibility } from "@/lib/stores/utility-visibility";
-import { buildColorMap, buildGroupPaint, legendFor, occupancyGroup, unitMatchesSearch } from "@emberly/core";
+import { buildGroupPaint, occupancyGroup, unitMatchesSearch } from "@emberly/core";
 import { isNight } from "@/lib/map-daynight";
 import { PLACED_UNITS, UNIT_COUNT } from "@/lib/map-data";
 import { useAnnotationPhotos } from "@/lib/stores/annotation-photos";
@@ -73,8 +73,6 @@ export default function PropertyMapScreen() {
   const [selected, setSelected] = useState<string | undefined>();
   // One toggle instead of the old mode chips: occupancy tint on or off.
   // Off by default, persisted with the rest of the device preferences.
-  const occupancyTint = useSettings((s) => s.mapOccupancyTint);
-  const setOccupancyTint = useSettings((s) => s.setMapOccupancyTint);
   const [placeMode, setPlaceMode] = useState<PlaceMode>("none");
   const [tagEditUnit, setTagEditUnit] = useState<string | undefined>();
   // Utility draw mode: pick a type, then either drop pins or tap out a run's
@@ -164,43 +162,23 @@ export default function PropertyMapScreen() {
     () => buildGroupPaint(groups, units.allUnits, Date.now()),
     [groups, units.allUnits],
   );
+  // Color groups are the map's one paint mode — the old single occupancy
+  // tint was retired once it survived as the prebuilt groups.
   const colorMap = useMemo(
+    () => (groupsEnabled ? groupPaint.colorMap : new Map()),
+    [groupsEnabled, groupPaint],
+  );
+  // Legend rows carry live unit counts from the same buildGroupPaint pass
+  // that colors the map. Keyed by group id — two groups can share a name.
+  const legend = useMemo(
     () =>
       groupsEnabled
-        ? groupPaint.colorMap
-        : occupancyTint
-          ? buildColorMap("occupancy", units.allUnits)
-          : new Map(),
-    [groupsEnabled, groupPaint, occupancyTint, units.allUnits],
+        ? groups
+            .filter((g) => g.visible)
+            .map((g) => ({ key: g.id, label: g.name, color: g.colorHex, count: groupPaint.counts.get(g.id) ?? 0 }))
+        : [],
+    [groupsEnabled, groups, groupPaint],
   );
-  // Legend entries carry live unit counts: a group's from buildGroupPaint,
-  // the occupancy tint's tallied from the same bucketing that paints it.
-  const legend = useMemo(() => {
-    if (groupsEnabled) {
-      // Keyed by group id — two groups can share a name ("New group" twice).
-      return groups
-        .filter((g) => g.visible)
-        .map((g) => ({ key: g.id, label: g.name, color: g.colorHex, count: groupPaint.counts.get(g.id) ?? 0 }));
-    }
-    if (!occupancyTint) return [];
-    const buckets = new Map<string, number>();
-    for (const u of units.allUnits) {
-      const b = occupancyGroup(u);
-      if (!b) continue;
-      buckets.set(b, (buckets.get(b) ?? 0) + 1);
-    }
-    const BUCKET_BY_LABEL: Record<string, string> = {
-      Occupied: "Occupied",
-      Vacant: "Vacant",
-      Notice: "Notice",
-      Eviction: "Under Eviction",
-    };
-    return legendFor("occupancy", units.allUnits).map((item) => ({
-      ...item,
-      key: item.label,
-      count: buckets.get(BUCKET_BY_LABEL[item.label] ?? item.label) ?? 0,
-    }));
-  }, [groupsEnabled, groups, groupPaint, occupancyTint, units.allUnits]);
   // Search the synced ResMan record (unit number + street + tenant names), not
   // just the map's bare number — so "kingsgate" or a resident's name finds the
   // right units, falling back to number-only for any unit without synced data.
@@ -499,15 +477,8 @@ export default function PropertyMapScreen() {
           <GlassSurface radius={22} style={{ overflow: "hidden" }}>
             <View>
               <StackBtn
-                icon="people-outline"
-                first
-                active={occupancyTint && !groupsEnabled}
-                onPress={() => setOccupancyTint(!occupancyTint)}
-                label="Occupancy tint"
-                disabled={!hasData || groupsEnabled}
-              />
-              <StackBtn
                 icon="color-filter-outline"
+                first
                 active={groupsEnabled}
                 onPress={() => {
                   if (!groupsEnabled) useMapGroups.getState().setEnabled(true);
@@ -593,7 +564,7 @@ export default function PropertyMapScreen() {
       ) : null}
 
       {/* Legend — quiet glass card, bottom-left, only while the tint is on. */}
-      {hasData && (occupancyTint || groupsEnabled) && legend.length > 0 && !hasQuery && placeMode === "none" ? (
+      {hasData && groupsEnabled && legend.length > 0 && !hasQuery && placeMode === "none" ? (
         <View pointerEvents="none" style={{ position: "absolute", left: hPad, bottom: insets.bottom + 118 }}>
           <GlassSurface radius={14}>
             <View style={{ paddingHorizontal: 12, paddingVertical: 9, gap: 6 }}>

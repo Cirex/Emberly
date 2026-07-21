@@ -5,6 +5,9 @@ import type { TechnicianSummary } from "./technician-summary";
 import { earliestReportedDate, isFullyCompletedTurn, latestCompletedDate } from "./make-ready";
 import { TINT } from "./status";
 import { DAY_MS, addDays, calendarDaysBetween, sameCalendarMonth, sameCalendarWeek, startOfDay, startOfWeek } from "./time";
+import i18n from "@/lib/i18n";
+
+const t = i18n.t.bind(i18n);
 
 /**
  * Score-card strip — port of the Swift dashboard's four headline tiles per
@@ -38,17 +41,17 @@ function count(n: number): string {
 
 /** "1 day" / "<n> days" for whole-day counts. */
 function dayCountText(n: number): string {
-  return n === 1 ? "1 day" : `${n} days`;
+  return t("scoreCards.captions.day", { count: n });
 }
 
 /** One-decimal day averages; near-1 averages read as the clean "1 day". */
 function averageDayText(avg: number): string {
-  return Math.abs(avg - 1) < 0.05 ? "1 day" : `${avg.toFixed(1)} days`;
+  return Math.abs(avg - 1) < 0.05 ? t("scoreCards.captions.day", { count: 1 }) : t("scoreCards.captions.daysDecimal", { value: avg.toFixed(1) });
 }
 
 function averageCompletionText(completedCount: number, technicianCount: number, period: "week" | "month"): string {
-  if (technicianCount === 0) return `No technician completions this ${period}`;
-  return `Avg ${(completedCount / technicianCount).toFixed(1)} per technician`;
+  if (technicianCount === 0) return period === "week" ? t("scoreCards.captions.noTechWeek") : t("scoreCards.captions.noTechMonth");
+  return t("scoreCards.captions.avgPerTech", { value: (completedCount / technicianCount).toFixed(1) });
 }
 
 export function buildScoreCards(input: {
@@ -104,9 +107,9 @@ function openCards(
   return [
     {
       key: "open-total",
-      title: "Open Work Orders",
+      title: t("scoreCards.openTotal"),
       value: count(visible.length),
-      caption: `${uniqueUnitCount} units with open work`,
+      caption: t("scoreCards.captions.unitsWithOpenWork", { count: uniqueUnitCount }),
       icon: "list-outline",
       tint: OLIVE,
       interactive: true,
@@ -114,9 +117,9 @@ function openCards(
     },
     {
       key: "open-submitted-month",
-      title: "Submitted in Month",
+      title: t("scoreCards.submittedMonth"),
       value: count(submitted.length),
-      caption: `${(submittedRate * 100).toFixed(2)}% completed`,
+      caption: t("scoreCards.captions.pctCompleted", { pct: (submittedRate * 100).toFixed(2) }),
       icon: "download-outline",
       tint: TINT.accentBlue,
       interactive: false,
@@ -124,12 +127,12 @@ function openCards(
     },
     {
       key: "open-aging-risk",
-      title: "Aging Risk",
+      title: t("scoreCards.agingRisk"),
       value: count(agingCount),
       caption:
         openAges.length === 0
-          ? "No dated open work orders"
-          : `Oldest ${dayCountText(oldest)}, avg ${averageDayText(averageAge)} open`,
+          ? t("scoreCards.captions.noDatedOpen")
+          : t("scoreCards.captions.agingDetail", { oldest: dayCountText(oldest), avg: averageDayText(averageAge) }),
       icon: "time-outline",
       tint: TINT.blocked,
       interactive: false,
@@ -137,14 +140,12 @@ function openCards(
     },
     {
       key: "open-callbacks",
-      title: "Callbacks",
+      title: t("scoreCards.callbacks"),
       value: count(callbackCount),
       caption:
         callbackCount === 0
-          ? "No callback candidates in view"
-          : callbackCount === 1
-            ? "1 open ticket matches completed work"
-            : `${callbackCount} open tickets match completed work`,
+          ? t("scoreCards.captions.noCallbacks")
+          : t("scoreCards.captions.callbackMatches", { count: callbackCount }),
       icon: "arrow-undo-circle-outline",
       tint: TINT.review,
       interactive: true,
@@ -188,12 +189,12 @@ function closedCards(closedFiltered: ParsedWorkOrder[], weeklySummary: Technicia
   return [
     {
       key: "closed-same-week",
-      title: "Closed Same Week",
+      title: t("scoreCards.closedSameWeek"),
       value: count(sameWeek),
       caption:
         sample === 0
-          ? "No closed work orders in the last 90 days"
-          : `${(sameWeekRate * 100).toFixed(1)}% of ${sample} tickets in 90 days`,
+          ? t("scoreCards.captions.noClosed90")
+          : t("scoreCards.captions.sameWeekDetail", { pct: (sameWeekRate * 100).toFixed(1), sample }),
       icon: "checkmark-circle-outline",
       tint: OLIVE,
       interactive: true,
@@ -201,9 +202,9 @@ function closedCards(closedFiltered: ParsedWorkOrder[], weeklySummary: Technicia
     },
     {
       key: "closed-avg-days",
-      title: "Avg Days to Close",
+      title: t("scoreCards.avgDaysToClose"),
       value: averageDays.toFixed(1),
-      caption: closeDays.length === 0 ? "No closed work orders in view" : `Across ${closeDays.length} closed work orders`,
+      caption: closeDays.length === 0 ? t("scoreCards.captions.noClosedInView") : t("scoreCards.captions.acrossClosed", { count: closeDays.length }),
       icon: "time-outline",
       tint: TINT.accentBlue,
       interactive: true,
@@ -211,7 +212,7 @@ function closedCards(closedFiltered: ParsedWorkOrder[], weeklySummary: Technicia
     },
     {
       key: "closed-this-week",
-      title: "Closed This Week",
+      title: t("scoreCards.closedThisWeek"),
       value: count(closedThisWeek),
       caption: averageCompletionText(closedThisWeek, weeklySummary.rows.length, "week"),
       icon: "calendar-outline",
@@ -221,7 +222,7 @@ function closedCards(closedFiltered: ParsedWorkOrder[], weeklySummary: Technicia
     },
     {
       key: "closed-this-month",
-      title: "Closed This Month",
+      title: t("scoreCards.closedThisMonth"),
       value: count(closedThisMonth.length),
       caption: averageCompletionText(closedThisMonth.length, monthTechnicians, "month"),
       icon: "calendar-outline",
@@ -265,9 +266,9 @@ function makeReadyCards(groups: MakeReadyGroup[], nowMs: number): ScoreCard[] {
   return [
     {
       key: "make-ready-in-progress",
-      title: "Turns in Progress",
+      title: t("scoreCards.turnsInProgress"),
       value: count(inProgress),
-      caption: "Units not yet ready",
+      caption: t("scoreCards.captions.unitsNotReady"),
       icon: "hammer-outline",
       tint: OLIVE,
       interactive: false,
@@ -275,10 +276,9 @@ function makeReadyCards(groups: MakeReadyGroup[], nowMs: number): ScoreCard[] {
     },
     {
       key: "make-ready-completed-month",
-      title: "Completed This Month",
+      title: t("scoreCards.completedThisMonth"),
       value: count(completedThisMonth),
-      caption:
-        startedThisMonth === 1 ? "1 turn started this month" : `${startedThisMonth} turns started this month`,
+      caption: t("scoreCards.captions.turnsStarted", { count: startedThisMonth }),
       icon: "checkmark-circle-outline",
       tint: TINT.ready,
       interactive: false,
@@ -286,10 +286,9 @@ function makeReadyCards(groups: MakeReadyGroup[], nowMs: number): ScoreCard[] {
     },
     {
       key: "make-ready-avg-days",
-      title: "Avg Days in Turn",
+      title: t("scoreCards.avgDaysInTurn"),
       value: averageTurnDays.toFixed(1),
-      caption:
-        turnDays.length === 0 ? "No completed turns in the last 3 months" : `Across ${turnDays.length} turns in 90 days`,
+      caption: turnDays.length === 0 ? t("scoreCards.captions.noTurns90") : t("scoreCards.captions.acrossTurns90", { count: turnDays.length }),
       icon: "time-outline",
       tint: TINT.accentBlue,
       interactive: false,
@@ -297,14 +296,9 @@ function makeReadyCards(groups: MakeReadyGroup[], nowMs: number): ScoreCard[] {
     },
     {
       key: "make-ready-overdue",
-      title: "Overdue Turns",
+      title: t("scoreCards.overdueTurns"),
       value: count(overdue),
-      caption:
-        overdue === 0
-          ? "No turns past move-in date"
-          : overdue === 1
-            ? "1 turn past move-in date"
-            : `${overdue} turns past move-in date`,
+      caption: overdue === 0 ? t("scoreCards.captions.noOverdueTurns") : t("scoreCards.captions.overdueTurns", { count: overdue }),
       icon: "warning-outline",
       tint: TINT.blocked,
       interactive: false,
@@ -324,9 +318,9 @@ function hotSpotCards(rows: HotSpotRow[]): ScoreCard[] {
   return [
     {
       key: "hot-spots-units",
-      title: "Hot Spot Units",
+      title: t("scoreCards.hotSpotUnits"),
       value: count(rows.length),
-      caption: "Units with repeat maintenance signals",
+      caption: t("scoreCards.captions.repeatSignals"),
       icon: "flame-outline",
       tint: OLIVE,
       interactive: false,
@@ -334,10 +328,9 @@ function hotSpotCards(rows: HotSpotRow[]): ScoreCard[] {
     },
     {
       key: "hot-spots-high-risk",
-      title: "High Risk Units",
+      title: t("scoreCards.highRiskUnits"),
       value: count(highRisk),
-      caption:
-        highRisk === 0 ? "No high-risk hot spots" : highRisk === 1 ? "1 unit needs review" : `${highRisk} units need review`,
+      caption: highRisk === 0 ? t("scoreCards.captions.noHighRisk") : t("scoreCards.captions.needsReview", { count: highRisk }),
       icon: "warning-outline",
       tint: TINT.blocked,
       interactive: false,
@@ -345,9 +338,9 @@ function hotSpotCards(rows: HotSpotRow[]): ScoreCard[] {
     },
     {
       key: "hot-spots-open",
-      title: "Open on Hot Spots",
+      title: t("scoreCards.openOnHotSpots"),
       value: count(openTotal),
-      caption: openTotal === 0 ? "No open work on hot spots" : "Open tickets tied to hot spot units",
+      caption: openTotal === 0 ? t("scoreCards.captions.noOpenHotSpots") : t("scoreCards.captions.openOnHotSpots"),
       icon: "folder-open-outline",
       tint: TINT.warning,
       interactive: false,
@@ -355,9 +348,9 @@ function hotSpotCards(rows: HotSpotRow[]): ScoreCard[] {
     },
     {
       key: "hot-spots-callbacks",
-      title: "Callback Signals",
+      title: t("scoreCards.callbackSignals"),
       value: count(callbackTotal),
-      caption: `${recentTotal} recent tickets in 90 days`,
+      caption: t("scoreCards.captions.recentTickets90", { count: recentTotal }),
       icon: "arrow-undo-circle-outline",
       tint: TINT.review,
       interactive: false,

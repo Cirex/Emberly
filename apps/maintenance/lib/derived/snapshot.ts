@@ -38,6 +38,9 @@ import {
  */
 
 export interface SnapshotInput {
+  /** Active UI language — part of the cache key because score-card titles are
+   *  composed through i18next at build time. Defaults to "en" (tests). */
+  language?: string;
   workOrders: WorkOrder[];
   units: ResmanUnit[];
   dataVersion: number;
@@ -116,6 +119,7 @@ export function buildSnapshot(input: SnapshotInput): DerivedSnapshot {
   // date rollover recomputes.
   const dayKey = Math.floor(input.nowMs / (24 * 60 * 60 * 1000));
   const key = [
+    input.language ?? "en",
     input.dataVersion,
     input.unitsVersion,
     input.mode,

@@ -1,5 +1,6 @@
 import { Tabs } from "expo-router";
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { AppState } from "react-native";
 import { FloatingTabBar } from "@/components/ui/FloatingTabBar";
 import { useAnnotationPhotos } from "@/lib/stores/annotation-photos";
@@ -83,6 +84,7 @@ function useServerSync() {
 }
 
 export default function TabsLayout() {
+  const { t } = useTranslation();
   useServerSync();
 
   return (
@@ -93,10 +95,10 @@ export default function TabsLayout() {
         sceneStyle: { backgroundColor: "transparent" },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: "My Day" }} />
-      <Tabs.Screen name="work-orders" options={{ title: "Work Orders" }} />
-      <Tabs.Screen name="make-ready" options={{ title: "Make Ready" }} />
-      <Tabs.Screen name="property-map" options={{ title: "Map" }} />
+      <Tabs.Screen name="index" options={{ title: t("tabs.myDay") }} />
+      <Tabs.Screen name="work-orders" options={{ title: t("tabs.workOrders") }} />
+      <Tabs.Screen name="make-ready" options={{ title: t("tabs.makeReady") }} />
+      <Tabs.Screen name="property-map" options={{ title: t("tabs.map") }} />
     </Tabs>
   );
 }

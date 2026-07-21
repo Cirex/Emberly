@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { buildSnapshot, type DerivedSnapshot } from "@/lib/derived/snapshot";
 import type { DisplayMode } from "@/lib/derived/types";
+import { useSettings } from "@/lib/stores/settings";
 import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
 import { useWorkOrdersView } from "@/lib/stores/work-orders-view";
@@ -32,6 +33,7 @@ function versionOf(units: object): number {
  * it as one).
  */
 export function useDerivedSnapshot(modeOverride?: DisplayMode): DerivedSnapshot {
+  const language = useSettings((s) => s.language);
   const workOrders = useWorkOrders((s) => s.workOrders);
   const dataVersion = useWorkOrders((s) => s.dataVersion);
   const units = useUnits((s) => s.allUnits);
@@ -46,6 +48,7 @@ export function useDerivedSnapshot(modeOverride?: DisplayMode): DerivedSnapshot 
   return useMemo(
     () =>
       buildSnapshot({
+        language,
         workOrders,
         units,
         dataVersion,
@@ -58,6 +61,6 @@ export function useDerivedSnapshot(modeOverride?: DisplayMode): DerivedSnapshot 
         signalFilter,
         nowMs: Date.now(),
       }),
-    [workOrders, units, dataVersion, mode, sortOption, search, openFilters, closedFilters, signalFilter],
+    [language, workOrders, units, dataVersion, mode, sortOption, search, openFilters, closedFilters, signalFilter],
   );
 }

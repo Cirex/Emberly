@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AccountMenu } from "@/components/ui/AccountMenu";
@@ -10,10 +11,10 @@ import type { DisplayMode } from "@/lib/derived/types";
 import { useFieldMode } from "@/lib/stores/settings";
 import { HAIRLINE, MUTED, NAVY, OLIVE_GLASS } from "@/theme/tokens";
 
-const MODES: { id: DisplayMode; label: string; icon: string }[] = [
-  { id: "open", label: "Open", icon: "file-tray-full-outline" },
-  { id: "closed", label: "Closed", icon: "checkmark-circle-outline" },
-  { id: "hotSpots", label: "Hot Spots", icon: "flame-outline" },
+const MODES: { id: DisplayMode; labelKey: string; icon: string }[] = [
+  { id: "open", labelKey: "workOrders.modes.open", icon: "file-tray-full-outline" },
+  { id: "closed", labelKey: "workOrders.modes.closed", icon: "checkmark-circle-outline" },
+  { id: "hotSpots", labelKey: "workOrders.modes.hotSpots", icon: "flame-outline" },
 ];
 
 /**
@@ -46,6 +47,7 @@ export function GlassHeader({
   onOpenFilters: () => void;
   onHeight: (h: number) => void;
 }) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
   const field = useFieldMode();
@@ -97,7 +99,7 @@ export function GlassHeader({
             ref={pillRef}
             onPress={openMenu}
             accessibilityRole="button"
-            accessibilityLabel={`Viewing ${current.label}; change mode`}
+            accessibilityLabel={t("workOrders.modeMenuA11y", { mode: t(current.labelKey) })}
             style={{
               flexDirection: "row",
               alignItems: "center",
@@ -128,7 +130,7 @@ export function GlassHeader({
               <Ionicons name={current.icon as never} size={14} color={OLIVE_GLASS} />
             </View>
             <Text style={{ fontSize: 16, fontWeight: "800", letterSpacing: -0.3, color: NAVY }}>
-              {current.label}
+              {t(current.labelKey)}
             </Text>
             <View
               style={{
@@ -159,7 +161,10 @@ export function GlassHeader({
           <AccountMenu />
         </View>
 
-        {/* Row 2: three-stat strip with context lines. */}
+        {/* Row 2: three-stat strip — the My Day metric treatment (big tinted
+            tabular number, small sentence-case label, hairline dividers, no
+            boxes) plus the Make Ready grid's context caption and chevron
+            affordance, so both scorecard surfaces share one anatomy. */}
         <View
           style={{
             flexDirection: "row",
@@ -170,24 +175,37 @@ export function GlassHeader({
         >
           {strip.map((card, i) => {
             const cell = (
-              <View style={{ flex: 1, paddingRight: 10, paddingLeft: i === 0 ? 0 : 12 }}>
+              <View style={{ flex: 1, paddingRight: 10, paddingLeft: i === 0 ? 0 : 16 }}>
+                {card.interactive ? (
+                  <Ionicons
+                    name="chevron-forward"
+                    size={10}
+                    color="rgba(9,27,84,0.28)"
+                    style={{ position: "absolute", top: 3, right: 4 }}
+                  />
+                ) : null}
                 <Text
                   style={{
-                    fontSize: 18,
+                    fontSize: 24,
                     fontWeight: "800",
-                    letterSpacing: -0.3,
-                    color: NAVY,
+                    letterSpacing: -0.5,
+                    color: card.tint || NAVY,
                     fontVariant: ["tabular-nums"],
                   }}
                 >
                   {card.value}
                 </Text>
-                <Text style={{ fontSize: 8.5, fontWeight: "800", letterSpacing: 0.5, color: MUTED }}>
-                  {card.title.toUpperCase()}
+                <Text
+                  className="text-slate dark:text-white/60"
+                  numberOfLines={1}
+                  style={{ fontSize: 10, fontWeight: "600", marginTop: 1 }}
+                >
+                  {card.title}
                 </Text>
                 <Text
+                  className="text-muted dark:text-white/45"
                   numberOfLines={1}
-                  style={{ fontSize: 9, fontWeight: "600", color: "#4C556F", marginTop: 1, opacity: 0.85 }}
+                  style={{ fontSize: 9, marginTop: 1 }}
                 >
                   {card.caption}
                 </Text>
@@ -276,7 +294,7 @@ export function GlassHeader({
                     letterSpacing: -0.1,
                   }}
                 >
-                  {m.label}
+                  {t(m.labelKey)}
                 </Text>
                 {selected ? <Ionicons name="checkmark" size={15} color={OLIVE_GLASS} /> : null}
               </Pressable>

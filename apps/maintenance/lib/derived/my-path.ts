@@ -311,3 +311,11 @@ export function greetingFor(nowMs: number): string {
   if (h < 16) return "Good afternoon";
   return "Good evening";
 }
+
+/** i18n key suffix for the time-of-day greeting (myDay.greeting.<key>). */
+export function greetingKeyFor(nowMs: number): "morning" | "afternoon" | "evening" {
+  const h = new Date(nowMs).getHours();
+  if (h < 12) return "morning";
+  if (h < 16) return "afternoon";
+  return "evening";
+}

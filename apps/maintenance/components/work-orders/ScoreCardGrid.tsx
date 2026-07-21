@@ -7,8 +7,9 @@ import { HAIRLINE } from "@/theme/tokens";
  * The four per-mode metrics, Option 2 treatment: no card surfaces — bare
  * numbers sitting directly on the backdrop in a hairline-divided grid (2×2 on
  * phone, one row of four at tablet width; never a horizontal scroll).
- * Interactive cells keep their tap → analytics overlay, signposted by a quiet
- * chevron in the corner.
+ * Numbers carry each card's tint (the My Day metric treatment — one anatomy
+ * with the GlassHeader strip). Interactive cells keep their tap → analytics
+ * overlay, signposted by a quiet chevron in the corner.
  */
 export function ScoreCardGrid({
   cards,
@@ -51,8 +52,7 @@ export function ScoreCardGrid({
               />
             ) : null}
             <Text
-              className="text-navy dark:text-white"
-              style={{ fontSize: 23, fontWeight: "800", letterSpacing: -0.5, fontVariant: ["tabular-nums"], lineHeight: 27 }}
+              style={{ fontSize: 24, fontWeight: "800", letterSpacing: -0.5, fontVariant: ["tabular-nums"], lineHeight: 28, color: card.tint }}
             >
               {card.value}
             </Text>

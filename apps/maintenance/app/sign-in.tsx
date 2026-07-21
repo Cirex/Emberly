@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -18,12 +19,8 @@ import { useConfig } from "@/lib/stores/config";
 
 const REVEAL_HIT_WIDTH = 24;
 
-const ERROR_TEXT: Record<string, string> = {
-  invalid: "That username or password wasn’t accepted. Check them and try again.",
-  rate_limited: "Too many attempts. Wait a few minutes and try again.",
-  unavailable: "ResMan sign-in is temporarily unavailable. Try again shortly.",
-  unreachable: "Can’t reach the server. Check the network connection and try again.",
-};
+/** Failure reasons with a dedicated translation under signIn.errors.* */
+const KNOWN_ERRORS = new Set(["invalid", "rate_limited", "unavailable", "unreachable"]);
 
 /**
  * Staff sign-in: ResMan username + password, validated through the Emberly API
@@ -35,6 +32,7 @@ const ERROR_TEXT: Record<string, string> = {
  */
 export default function SignIn() {
   const router = useRouter();
+  const { t } = useTranslation();
   const config = useConfig();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -55,7 +53,7 @@ export default function SignIn() {
     });
     if (!result.ok) {
       setBusy(false);
-      setError(ERROR_TEXT[result.reason] ?? ERROR_TEXT.unreachable);
+      setError(t(`signIn.errors.${KNOWN_ERRORS.has(result.reason) ? result.reason : "unreachable"}`));
       return;
     }
     await config.signIn({ token: result.token, admin: result.admin });
@@ -121,11 +119,11 @@ export default function SignIn() {
                 <Ionicons name="person-outline" size={18} color="#70788F" />
                 <TextInput
                   value={username}
-                  onChangeText={(t) => {
-                    setUsername(t);
+                  onChangeText={(next) => {
+                    setUsername(next);
                     if (error) setError("");
                   }}
-                  placeholder="Username"
+                  placeholder={t("signIn.username")}
                   placeholderTextColor="rgba(112,120,143,0.6)"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -153,11 +151,11 @@ export default function SignIn() {
                 <Ionicons name="key-outline" size={18} color="#70788F" />
                 <TextInput
                   value={password}
-                  onChangeText={(t) => {
-                    setPassword(t);
+                  onChangeText={(next) => {
+                    setPassword(next);
                     if (error) setError("");
                   }}
-                  placeholder="Password"
+                  placeholder={t("signIn.password")}
                   placeholderTextColor="rgba(112,120,143,0.6)"
                   secureTextEntry={!revealed}
                   autoCapitalize="none"
@@ -173,7 +171,7 @@ export default function SignIn() {
                   onPress={() => setRevealed((v) => !v)}
                   hitSlop={12}
                   accessibilityRole="button"
-                  accessibilityLabel={revealed ? "Hide password" : "Show password"}
+                  accessibilityLabel={revealed ? t("signIn.hidePassword") : t("signIn.showPassword")}
                   style={{ width: REVEAL_HIT_WIDTH, alignItems: "flex-end" }}
                 >
                   <Ionicons
@@ -207,7 +205,7 @@ export default function SignIn() {
               }}
             >
               <Text style={{ color: "#0B1020", fontSize: 16, fontWeight: "700" }}>
-                {busy ? "Signing In…" : "Sign In"}
+                {busy ? t("signIn.signingIn") : t("signIn.signIn")}
               </Text>
             </Pressable>
           </View>

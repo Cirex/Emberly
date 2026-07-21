@@ -2,6 +2,9 @@
 // reporting is armed before any other module's native side-effects run.
 import { Sentry, sentryEnabled } from "@/lib/sentry";
 
+// i18next must initialize before any component calls useTranslation.
+import "@/lib/i18n";
+
 import "../global.css";
 
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";

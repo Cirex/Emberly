@@ -1,15 +1,17 @@
 import { useRouter } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import { capture, resetAnalytics } from "@/lib/analytics";
+import type { AppLanguage } from "@/lib/i18n";
 import { useConfig } from "@/lib/stores/config";
 import { useSettings } from "@/lib/stores/settings";
-import type { AppThemePreference } from "@/theme/tokens";
 
-const THEME_OPTIONS: { id: AppThemePreference; label: string }[] = [
-  { id: "system", label: "System" },
-  { id: "light", label: "Light" },
-  { id: "dark", label: "Dark" },
+// Language names are shown in their own language on purpose — a Spanish
+// speaker stuck in English must be able to find "Español".
+const LANGUAGE_OPTIONS: { id: AppLanguage; label: string }[] = [
+  { id: "en", label: "English" },
+  { id: "es", label: "Español" },
 ];
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -89,12 +91,19 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
   );
 }
 
-/** Lean settings: appearance + account. Grows alongside the feature set. */
+/** Lean settings: appearance + language + account. Grows alongside the feature set. */
 export default function Settings() {
   const router = useRouter();
+  const { t } = useTranslation();
   const settings = useSettings();
   const admin = useConfig((s) => s.admin);
   const signOut = useConfig((s) => s.signOut);
+
+  const themeOptions = [
+    { id: "system" as const, label: t("settings.theme.system") },
+    { id: "light" as const, label: t("settings.theme.light") },
+    { id: "dark" as const, label: t("settings.theme.dark") },
+  ];
 
   const onSignOut = async () => {
     // Record the sign-out while still identified, then clear the identity so
@@ -109,30 +118,37 @@ export default function Settings() {
   return (
     <ScrollView contentContainerStyle={{ padding: 24, gap: 16 }}>
       <Text className="text-navy" style={{ fontSize: 24, fontWeight: "700" }}>
-        Settings
+        {t("settings.title")}
       </Text>
 
       <AppCardSurface kind="panel" style={{ paddingHorizontal: 18, paddingVertical: 6 }}>
-        <Row label="Appearance">
+        <Row label={t("settings.appearance")}>
           <Segments
             value={settings.themePreference}
-            options={THEME_OPTIONS}
+            options={themeOptions}
             onChange={settings.setThemePreference}
           />
         </Row>
-        <Row label="Field Mode">
+        <Row label={t("settings.fieldMode")}>
           <Toggle value={settings.fieldMode} onChange={settings.setFieldMode} />
+        </Row>
+        <Row label={t("settings.language")}>
+          <Segments
+            value={settings.language}
+            options={LANGUAGE_OPTIONS}
+            onChange={settings.setLanguage}
+          />
         </Row>
       </AppCardSurface>
 
       <AppCardSurface kind="panel" style={{ paddingHorizontal: 18, paddingVertical: 6 }}>
-        <Row label="Signed in as">
+        <Row label={t("settings.signedInAs")}>
           <Text className="text-slate" style={{ fontSize: 15, fontWeight: "600" }}>
             {admin?.displayName ?? "—"}
           </Text>
         </Row>
         <Pressable onPress={onSignOut} style={{ paddingVertical: 12 }}>
-          <Text style={{ color: "#D1382E", fontSize: 16, fontWeight: "700" }}>Sign Out</Text>
+          <Text style={{ color: "#D1382E", fontSize: 16, fontWeight: "700" }}>{t("settings.signOut")}</Text>
         </Pressable>
       </AppCardSurface>
     </ScrollView>

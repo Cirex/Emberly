@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "Emberly Manager",
+    "slug": "emberly-manager",
+    "version": "1.0.0",
+    "scheme": "emberlymanager",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.emberly.manager",
+      "appleTeamId": "T49DUB6KRJ"
+    },
+    "android": {
+      "package": "com.emberly.manager",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon-foreground.png",
+        "backgroundColor": "#FCF8F0"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "buildReactNativeFromSource": true
+          }
+        }
+      ],
+      "@sentry/react-native/expo"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {}
+    },
+    "owner": "buildwithsora"
+  }
+}

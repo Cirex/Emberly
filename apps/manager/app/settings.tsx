@@ -1,0 +1,271 @@
+import { useRouter } from "expo-router";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Pressable, ScrollView, Text, View } from "react-native";
+import Constants from "expo-constants";
+import { AppCardSurface } from "@/components/ui/AppCardSurface";
+import { capture, resetAnalytics } from "@/lib/analytics";
+import type { AppLanguage } from "@/lib/i18n";
+import { useConfig } from "@/lib/stores/config";
+import { useSettings } from "@/lib/stores/settings";
+import { useUnits } from "@/lib/stores/units";
+import { runSyncTick } from "@/lib/sync-registry";
+import { ACCENT_THEMES, type AccentThemeId } from "@/theme/tokens";
+
+const NAVY = "#091B54";
+const RED = "#D1382E";
+
+// Language names are shown in their own language on purpose — a Spanish
+// speaker stuck in English must be able to find "Español".
+const LANGUAGE_OPTIONS: { id: AppLanguage; label: string }[] = [
+  { id: "en", label: "English" },
+  { id: "es", label: "Español" },
+];
+
+const ACCENT_IDS = Object.keys(ACCENT_THEMES) as AccentThemeId[];
+
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return parts
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <Text
+      className="text-slate dark:text-white/60"
+      style={{ fontSize: 11, fontWeight: "700", letterSpacing: 1, marginTop: 18, marginBottom: 7, marginLeft: 4 }}
+    >
+      {children.toUpperCase()}
+    </Text>
+  );
+}
+
+function Row({ label, sub, children }: { label: string; sub?: string; children?: React.ReactNode }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 12, gap: 12 }}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text className="text-navy dark:text-white" style={{ fontSize: 15, fontWeight: "600" }}>
+          {label}
+        </Text>
+        {sub ? (
+          <Text className="text-slate dark:text-white/60" style={{ fontSize: 11.5, marginTop: 1 }}>
+            {sub}
+          </Text>
+        ) : null}
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function Segments<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: { id: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <View style={{ flexDirection: "row", borderRadius: 12, backgroundColor: "rgba(9,27,84,0.06)", padding: 3, gap: 2 }}>
+      {options.map((o) => (
+        <Pressable
+          key={o.id}
+          onPress={() => onChange(o.id)}
+          accessibilityRole="button"
+          accessibilityState={value === o.id ? { selected: true } : {}}
+          style={{
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderRadius: 9,
+            backgroundColor: value === o.id ? "rgba(162,169,33,0.85)" : "transparent",
+          }}
+        >
+          <Text style={{ fontSize: 13, fontWeight: "600", color: value === o.id ? "#FFFFFF" : "#4C556F" }}>
+            {o.label}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+/** One tappable accent swatch; selected gets the navy ring. */
+function AccentSwatch({ id, selected, onPress }: { id: AccentThemeId; selected: boolean; onPress: () => void }) {
+  const rgb = ACCENT_THEMES[id].header;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={ACCENT_THEMES[id].label}
+      accessibilityState={selected ? { selected: true } : {}}
+      style={{
+        width: 26,
+        height: 26,
+        borderRadius: 13,
+        backgroundColor: `rgb(${rgb})`,
+        borderWidth: selected ? 2.5 : 0,
+        borderColor: NAVY,
+      }}
+    />
+  );
+}
+
+/**
+ * Settings — the manager-appropriate subset of the maintenance app's
+ * redesigned settings (same structure, same styling): profile card up top,
+ * then Appearance (theme / accent / language), Data (synced line + sync now),
+ * and Account (switch user / sign out).
+ */
+export default function Settings() {
+  const router = useRouter();
+  const { t } = useTranslation();
+  const settings = useSettings();
+  const admin = useConfig((s) => s.admin);
+  const token = useConfig((s) => s.token);
+  const baseUrl = useConfig((s) => s.baseUrl);
+  const signOut = useConfig((s) => s.signOut);
+
+  const unitCount = useUnits((s) => s.allUnits.length);
+  const refreshedAt = useUnits((s) => s.refreshedAt);
+  const [syncBusy, setSyncBusy] = useState(false);
+
+  const themeOptions = [
+    { id: "system" as const, label: t("settings.theme.system") },
+    { id: "light" as const, label: t("settings.theme.light") },
+    { id: "dark" as const, label: t("settings.theme.dark") },
+  ];
+
+  // Computed per render on purpose (Date.now in a memo trips the purity rule);
+  // the screen re-renders on open/refresh, which is exactly when this matters.
+  const syncedLine = (() => {
+    if (refreshedAt === 0) return t("settings.neverSynced");
+    const mins = Math.floor((Date.now() - refreshedAt) / 60_000);
+    return mins < 1 ? t("settings.syncedJustNow") : t("settings.syncedMinutes", { count: mins });
+  })();
+
+  const onSyncNow = async () => {
+    if (syncBusy) return;
+    setSyncBusy(true);
+    await runSyncTick({ baseUrl, token });
+    setSyncBusy(false);
+  };
+
+  const onSignOut = async () => {
+    // Record the sign-out while still identified, then clear the identity so
+    // later events aren't attributed to this staff member.
+    capture("signed_out");
+    resetAnalytics();
+    await signOut();
+    // The root layout's guard drops the tabs; land on the sign-in gate.
+    router.replace("/sign-in");
+  };
+
+  const displayName = admin?.displayName ?? "—";
+  const version = Constants.expoConfig?.version ?? "";
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }}>
+      <Text className="text-navy dark:text-white" style={{ fontSize: 24, fontWeight: "700" }}>
+        {t("settings.title")}
+      </Text>
+      <Text className="text-slate dark:text-white/60" style={{ fontSize: 12.5, marginTop: 2, marginBottom: 16 }}>
+        {t("settings.subtitle")}
+      </Text>
+
+      {/* Identity leads: who is signed in, with their role badge. */}
+      <AppCardSurface kind="panel" style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <View
+            style={{
+              width: 46,
+              height: 46,
+              borderRadius: 23,
+              backgroundColor: NAVY,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "800" }}>{initialsOf(displayName)}</Text>
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text className="text-navy dark:text-white" style={{ fontSize: 15, fontWeight: "800" }} numberOfLines={1}>
+              {displayName}
+            </Text>
+            <Text className="text-slate dark:text-white/60" style={{ fontSize: 11.5, marginTop: 1 }}>
+              {t("settings.signedInVia")}
+            </Text>
+          </View>
+          {admin?.role ? (
+            <View
+              style={{
+                borderRadius: 999,
+                paddingHorizontal: 9,
+                paddingVertical: 3,
+                backgroundColor: "rgba(162,169,33,0.12)",
+                borderWidth: 1,
+                borderColor: "rgba(162,169,33,0.4)",
+              }}
+            >
+              {/* Machine role value on purpose — roles are not translated. */}
+              <Text style={{ fontSize: 9, fontWeight: "800", color: "#767B24" }}>
+                {admin.role.replace(/_/g, " ").toUpperCase()}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </AppCardSurface>
+
+      <SectionLabel>{t("settings.appearance")}</SectionLabel>
+      <AppCardSurface kind="panel" style={{ paddingHorizontal: 18, paddingVertical: 4 }}>
+        <Row label={t("settings.themeLabel")}>
+          <Segments value={settings.themePreference} options={themeOptions} onChange={settings.setThemePreference} />
+        </Row>
+        <Row label={t("settings.accent")} sub={t("settings.accentSub")}>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {ACCENT_IDS.map((id) => (
+              <AccentSwatch key={id} id={id} selected={settings.accentId === id} onPress={() => settings.setAccent(id)} />
+            ))}
+          </View>
+        </Row>
+        <Row label={t("settings.language")}>
+          <Segments value={settings.language} options={LANGUAGE_OPTIONS} onChange={settings.setLanguage} />
+        </Row>
+      </AppCardSurface>
+
+      <SectionLabel>{t("settings.data")}</SectionLabel>
+      <AppCardSurface kind="panel" style={{ paddingHorizontal: 18, paddingVertical: 4 }}>
+        <Row label={syncedLine} sub={t("settings.dataCounts", { units: unitCount })}>
+          <Pressable onPress={onSyncNow} accessibilityRole="button" disabled={syncBusy} style={{ opacity: syncBusy ? 0.5 : 1 }}>
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#767B24" }}>{t("settings.syncNow")}</Text>
+          </Pressable>
+        </Row>
+      </AppCardSurface>
+
+      <SectionLabel>{t("settings.account")}</SectionLabel>
+      <AppCardSurface kind="panel" style={{ paddingHorizontal: 18, paddingVertical: 4 }}>
+        <Pressable onPress={() => router.push("/sign-in")} accessibilityRole="button" style={{ paddingVertical: 12 }}>
+          <Text className="text-navy dark:text-white" style={{ fontSize: 15, fontWeight: "600" }}>
+            {t("settings.switchUser")}
+          </Text>
+        </Pressable>
+        <Pressable onPress={onSignOut} accessibilityRole="button" style={{ paddingVertical: 12 }}>
+          <Text style={{ color: RED, fontSize: 15, fontWeight: "700" }}>{t("settings.signOut")}</Text>
+        </Pressable>
+      </AppCardSurface>
+
+      {version ? (
+        <Text
+          className="text-muted dark:text-white/40"
+          style={{ fontSize: 10.5, textAlign: "center", marginTop: 18 }}
+        >
+          Emberly Manager {version}
+        </Text>
+      ) : null}
+    </ScrollView>
+  );
+}

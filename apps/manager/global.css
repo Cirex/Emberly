@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * The brand palette (navy/olive/warm-paper) and light/dark surfaces are static
+ * Tailwind colors (see tailwind.config.js). The *accent* is user-swappable at
+ * runtime across 5 themes, so it lives in CSS variables — default = "coral"
+ * ("Liquid Glass"). The settings store overrides these via NativeWind `vars()`
+ * on the root provider. Values are space-separated RGB channels for
+ * `rgb(var(--x) / <alpha-value>)`.
+ */
+:root {
+  --accent-header: 110 129 153; /* #6E8199 coral header */
+  --accent-selection: 52 62 77; /* #343E4D control selection */
+  --accent-metric-value: 239 246 255; /* #EFF6FF near-white metric */
+}

@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
-const { GROUP_FILL_ALPHA, buildGroupPaint, defaultMapFilterGroups, strokeFor, unitMatchesGroup } = require("../dist");
+const { GROUP_FILL_ALPHA, buildGroupPaint, defaultMapFilterGroups, layoutLabel, strokeFor, unitMatchesGroup } = require("../dist");
 
 const NOW = new Date(2026, 6, 21, 12).getTime(); // Jul 21 2026 local noon
 
@@ -83,6 +83,32 @@ test("balanceBand is exclusive-min, inclusive-max; null max is unbounded", () =>
   const open = groupWith({ kind: "balanceBand", min: 1500, max: null });
   assert.equal(unitMatchesGroup(unit({ balance: 99999 }), open, NOW), true);
   assert.equal(unitMatchesGroup(unit({ balance: 1500 }), open, NOW), false);
+});
+
+test("classificationIn matches case-insensitively and trimmed", () => {
+  const g = groupWith({ kind: "classificationIn", values: ["Diamond", "Ruby"] });
+  assert.equal(unitMatchesGroup(unit({ classification: "diamond" }), g, NOW), true);
+  assert.equal(unitMatchesGroup(unit({ classification: "  RUBY  " }), g, NOW), true);
+  assert.equal(unitMatchesGroup(unit({ classification: "Emerald" }), g, NOW), false);
+  assert.equal(unitMatchesGroup(unit({ classification: null }), g, NOW), false);
+  assert.equal(unitMatchesGroup(unit(), g, NOW), false);
+});
+
+test("layoutLabel formats bed x bath and hides unknowns", () => {
+  assert.equal(layoutLabel({ bedrooms: 1, bathrooms: 1 }), "1x1");
+  assert.equal(layoutLabel({ bedrooms: 2, bathrooms: 1.5 }), "2x1.5");
+  assert.equal(layoutLabel({ bedrooms: 2, bathrooms: null }), null);
+  assert.equal(layoutLabel({}), null);
+});
+
+test("layoutIn matches the derived label, tolerating comma decimals and case", () => {
+  const g = groupWith({ kind: "layoutIn", values: ["2x1,5", "1X1"] });
+  assert.equal(unitMatchesGroup(unit({ bedrooms: 2, bathrooms: 1.5 }), g, NOW), true);
+  assert.equal(unitMatchesGroup(unit({ bedrooms: 1, bathrooms: 1 }), g, NOW), true);
+  assert.equal(unitMatchesGroup(unit({ bedrooms: 3, bathrooms: 2 }), g, NOW), false);
+  // Missing counts never match — an unknown layout is not a "1x1".
+  assert.equal(unitMatchesGroup(unit({ bedrooms: 1 }), g, NOW), false);
+  assert.equal(unitMatchesGroup(unit(), g, NOW), false);
 });
 
 test("defaultMapFilterGroups is unchanged by the new condition kinds", () => {

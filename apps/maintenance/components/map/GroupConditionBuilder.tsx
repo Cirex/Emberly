@@ -6,9 +6,9 @@ import {
   CONDITION_KINDS,
   LEASE_WINDOW_PRESETS,
   OCCUPANCY_VALUES,
+  buildConditionVocabulary,
   conditionSummary,
   defaultConditionFor,
-  distinctAvailabilities,
   type ConditionKind,
 } from "@/lib/map-group-conditions";
 
@@ -102,7 +102,7 @@ export function GroupConditionBuilder({
   const [openKind, setOpenKind] = useState<ConditionKind | null>(null);
   const [adding, setAdding] = useState(false);
 
-  const availabilities = useMemo(() => distinctAvailabilities(units), [units]);
+  const vocab = useMemo(() => buildConditionVocabulary(units), [units]);
   const unusedKinds = CONDITION_KINDS.filter((k) => !group.conditions.some((c) => c.kind === k));
   const matchCount = useMemo(
     () => units.reduce((n, u) => (unitMatchesGroup(u, group, nowMs) ? n + 1 : n), 0),
@@ -168,34 +168,47 @@ export function GroupConditionBuilder({
             />
           </View>
         );
+      // The three data-driven multi-selects share one editor: chips from the
+      // synced vocabulary, at least one value kept selected.
       case "availabilityIn":
-        return (
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-            {availabilities.map((v) => {
-              const on = c.values.some((x) => x.trim().toLowerCase() === v.trim().toLowerCase());
-              return (
-                <Chip
-                  key={v}
-                  label={v}
-                  on={on}
-                  onPress={() => {
-                    const values = on
-                      ? c.values.filter((x) => x.trim().toLowerCase() !== v.trim().toLowerCase())
-                      : [...c.values, v];
-                    // An empty value set matches nothing; keep at least one.
-                    if (values.length > 0) onSet("availabilityIn", { kind: "availabilityIn", values });
-                  }}
-                />
-              );
-            })}
-          </View>
-        );
+        return multiSelect(c.kind, c.values, vocab.availabilities);
+      case "classificationIn":
+        return multiSelect(c.kind, c.values, vocab.classifications);
+      case "layoutIn":
+        return multiSelect(c.kind, c.values, vocab.layouts);
       // No parameters to edit.
       case "balanceOverZero":
       case "evictionFlag":
         return null;
     }
   };
+
+  function multiSelect(
+    kind: "availabilityIn" | "classificationIn" | "layoutIn",
+    selected: string[],
+    options: string[],
+  ) {
+    const norm = (s: string) => s.trim().toLowerCase();
+    return (
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+        {options.map((v) => {
+          const on = selected.some((x) => norm(x) === norm(v));
+          return (
+            <Chip
+              key={v}
+              label={v}
+              on={on}
+              onPress={() => {
+                const values = on ? selected.filter((x) => norm(x) !== norm(v)) : [...selected, v];
+                // An empty value set matches nothing; keep at least one.
+                if (values.length > 0) onSet(kind, { kind, values } as GroupCondition);
+              }}
+            />
+          );
+        })}
+      </View>
+    );
+  }
 
   return (
     <View style={{ gap: 8 }}>
@@ -257,7 +270,7 @@ export function GroupConditionBuilder({
               key={kind}
               label={t(`mapGroups.kinds.${kind}`)}
               onPress={() => {
-                onSet(kind, defaultConditionFor(kind, availabilities));
+                onSet(kind, defaultConditionFor(kind, vocab));
                 setAdding(false);
                 setOpenKind(kind);
               }}

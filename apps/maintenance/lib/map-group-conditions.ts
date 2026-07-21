@@ -1,4 +1,4 @@
-import type { GroupCondition } from "@emberly/core";
+import { layoutLabel, type GroupCondition, type GroupUnit } from "@emberly/core";
 
 /**
  * Pure helpers behind the color-group condition builder: the buildable kind
@@ -19,6 +19,8 @@ export const CONDITION_KINDS: ConditionKind[] = [
   "balanceBand",
   "leaseEndsWithin",
   "availabilityIn",
+  "classificationIn",
+  "layoutIn",
   "evictionFlag",
 ];
 
@@ -27,12 +29,19 @@ export const OCCUPANCY_VALUES = ["Occupied", "Vacant", "Notice to Vacate", "Unde
 
 export const LEASE_WINDOW_PRESETS = [30, 60, 90] as const;
 
+/** The chip vocabularies drawn from the synced units, one list per data-driven kind. */
+export interface ConditionVocabulary {
+  availabilities: string[];
+  classifications: string[];
+  layouts: string[];
+}
+
 /**
  * A sensible starting condition per kind; the user edits from there. The
- * availability default picks the first real value seen in the synced units so
+ * data-driven kinds pick the first real value seen in the synced units so
  * the new row matches something immediately.
  */
-export function defaultConditionFor(kind: ConditionKind, availabilities: string[]): GroupCondition {
+export function defaultConditionFor(kind: ConditionKind, vocab: ConditionVocabulary): GroupCondition {
   switch (kind) {
     case "occupancy":
       return { kind, value: "Occupied" };
@@ -43,25 +52,39 @@ export function defaultConditionFor(kind: ConditionKind, availabilities: string[
     case "leaseEndsWithin":
       return { kind, days: 30 };
     case "availabilityIn":
-      return { kind, values: availabilities.length > 0 ? [availabilities[0]] : ["Available"] };
+      return { kind, values: vocab.availabilities.length > 0 ? [vocab.availabilities[0]] : ["Available"] };
+    case "classificationIn":
+      return { kind, values: vocab.classifications.length > 0 ? [vocab.classifications[0]] : [""] };
+    case "layoutIn":
+      return { kind, values: vocab.layouts.length > 0 ? [vocab.layouts[0]] : ["1x1"] };
     case "evictionFlag":
       return { kind };
   }
 }
 
-/**
- * Distinct availability texts across the synced units, trimmed, first-seen
- * casing kept, sorted — the chip vocabulary for availabilityIn.
- */
-export function distinctAvailabilities(units: { availability?: string | null }[]): string[] {
+/** Distinct trimmed values, first-seen casing kept, sorted. */
+function distinct(values: (string | null | undefined)[]): string[] {
   const seen = new Map<string, string>();
-  for (const u of units) {
-    const raw = u.availability?.trim();
+  for (const value of values) {
+    const raw = value?.trim();
     if (!raw) continue;
     const key = raw.toLowerCase();
     if (!seen.has(key)) seen.set(key, raw);
   }
   return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
+/** The chip vocabularies for the data-driven kinds, from the synced units. */
+export function buildConditionVocabulary(units: GroupUnit[]): ConditionVocabulary {
+  return {
+    availabilities: distinct(units.map((u) => u.availability)),
+    classifications: distinct(units.map((u) => u.classification)),
+    // "2x1.5" sorts numerically-ish via localeCompare's numeric option below;
+    // plain sort is fine for the handful of layouts a property has.
+    layouts: distinct(units.map((u) => layoutLabel(u))).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true }),
+    ),
+  };
 }
 
 export interface ConditionSummary {
@@ -85,6 +108,10 @@ export function conditionSummary(c: GroupCondition): ConditionSummary {
       return { key: "leaseEndsWithin", params: { count: c.days } };
     case "availabilityIn":
       return { key: "availabilityIn", params: { values: c.values.join(", ") } };
+    case "classificationIn":
+      return { key: "classificationIn", params: { values: c.values.join(", ") } };
+    case "layoutIn":
+      return { key: "layoutIn", params: { values: c.values.join(", ") } };
     case "evictionFlag":
       return { key: "evictionFlag" };
   }

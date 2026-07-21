@@ -20,6 +20,27 @@ export interface GroupUnit extends MapColorUnit {
   delinquency_reason?: string | null;
   /** ResMan availability text (e.g. "Available", "Leased - Not Yet Moved In"). */
   availability?: string | null;
+  /** ResMan unit classification (e.g. "Diamond", "Ruby"). */
+  classification?: string | null;
+  /** Bed/bath counts — the source of the "2x1.5" layout label. */
+  bedrooms?: number | null;
+  bathrooms?: number | null;
+}
+
+/**
+ * The property's shorthand for a floor plan: bedrooms x bathrooms, "2x1.5"
+ * style (trailing .0 dropped, so 1/1 reads "1x1"). Null when either count is
+ * missing — an unknown layout must never match a layout condition.
+ */
+export function layoutLabel(unit: Pick<GroupUnit, "bedrooms" | "bathrooms">): string | null {
+  const { bedrooms, bathrooms } = unit;
+  if (typeof bedrooms !== "number" || typeof bathrooms !== "number") return null;
+  return `${bedrooms}x${bathrooms}`;
+}
+
+/** "2X1,5" / " 2x1.5 " → "2x1.5": the comparable form of a layout value. */
+export function normalizeLayoutValue(value: string): string {
+  return value.trim().toLowerCase().replace(",", ".");
 }
 
 export type GroupCondition =
@@ -39,7 +60,11 @@ export type GroupCondition =
    */
   | { kind: "evictionFlag" }
   /** balance in (min, max]; max null = unbounded. Bands tile with balanceHeatColor's ramp. */
-  | { kind: "balanceBand"; min: number; max: number | null };
+  | { kind: "balanceBand"; min: number; max: number | null }
+  /** classification equals one of the given values (case-insensitive, trimmed). */
+  | { kind: "classificationIn"; values: string[] }
+  /** layoutLabel(unit) equals one of the given values ("2x1.5"; comma decimals tolerated). */
+  | { kind: "layoutIn"; values: string[] };
 
 export interface MapFilterGroup {
   id: string;
@@ -90,6 +115,17 @@ export function unitMatchesCondition(unit: GroupUnit, cond: GroupCondition, nowM
         unit.balance > cond.min &&
         (cond.max === null || unit.balance <= cond.max)
       );
+    case "classificationIn": {
+      const classification = unit.classification?.trim().toLowerCase();
+      if (!classification) return false;
+      return cond.values.some((v) => v.trim().toLowerCase() === classification);
+    }
+    case "layoutIn": {
+      const layout = layoutLabel(unit);
+      if (layout === null) return false;
+      const normalized = normalizeLayoutValue(layout);
+      return cond.values.some((v) => normalizeLayoutValue(v) === normalized);
+    }
   }
 }
 

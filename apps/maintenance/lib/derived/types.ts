@@ -68,8 +68,19 @@ export const EMPTY_FILTERS: FilterSets = {
   tags: [],
 };
 
+const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
 export function parseDate(value: string | null | undefined): number | null {
   if (!value) return null;
+  // Date-only strings ("2026-07-20") are parsed by Date.parse as UTC midnight,
+  // which lands on the PREVIOUS local evening in any negative-offset timezone —
+  // shifting completions/reports back a day and zeroing "this week/month" math
+  // (all of startOfDay/Week/Month is local). Parse them as LOCAL midnight so
+  // calendar bucketing matches the calendar date ResMan recorded.
+  const dateOnly = DATE_ONLY.exec(value);
+  if (dateOnly) {
+    return new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])).getTime();
+  }
   const t = Date.parse(value);
   return Number.isNaN(t) ? null : t;
 }

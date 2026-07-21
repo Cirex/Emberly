@@ -31,6 +31,7 @@ export const useScanner = create<ScannerState>((set, get) => ({
     // Ignore repeat frames while not actively scanning.
     if (get().phase !== "scanning") return;
     set({ phase: "verifying", errorMessage: undefined });
+    const startedAt = Date.now();
 
     try {
       const result = await verifyPass(token, config);
@@ -39,6 +40,8 @@ export const useScanner = create<ScannerState>((set, get) => ({
       capture("pass_scanned", {
         result: result.valid ? "granted" : "denied",
         entryType: result.entryType ?? null,
+        // Gate throughput: scan-to-verdict latency.
+        duration_ms: Date.now() - startedAt,
       });
       if (result.valid) {
         set((s) => ({
@@ -60,7 +63,10 @@ export const useScanner = create<ScannerState>((set, get) => ({
         }));
       }
     } catch (err) {
-      capture("pass_scanned", { result: "unable", entryType: null });
+      const msg = err instanceof Error ? err.message : String(err);
+      // Split connectivity pain from real server failures.
+      const reason = /abort|timed? ?out/i.test(msg) ? "timeout" : /network|fetch|connect/i.test(msg) ? "network" : "server";
+      capture("pass_scanned", { result: "unable", entryType: null, reason, duration_ms: Date.now() - startedAt });
       set({
         phase: "unable",
         result: undefined,

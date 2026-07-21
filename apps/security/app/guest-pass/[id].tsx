@@ -10,6 +10,7 @@ import { AppStatusBadge } from "@emberly/ui";
 import { residentList } from "@/lib/api/guest-passes";
 import { PASS_STATUS_META } from "@/lib/guest-pass-display";
 import { useConfig } from "@/lib/stores/config";
+import { capture } from "@/lib/analytics";
 import { useGuestPasses } from "@/lib/stores/guest-passes";
 
 function Row({ label, value }: { label: string; value?: string | null }) {
@@ -67,6 +68,8 @@ export default function GuestPassDetail() {
           setRevoking(true);
           try {
             await revoke(pass.id, config);
+            // No PII: the action only, from the detail screen.
+            capture("guest_pass_revoked", { from: "detail" });
             router.back();
           } catch (e) {
             setRevoking(false);

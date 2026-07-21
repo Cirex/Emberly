@@ -2,9 +2,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { Modal, Pressable, RefreshControl, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { capture } from "@/lib/analytics";
 import { TenantDetailCard, TenantDetailEmptyCard } from "@/components/tenants/TenantDetailCard";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import { AppFilterChip } from "@/components/ui/AppFilterChip";
@@ -97,6 +98,13 @@ export default function TenantsScreen() {
   const router = useRouter();
   const config = useConfig();
   const units = useUnits();
+  // One event per search session: fires when the box goes empty → non-empty.
+  const hadQuery = useRef(false);
+  useEffect(() => {
+    const has = units.search.trim().length > 0;
+    if (has && !hadQuery.current) capture("unit_lookup_performed");
+    hadQuery.current = has;
+  }, [units.search]);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const hPad = width >= 1040 ? 34 : 24;

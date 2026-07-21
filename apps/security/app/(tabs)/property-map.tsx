@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { capture } from "@/lib/analytics";
 import { AnnotationEditorDialog } from "@/components/map/AnnotationEditorDialog";
 import { CameraViewerDialog } from "@/components/map/CameraViewerDialog";
 import { TagEditorDialog } from "@/components/map/TagEditorDialog";
@@ -203,9 +204,11 @@ export default function PropertyMapScreen() {
   const onSelectUnit = (n: string) => {
     setEditingId(undefined);
     // "" is a tap on empty map — dismiss, like the Swift tooltip.
+    if (n) capture("map_unit_selected");
     setSelected((prev) => (!n || prev === n ? undefined : n));
   };
   const onPlacePin = (nx: number, ny: number) => {
+    capture("map_annotation_created");
     const c = ann.add(nx, ny);
     setPlaceMode("none");
     clearOverlays();
@@ -217,7 +220,7 @@ export default function PropertyMapScreen() {
   };
   const onSelectCamera = (id: string) => {
     clearOverlays();
-    setViewingCameraId(id);
+    (capture("camera_viewed"), setViewingCameraId(id));
   };
 
   const toggleMode = (m: PlaceMode) => {

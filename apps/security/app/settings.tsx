@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, Switch, Text, View } from "react-native";
+import { capture } from "@/lib/analytics";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import { getScannerProfile, type ScannerProfile } from "@/lib/api/scanner";
 import { useConfig } from "@/lib/stores/config";
@@ -79,7 +80,14 @@ export default function SettingsScreen() {
       "This removes the scanner key from this device. To use it again you'll enter a new key from the admin portal.",
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Deactivate", style: "destructive", onPress: () => void config.deactivate() },
+        {
+          text: "Deactivate",
+          style: "destructive",
+          onPress: () => {
+            capture("scanner_deactivated", { source: "manual" });
+            void config.deactivate();
+          },
+        },
       ],
     );
   };

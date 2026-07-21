@@ -32,6 +32,8 @@ export default function PhotoCapture() {
       await enqueue(entryLogId, uri, config);
       // No PII: just that a photo was attached to an entry log.
       track("entry_photo_captured");
+    } else {
+      track("entry_photo_skipped");
     }
     router.back();
   };
@@ -50,7 +52,7 @@ export default function PhotoCapture() {
         {/* Header */}
         <View className="flex-row items-center justify-between" style={{ padding: 18 }}>
           <Text style={{ color: "#FFFFFF", fontSize: 18, fontWeight: "700" }}>Entry photo</Text>
-          <Pressable onPress={() => router.back()} hitSlop={10}>
+          <Pressable onPress={() => { track("entry_photo_skipped"); router.back(); }} hitSlop={10}>
             <Ionicons name="close" size={26} color="#FFFFFF" />
           </Pressable>
         </View>

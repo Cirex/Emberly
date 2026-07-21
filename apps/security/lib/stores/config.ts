@@ -1,5 +1,6 @@
 import { PRODUCTION_ORIGIN } from "@emberly/core";
 import * as SecureStore from "expo-secure-store";
+import { capture } from "@/lib/analytics";
 import { create } from "zustand";
 
 // The scanner key lives in the Keychain-backed secure store, never in
@@ -63,7 +64,11 @@ export const useConfig = create<ConfigState>((set) => ({
  * Idempotent: repeated calls from concurrent in-flight requests are harmless.
  */
 export function handleUnauthorizedScannerKey(): void {
-  if (useConfig.getState().scannerKey) void useConfig.getState().deactivate();
+  if (!useConfig.getState().scannerKey) return;
+  // Device-health signals: a spike here means keys are being rejected fleet-wide.
+  capture("scanner_key_rejected");
+  capture("scanner_deactivated", { source: "auth_rejected" });
+  void useConfig.getState().deactivate();
 }
 
 /**

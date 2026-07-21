@@ -3,6 +3,7 @@ import {
   type WorkOrderStatusFilter,
   type WorkOrdersResult,
 } from "@/lib/admin-resman-work-orders";
+import { photoCountsByWorkOrder } from "@/lib/work-order-photos";
 import { WorkOrdersClient } from "./work-orders-client";
 
 export const dynamic = "force-dynamic";
@@ -34,9 +35,21 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: S
     initialError = "Failed to load work orders from the property-management mirror.";
   }
 
+  // Completion-photo badge counts for the visible page. Best-effort: the queue
+  // must render even if the photo lookup fails.
+  let photoCounts: Record<string, number> = {};
+  if (result) {
+    try {
+      photoCounts = await photoCountsByWorkOrder(result.orders.map((o) => o.resman_work_order_id));
+    } catch (error) {
+      console.error("[admin/work-orders page] Failed to load photo counts:", error);
+    }
+  }
+
   return (
     <WorkOrdersClient
       result={result}
+      photoCounts={photoCounts}
       status={status}
       category={category}
       technician={technician}

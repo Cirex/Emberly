@@ -1104,6 +1104,102 @@ create trigger resman_work_orders_updated_at
 alter table public.resman_work_orders enable row level security;
 
 -- ------------------------------------------------------------
+-- work_order_photos — completion photos attached by maintenance techs
+-- ------------------------------------------------------------
+-- Technicians attach before/after photos when closing a work order in the
+-- maintenance app. ResMan write-back is deferred (the close route is a stub),
+-- so bytes live in the private `work-order-photos` Storage bucket and these
+-- rows carry the pointer + author; the photos ride into ResMan when the
+-- deferred write path is built. The FK cascades because the sync's
+-- property-scoped delete-missing pass removes work orders that leave the
+-- ResMan report.
+create table if not exists public.work_order_photos (
+  id uuid primary key default gen_random_uuid(),
+  resman_work_order_id text not null
+    references public.resman_work_orders(resman_work_order_id) on delete cascade,
+  phase text not null default 'completion' check (phase in ('before','after','completion')),
+  storage_path text not null,
+  content_type text not null,
+  byte_size integer not null check (byte_size >= 0 and byte_size <= 10485760),
+  created_by text not null default '',          -- staff display name
+  created_by_admin_id text not null default '',
+  created_at timestamptz default now(),
+  deleted_at timestamptz
+);
+
+create index if not exists work_order_photos_work_order_idx
+  on public.work_order_photos (resman_work_order_id, deleted_at);
+
+alter table public.work_order_photos enable row level security;
+
+-- Private storage bucket for work-order completion photos (service role only).
+-- Same pattern as entry-log-photos.
+insert into storage.buckets (id, name, public)
+values ('work-order-photos', 'work-order-photos', false)
+on conflict (id) do update
+set public = excluded.public;
+
+-- ------------------------------------------------------------
+-- pm_templates — admin-defined recurring maintenance definitions
+-- ------------------------------------------------------------
+-- Emberly-owned preventive maintenance (PM). Admins define templates; the sync
+-- worker expands active templates into per-unit task "rounds" nightly and
+-- idempotently (pm_tasks). ResMan is never written.
+create table if not exists public.pm_templates (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  category text not null default '',
+  cadence text not null
+    constraint pm_templates_cadence_check
+    check (cadence in ('monthly', 'quarterly', 'semiannual', 'annual')),
+  -- Month (1-12) the cadence cycle is anchored to; null means January.
+  anchor_month integer
+    constraint pm_templates_anchor_month_check
+    check (anchor_month is null or (anchor_month between 1 and 12)),
+  scope_type text not null default 'all'
+    constraint pm_templates_scope_type_check
+    check (scope_type in ('all', 'building', 'classification')),
+  scope_values text[] not null default '{}',
+  active boolean not null default true,
+  created_by text not null default '',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+drop trigger if exists pm_templates_updated_at on public.pm_templates;
+create trigger pm_templates_updated_at
+  before update on public.pm_templates
+  for each row execute function public.update_updated_at_column();
+
+alter table public.pm_templates enable row level security;
+
+-- ------------------------------------------------------------
+-- pm_tasks — one row per (template, round, unit); generated nightly
+-- ------------------------------------------------------------
+create table if not exists public.pm_tasks (
+  id uuid primary key default gen_random_uuid(),
+  template_id uuid not null references public.pm_templates(id) on delete cascade,
+  round_key text not null,             -- "YYYY-MM" of the period start
+  unit_number text not null,
+  due_date date not null,
+  status text not null default 'pending'
+    constraint pm_tasks_status_check
+    check (status in ('pending', 'done', 'skipped')),
+  completed_by text not null default '',
+  completed_at timestamptz,
+  resman_work_order_id text,
+  created_at timestamptz default now(),
+  -- Generation idempotency key: re-runs INSERT ... ON CONFLICT DO NOTHING, so
+  -- completed/skipped tasks are never clobbered.
+  unique (template_id, round_key, unit_number)
+);
+
+create index if not exists pm_tasks_round_key_idx on public.pm_tasks (round_key);
+create index if not exists pm_tasks_pending_status_idx on public.pm_tasks (status) where status = 'pending';
+
+alter table public.pm_tasks enable row level security;
+
+-- ------------------------------------------------------------
 -- mlgw_accounts (from MLGWAccount)
 -- ------------------------------------------------------------
 create table if not exists public.mlgw_accounts (

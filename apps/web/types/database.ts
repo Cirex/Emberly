@@ -2084,6 +2084,142 @@ export interface Database {
           },
         ];
       };
+      work_order_photos: {
+        Row: {
+          id: string;
+          resman_work_order_id: string;
+          phase: "before" | "after" | "completion";
+          storage_path: string;
+          content_type: string;
+          byte_size: number;
+          created_by: string;
+          created_by_admin_id: string;
+          created_at: string | null;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          resman_work_order_id: string;
+          phase?: "before" | "after" | "completion";
+          storage_path: string;
+          content_type: string;
+          byte_size: number;
+          created_by?: string;
+          created_by_admin_id?: string;
+          created_at?: string | null;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          resman_work_order_id?: string;
+          phase?: "before" | "after" | "completion";
+          storage_path?: string;
+          content_type?: string;
+          byte_size?: number;
+          created_by?: string;
+          created_by_admin_id?: string;
+          created_at?: string | null;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "work_order_photos_resman_work_order_id_fkey";
+            columns: ["resman_work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "resman_work_orders";
+            referencedColumns: ["resman_work_order_id"];
+          },
+        ];
+      };
+      pm_templates: {
+        Row: {
+          id: string;
+          name: string;
+          category: string;
+          cadence: "monthly" | "quarterly" | "semiannual" | "annual";
+          anchor_month: number | null;
+          scope_type: "all" | "building" | "classification";
+          scope_values: string[];
+          active: boolean;
+          created_by: string;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          category?: string;
+          cadence: "monthly" | "quarterly" | "semiannual" | "annual";
+          anchor_month?: number | null;
+          scope_type?: "all" | "building" | "classification";
+          scope_values?: string[];
+          active?: boolean;
+          created_by?: string;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          category?: string;
+          cadence?: "monthly" | "quarterly" | "semiannual" | "annual";
+          anchor_month?: number | null;
+          scope_type?: "all" | "building" | "classification";
+          scope_values?: string[];
+          active?: boolean;
+          created_by?: string;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Relationships: [];
+      };
+      pm_tasks: {
+        Row: {
+          id: string;
+          template_id: string;
+          round_key: string;
+          unit_number: string;
+          due_date: string;
+          status: "pending" | "done" | "skipped";
+          completed_by: string;
+          completed_at: string | null;
+          resman_work_order_id: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          template_id: string;
+          round_key: string;
+          unit_number: string;
+          due_date: string;
+          status?: "pending" | "done" | "skipped";
+          completed_by?: string;
+          completed_at?: string | null;
+          resman_work_order_id?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          template_id?: string;
+          round_key?: string;
+          unit_number?: string;
+          due_date?: string;
+          status?: "pending" | "done" | "skipped";
+          completed_by?: string;
+          completed_at?: string | null;
+          resman_work_order_id?: string | null;
+          created_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "pm_tasks_template_id_fkey";
+            columns: ["template_id"];
+            isOneToOne: false;
+            referencedRelation: "pm_templates";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       mlgw_accounts: {
         Row: {
           id: string;

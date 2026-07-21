@@ -179,6 +179,7 @@ const STATUS_TABS: Array<{ key: WorkOrderStatusFilter; label: string }> = [
 
 export function WorkOrdersClient({
   result,
+  photoCounts = {},
   status,
   category,
   technician,
@@ -188,6 +189,8 @@ export function WorkOrdersClient({
   initialError,
 }: {
   result: WorkOrdersResult | null;
+  /** Live completion-photo count per work order id (techs attach these on close). */
+  photoCounts?: Record<string, number>;
   status: WorkOrderStatusFilter;
   category: string;
   technician: string;
@@ -449,6 +452,15 @@ export function WorkOrdersClient({
                         {o.callback_status === "possible" || o.callback_status === "confirmed" ? (
                           <span className="whitespace-nowrap rounded-md bg-[var(--color-crit-tint)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--color-crit)]">
                             CALLBACK
+                          </span>
+                        ) : null}
+                        {photoCounts[o.resman_work_order_id] ? (
+                          <span
+                            className="whitespace-nowrap rounded-md bg-[var(--color-ok-tint)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--color-ok)]"
+                            title="Completion photos attached by the technician"
+                          >
+                            {photoCounts[o.resman_work_order_id]}{" "}
+                            {photoCounts[o.resman_work_order_id] === 1 ? "PHOTO" : "PHOTOS"}
                           </span>
                         ) : null}
                       </span>

@@ -103,6 +103,25 @@ describe("matchesDisplayMode", () => {
     // hotSpots takes any non-make-ready status.
     expect(matchesDisplayMode(wo({ status: "Completed" }), "hotSpots")).toBe(true);
   });
+
+  test("make-ready CATEGORIES are folded into isMakeReady even when the flag is false", () => {
+    // ResMan's report-level MakeReady flag misses these in prod (13/1,000 sampled).
+    for (const category of [
+      "Make Ready Maintenance",
+      "Make Ready Not Complete",
+      "Turn Maintenance/Punch",
+      "Inspection and make ready",
+    ]) {
+      const leaked = wo({ status: "Completed", is_make_ready: false, category });
+      expect(leaked.isMakeReady).toBe(true);
+      expect(matchesDisplayMode(leaked, "closed")).toBe(false);
+      expect(matchesDisplayMode(leaked, "makeReady")).toBe(true);
+    }
+    // Ordinary categories must NOT be swept in ("Return" contains "turn" but not as a word).
+    for (const category of ["HVAC", "Plumbing", "Key Return", "General Maintenance"]) {
+      expect(wo({ status: "Completed", is_make_ready: false, category }).isMakeReady).toBe(false);
+    }
+  });
 });
 
 describe("filterWorkOrders faceted counts", () => {

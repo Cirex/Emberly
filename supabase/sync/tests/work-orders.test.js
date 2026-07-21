@@ -87,6 +87,31 @@ test("mapWorkOrderRow maps a unit work order and links the unit id", () => {
   assert.equal(wo.is_make_ready, false);
 });
 
+test("mapWorkOrderRow folds make-ready categories into is_make_ready when the flag is false", () => {
+  const ctx = { propertyId: "P1", unitIdByNumber: new Map() };
+  const mk = (Category) =>
+    mapWorkOrderRow(
+      lookup,
+      row({ WorkorderID: "wo-mr", ObjectType: "Unit", Status: "Completed", Category, MakeReady: "false" }),
+      ctx,
+    );
+  // ResMan's MakeReady report flag misses these categories in prod.
+  for (const category of ["Make Ready Maintenance", "Make Ready Not Complete", "Turn Maintenance/Punch", "Inspection and make ready"]) {
+    assert.equal(mk(category).is_make_ready, true, category);
+  }
+  // Ordinary categories stay untouched ("Key Return" has no standalone "turn").
+  for (const category of ["Plumbing", "HVAC", "Key Return"]) {
+    assert.equal(mk(category).is_make_ready, false, category);
+  }
+  // And an explicit true flag still wins regardless of category.
+  const flagged = mapWorkOrderRow(
+    lookup,
+    row({ WorkorderID: "wo-mr2", ObjectType: "Unit", Status: "Open", Category: "Plumbing", MakeReady: "true" }),
+    ctx,
+  );
+  assert.equal(flagged.is_make_ready, true);
+});
+
 test("mapWorkOrderRow: Categoty typo fallback, non-unit gets null unit id, blank id skipped", () => {
   const ctx = { propertyId: "P1", unitIdByNumber: new Map() };
   const typoHeaders = [...HEADERS, "Categoty"];

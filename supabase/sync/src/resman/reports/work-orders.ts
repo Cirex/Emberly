@@ -172,6 +172,9 @@ export function mapWorkOrderRow(
     date_reported: normalizeCsvDate(lookup.value(row, "DateReported")),
     date_scheduled: normalizeCsvDate(lookup.value(row, "ScheduledDate")),
     date_completed: normalizeCsvDate(lookup.value(row, "DateCompleted")),
-    is_make_ready: parseBool(lookup.value(row, "MakeReady")),
+    // ResMan's MakeReady report flag misses rows whose category is plainly a
+    // make-ready ("Make Ready Maintenance", "Turn Maintenance/Punch", …), so
+    // fold the category in — the boards downstream key off this flag.
+    is_make_ready: parseBool(lookup.value(row, "MakeReady")) || /make.?ready|\bturn\b/i.test(category ?? ""),
   };
 }

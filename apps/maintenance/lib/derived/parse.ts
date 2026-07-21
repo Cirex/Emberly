@@ -4,6 +4,18 @@ import { computeWorkOrderSignals, type EngineOrder } from "./wo-engine";
 import { deriveWorkOrderTags } from "./wo-tags";
 
 /**
+ * ResMan's report-level MakeReady flag misses rows whose CATEGORY is plainly a
+ * make-ready ("Make Ready Maintenance", "Make Ready Not Complete", "Turn
+ * Maintenance/Punch", "Inspection and make ready" — 13/1,000 in prod). Fold
+ * those in by category so the Open/Closed boards never show turn work; the
+ * category taxonomy is deliberate, titles are not, so titles are NOT matched.
+ */
+const MAKE_READY_CATEGORY = /make.?ready|\bturn\b/i;
+export function isMakeReadyCategory(category: string | null | undefined): boolean {
+  return MAKE_READY_CATEGORY.test(category ?? "");
+}
+
+/**
  * Technician display normalization — port of WorkOrderTechnicianNames
  * (WorkOrderSupport.swift:4-30): blank → "Unassigned"; grounds… → "Grounds
  * Keepers"; maintenance… or generalmaintenance… → "General Maintenance".
@@ -40,7 +52,7 @@ export function parseWorkOrder(raw: WorkOrder): ParsedWorkOrder {
     technician: raw.technician,
     technicianDisplay,
     tags,
-    isMakeReady: raw.is_make_ready,
+    isMakeReady: raw.is_make_ready || isMakeReadyCategory(raw.category),
     isDuplicate: raw.is_duplicate,
     callbackStatus: raw.callback_status,
     callbackMatchedId: raw.callback_matched_work_order_id,

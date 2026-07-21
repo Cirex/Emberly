@@ -177,9 +177,10 @@ export default function PropertyMapScreen() {
   // the occupancy tint's tallied from the same bucketing that paints it.
   const legend = useMemo(() => {
     if (groupsEnabled) {
+      // Keyed by group id — two groups can share a name ("New group" twice).
       return groups
         .filter((g) => g.visible)
-        .map((g) => ({ label: g.name, color: g.colorHex, count: groupPaint.counts.get(g.id) ?? 0 }));
+        .map((g) => ({ key: g.id, label: g.name, color: g.colorHex, count: groupPaint.counts.get(g.id) ?? 0 }));
     }
     if (!occupancyTint) return [];
     const buckets = new Map<string, number>();
@@ -196,6 +197,7 @@ export default function PropertyMapScreen() {
     };
     return legendFor("occupancy", units.allUnits).map((item) => ({
       ...item,
+      key: item.label,
       count: buckets.get(BUCKET_BY_LABEL[item.label] ?? item.label) ?? 0,
     }));
   }, [groupsEnabled, groups, groupPaint, occupancyTint, units.allUnits]);
@@ -596,7 +598,7 @@ export default function PropertyMapScreen() {
           <GlassSurface radius={14}>
             <View style={{ paddingHorizontal: 12, paddingVertical: 9, gap: 6 }}>
               {legend.map((l) => (
-                <View key={l.label} className="flex-row items-center" style={{ gap: 6 }}>
+                <View key={l.key} className="flex-row items-center" style={{ gap: 6 }}>
                   <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: l.color }} />
                   <Text className="text-slate dark:text-white/70" style={{ fontSize: 11, fontWeight: "600" }}>
                     {l.label}

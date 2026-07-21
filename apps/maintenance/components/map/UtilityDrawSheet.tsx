@@ -70,18 +70,20 @@ export function UtilityDrawSheet({
   return (
     <View
       pointerEvents="box-none"
-      style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 40 }}
+      // Floats ABOVE the tab bar capsule (bottom insets+8, height 62) — the
+      // navigator renders the bar after screen content, so anything lower
+      // would sit behind it.
+      style={{ position: "absolute", left: 10, right: 10, bottom: insets.bottom + 80, zIndex: 40 }}
     >
       <View
         style={{
           backgroundColor: "rgba(250,247,240,0.985)",
-          borderTopLeftRadius: 22,
-          borderTopRightRadius: 22,
-          paddingBottom: insets.bottom + 10,
+          borderRadius: 22,
+          paddingBottom: 12,
           shadowColor: "#091B54",
-          shadowOpacity: 0.16,
+          shadowOpacity: 0.2,
           shadowRadius: 18,
-          shadowOffset: { width: 0, height: -6 },
+          shadowOffset: { width: 0, height: 8 },
         }}
       >
         <View style={{ alignItems: "center", paddingTop: 8 }}>

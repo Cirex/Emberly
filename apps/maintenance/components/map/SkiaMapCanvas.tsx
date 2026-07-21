@@ -78,6 +78,7 @@ const HIT_R2 = 4000;
 // every zoom instead of ballooning at 8×.
 const UTIL_PIN_R = PIN_R * 0.7;
 const UTIL_PIN_RING = 3.4 * 0.7;
+const UTIL_PIN_ICON_SIZE = 18;
 const UTIL_STROKE = 2.5;
 /** Dash intervals in screen pt — scaled by 1/eff alongside the stroke.
  *  These are per-run STYLES now (see effectiveLineStyle): historically sewer
@@ -380,6 +381,7 @@ export function SkiaMapCanvas({
 }: SkiaMapCanvasProps) {
   const dark = useColorScheme().colorScheme === "dark";
   const pinIconFont = useFont(IONICONS_TTF, PIN_ICON_SIZE);
+  const utilPinIconFont = useFont(IONICONS_TTF, UTIL_PIN_ICON_SIZE);
   // Ionicons checkmark for done badges (system fonts may lack U+2713);
   // stop numbers use the system face via matchFont.
   const tourCheckFont = useFont(IONICONS_TTF, TOUR_CHECK_SIZE);
@@ -616,6 +618,25 @@ export function SkiaMapCanvas({
   tapRef.current = handleTap;
   const onTapJS = useCallback((px: number, py: number) => tapRef.current(px, py), []);
 
+  /** Long-press: utility markings only — pins first, then runs. */
+  const handleLongPress = (px: number, py: number) => {
+    if (placeMode !== "none") return;
+    const eff = scale.value * baseScale;
+    const wx = (px - tx.value) / eff;
+    const wy = (py - ty.value) / eff;
+    for (const a of annotations) {
+      if (a.kind !== "utility_pin") continue;
+      const dx = wx - a.x * PAGE_WIDTH;
+      const dy = wy - a.y * PAGE_HEIGHT;
+      if (dx * dx + dy * dy <= HIT_R2) return onSelectUtility(a.id);
+    }
+    const lineId = hitTestUtilityLines(annotations, wx, wy, PAGE_WIDTH, PAGE_HEIGHT);
+    if (lineId) onSelectUtility(lineId);
+  };
+  const longPressRef = useRef(handleLongPress);
+  longPressRef.current = handleLongPress;
+  const onLongPressJS = useCallback((px: number, py: number) => longPressRef.current(px, py), []);
+
   const gesture = useMemo(() => {
     const pinch = Gesture.Pinch()
       .onBegin((e) => {
@@ -666,12 +687,23 @@ export function SkiaMapCanvas({
         runOnJS(onTapJS)(e.x, e.y);
       });
 
+    // Long-press opens a utility marking's inspector directly (pins + runs) —
+    // the deliberate hold reads as "edit this", and a still finger can't be
+    // navigation, so it never fights the pan.
+    const longPress = Gesture.LongPress()
+      .minDuration(420)
+      .maxDistance(12)
+      .onStart((e) => {
+        "worklet";
+        runOnJS(onLongPressJS)(e.x, e.y);
+      });
+
     // Exclusive: the tap only claims the touch when the nav gestures FAIL —
     // running it Simultaneous with pan/pinch made every short navigation flick
     // also select whatever was under the finger (the false-click complaint).
-    return Gesture.Exclusive(Gesture.Simultaneous(pan, pinch), tap);
+    return Gesture.Exclusive(Gesture.Simultaneous(pan, pinch), longPress, tap);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onTapJS, baseScale]);
+  }, [onTapJS, onLongPressJS, baseScale]);
 
   // Everything about the callout — card position, connector route, terminal
   // dot — comes from one placement pass per frame, so the three can't drift.
@@ -912,14 +944,18 @@ export function SkiaMapCanvas({
             </Group>
           ) : null}
 
-          {/* Utility pins: the annotation pin treatment at ~70% — type-colored
-              disc with the white ring, no glyph. */}
+          {/* Utility pins: the annotation pin treatment at ~70% — the pin's
+              own color (falling back to its type's) with its icon glyph, so
+              a customized pin reads at a glance. */}
           {utilityPins.map((a) => {
             const cx = a.x * PAGE_WIDTH;
             const cy = a.y * PAGE_HEIGHT;
+            const fill = a.color || utilityColor(a);
+            const glyph = pinGlyph(a.icon || "construct");
+            const glyphW = utilPinIconFont ? utilPinIconFont.getTextWidth(glyph) : 0;
             return (
               <Group key={a.id}>
-                <Circle cx={cx} cy={cy} r={UTIL_PIN_R} color={utilityColor(a)} />
+                <Circle cx={cx} cy={cy} r={UTIL_PIN_R} color={fill} />
                 <Circle
                   cx={cx}
                   cy={cy}
@@ -928,6 +964,15 @@ export function SkiaMapCanvas({
                   style="stroke"
                   strokeWidth={UTIL_PIN_RING}
                 />
+                {utilPinIconFont ? (
+                  <SkiaText
+                    x={cx - glyphW / 2}
+                    y={cy + UTIL_PIN_ICON_SIZE * 0.36}
+                    text={glyph}
+                    font={utilPinIconFont}
+                    color="#FFFFFF"
+                  />
+                ) : null}
               </Group>
             );
           })}

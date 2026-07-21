@@ -487,11 +487,10 @@ export default function PropertyMapScreen() {
               <StackBtn
                 icon="color-filter-outline"
                 first
-                active={groupsEnabled}
-                onPress={() => {
-                  if (!groupsEnabled) useMapGroups.getState().setEnabled(true);
-                  setGroupsSheetOpen(true);
-                }}
+                // Lit only while groups are actually painting — enabled AND at
+                // least one visible. The sheet's eye is the on/off switch.
+                active={groupsEnabled && groups.some((g) => g.visible)}
+                onPress={() => setGroupsSheetOpen(true)}
                 label={t("mapGroups.groupsButton")}
                 disabled={!hasData}
               />
@@ -503,10 +502,11 @@ export default function PropertyMapScreen() {
               />
               <StackBtn
                 icon="construct-outline"
-                active={placeMode === "utility" || utilityHubOpen}
+                // Always reachable — the hub carries the layer's own on/off
+                // eye, so a hidden layer can be turned back on from here.
+                active={(placeMode === "utility" || utilityHubOpen) && utilityVisible}
                 onPress={() => setUtilityHubOpen(true)}
                 label={t("utility.title")}
-                disabled={!utilityVisible}
               />
               <StackBtn
                 icon="footsteps-outline"
@@ -649,6 +649,8 @@ export default function PropertyMapScreen() {
           clearOverlays();
           setDraftPoints([]);
           setUtilitySub("line");
+          // Drawing onto a hidden layer would vanish on Finish — flip it on.
+          useSettings.getState().setUtilityLayerVisible(true);
           setPlaceMode("utility");
         }}
         onDropPin={() => {
@@ -656,6 +658,7 @@ export default function PropertyMapScreen() {
           clearOverlays();
           setDraftPoints([]);
           setUtilitySub("pin");
+          useSettings.getState().setUtilityLayerVisible(true);
           setPlaceMode("utility");
         }}
         onSelectRun={(id) => {

@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { UtilityType } from "@/lib/api/annotations";
 import { UTILITY_TYPES } from "@/lib/api/annotations";
 import { useAnnotations, type MapAnnotation } from "@/lib/stores/annotations";
+import { useSettings } from "@/lib/stores/settings";
 import { useUtilityVisibility } from "@/lib/stores/utility-visibility";
 import { UTILITY_COLORS, effectiveLineStyle, effectiveLineWeight } from "@/lib/utility-lines";
 import { LinePreview } from "@/components/map/UtilityStyleControls";
@@ -39,6 +40,8 @@ export function UtilitiesHub({
   const annotations = useAnnotations((s) => s.annotations);
   const hiddenIds = useUtilityVisibility((s) => s.hiddenIds);
   const toggleHidden = useUtilityVisibility((s) => s.toggle);
+  const layerVisible = useSettings((s) => s.utilityLayerVisible);
+  const setLayerVisible = useSettings((s) => s.setUtilityLayerVisible);
 
   const runsByType = useMemo(() => {
     const groups = new Map<UtilityType, MapAnnotation[]>();
@@ -74,6 +77,29 @@ export function UtilitiesHub({
             <Text style={{ flex: 1, fontSize: 17, fontWeight: "800", letterSpacing: -0.3, color: NAVY }}>
               {t("utility.title")}
             </Text>
+            {/* Master switch: the whole layer on/off (nothing drawn, nothing
+                tappable) — the quick declutter the map view needs. */}
+            <Pressable
+              onPress={() => setLayerVisible(!layerVisible)}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: layerVisible }}
+              accessibilityLabel={t("utility.layerToggle")}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                alignItems: "center",
+                justifyContent: "center",
+                marginRight: 6,
+                backgroundColor: layerVisible ? "rgba(162,169,33,0.14)" : "rgba(9,27,84,0.05)",
+              }}
+            >
+              <Ionicons
+                name={layerVisible ? "eye-outline" : "eye-off-outline"}
+                size={14}
+                color={layerVisible ? "#767B24" : "#70788F"}
+              />
+            </Pressable>
             <Pressable
               onPress={onClose}
               accessibilityRole="button"

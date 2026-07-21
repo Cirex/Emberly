@@ -2,9 +2,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { Alert, Modal, Pressable, Text, TextInput, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { UTILITY_TYPES, type UtilityType } from "@/lib/api/annotations";
 import { useAnnotations, type MapAnnotation } from "@/lib/stores/annotations";
 import { UTILITY_COLORS, effectiveLineStyle, effectiveLineWeight } from "@/lib/utility-lines";
-import { FlowRow, StyleRow, WeightRow } from "@/components/map/UtilityStyleControls";
+import { PIN_ICONS } from "@/components/map/AnnotationEditorDialog";
+import { FlowRow, StyleChip, StyleRow, WeightRow } from "@/components/map/UtilityStyleControls";
 import { activeLocale } from "@/lib/i18n";
 
 const NAVY = "#091B54";
@@ -104,6 +106,85 @@ export function UtilityAnnotationDialog({
             </Pressable>
           </View>
           <Text style={{ paddingHorizontal: 18, paddingTop: 3, fontSize: 10.5, color: MUTED }}>{meta}</Text>
+
+          {!isLine ? (
+            // Pin styling (icon · color · type). Changing the type also swaps
+            // the color when it was still the old type's default — a custom
+            // color is the user's choice and stays.
+            <View style={{ paddingHorizontal: 18, paddingTop: 12, gap: 12 }}>
+              <View style={{ gap: 6 }}>
+                <SectionLabel>{t("utility.typeSection")}</SectionLabel>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                  {UTILITY_TYPES.map((type: UtilityType) => (
+                    <StyleChip
+                      key={type}
+                      label={t(`utility.types.${type}`)}
+                      selected={utilityType === type}
+                      onPress={() =>
+                        update(annotation.id, {
+                          utilityType: type,
+                          ...(annotation.color === UTILITY_COLORS[utilityType]
+                            ? { color: UTILITY_COLORS[type] }
+                            : {}),
+                        })
+                      }
+                      preview={
+                        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: UTILITY_COLORS[type] }} />
+                      }
+                    />
+                  ))}
+                </View>
+              </View>
+
+              <View style={{ gap: 6 }}>
+                <SectionLabel>{t("utility.colorSection")}</SectionLabel>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {Object.values(UTILITY_COLORS).map((hex) => (
+                    <Pressable
+                      key={hex}
+                      onPress={() => update(annotation.id, { color: hex })}
+                      accessibilityRole="button"
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: 13,
+                        backgroundColor: hex,
+                        borderWidth: annotation.color === hex ? 2.5 : 0,
+                        borderColor: NAVY,
+                      }}
+                    />
+                  ))}
+                </View>
+              </View>
+
+              <View style={{ gap: 6 }}>
+                <SectionLabel>{t("utility.iconSection")}</SectionLabel>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {PIN_ICONS.map((choice) => {
+                    const active = (annotation.icon || "construct") === choice.name;
+                    return (
+                      <Pressable
+                        key={choice.name}
+                        onPress={() => update(annotation.id, { icon: choice.name })}
+                        accessibilityRole="button"
+                        accessibilityLabel={choice.label}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 16,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: active ? color : "rgba(9,27,84,0.06)",
+                        }}
+                      >
+                        <Ionicons name={choice.name} size={15} color={active ? "#FFFFFF" : "#4C556F"} />
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            </View>
+          ) : null}
 
           {isLine ? (
             <View style={{ paddingHorizontal: 18, paddingTop: 12, gap: 12 }}>

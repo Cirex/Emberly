@@ -75,6 +75,28 @@ export function GroupsSheet({
             <Text style={{ flex: 1, fontSize: 17, fontWeight: "800", letterSpacing: -0.3, color: NAVY }}>
               {t("mapGroups.title")}
             </Text>
+            {/* Master switch: paint the map by groups, or leave it plain. */}
+            <Pressable
+              onPress={() => store.setEnabled(!store.enabled)}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: store.enabled }}
+              accessibilityLabel={t("mapGroups.paintToggle")}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                alignItems: "center",
+                justifyContent: "center",
+                marginRight: 6,
+                backgroundColor: store.enabled ? "rgba(162,169,33,0.14)" : "rgba(9,27,84,0.05)",
+              }}
+            >
+              <Ionicons
+                name={store.enabled ? "eye-outline" : "eye-off-outline"}
+                size={14}
+                color={store.enabled ? "#767B24" : "#70788F"}
+              />
+            </Pressable>
             <Pressable
               onPress={onClose}
               accessibilityRole="button"

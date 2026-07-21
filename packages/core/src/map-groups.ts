@@ -16,6 +16,10 @@ export interface GroupUnit extends MapColorUnit {
   number: string;
   balance?: number | null;
   lease_end_date?: string | null;
+  /** ResMan delinquency reason text; non-empty is an eviction-workflow signal. */
+  delinquency_reason?: string | null;
+  /** ResMan availability text (e.g. "Available", "Leased - Not Yet Moved In"). */
+  availability?: string | null;
 }
 
 export type GroupCondition =
@@ -24,7 +28,18 @@ export type GroupCondition =
   /** balance is present and strictly greater than zero. */
   | { kind: "balanceOverZero" }
   /** lease_end_date falls within [today, today + days]. */
-  | { kind: "leaseEndsWithin"; days: number };
+  | { kind: "leaseEndsWithin"; days: number }
+  /** availability equals one of the given values (case-insensitive, trimmed). */
+  | { kind: "availabilityIn"; values: string[] }
+  /**
+   * Eviction signal: delinquency_reason is non-empty, or the occupancy/lease
+   * status contains "evict" (case-insensitive). lease_status is included
+   * because ResMan files "Under Eviction" there, not in occupancy_status
+   * (see occupancyGroup in map-color.ts).
+   */
+  | { kind: "evictionFlag" }
+  /** balance in (min, max]; max null = unbounded. Bands tile with balanceHeatColor's ramp. */
+  | { kind: "balanceBand"; min: number; max: number | null };
 
 export interface MapFilterGroup {
   id: string;
@@ -59,6 +74,22 @@ export function unitMatchesCondition(unit: GroupUnit, cond: GroupCondition, nowM
       if (end === null) return false;
       return end >= nowMs - DAY_MS && end <= nowMs + cond.days * DAY_MS;
     }
+    case "availabilityIn": {
+      const availability = unit.availability?.trim().toLowerCase();
+      if (!availability) return false;
+      return cond.values.some((v) => v.trim().toLowerCase() === availability);
+    }
+    case "evictionFlag": {
+      if (unit.delinquency_reason && unit.delinquency_reason.trim() !== "") return true;
+      const hasEvict = (s: string | null | undefined) => !!s && s.toLowerCase().includes("evict");
+      return hasEvict(unit.occupancy_status) || hasEvict(unit.lease_status);
+    }
+    case "balanceBand":
+      return (
+        typeof unit.balance === "number" &&
+        unit.balance > cond.min &&
+        (cond.max === null || unit.balance <= cond.max)
+      );
   }
 }
 

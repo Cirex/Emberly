@@ -39,3 +39,44 @@ test("strokeFor darkens the fill", () => {
   assert.equal(strokeFor("#ffffff"), "#b8b8b8");
   assert.equal(strokeFor("bogus"), "bogus");
 });
+
+function groupWith(cond) {
+  return { id: "x", name: "X", colorHex: "#112233", conditions: [cond], visible: true };
+}
+
+test("availabilityIn matches case-insensitively and trimmed", () => {
+  const g = groupWith({ kind: "availabilityIn", values: ["Available", "Leased - Not Yet Moved In"] });
+  assert.equal(unitMatchesGroup(unit({ availability: "available" }), g, NOW), true);
+  assert.equal(unitMatchesGroup(unit({ availability: "  AVAILABLE  " }), g, NOW), true);
+  assert.equal(unitMatchesGroup(unit({ availability: "Unavailable" }), g, NOW), false);
+  assert.equal(unitMatchesGroup(unit({ availability: null }), g, NOW), false);
+  assert.equal(unitMatchesGroup(unit(), g, NOW), false);
+});
+
+test("evictionFlag matches delinquency_reason or evict-ish statuses", () => {
+  const g = groupWith({ kind: "evictionFlag" });
+  assert.equal(unitMatchesGroup(unit({ delinquency_reason: "Skip/Evict" }), g, NOW), true);
+  assert.equal(unitMatchesGroup(unit({ delinquency_reason: "   " }), g, NOW), false); // whitespace-only is empty
+  assert.equal(unitMatchesGroup(unit({ occupancy_status: "Occupied - EVICTION filed" }), g, NOW), true);
+  assert.equal(unitMatchesGroup(unit({ lease_status: "Under Eviction" }), g, NOW), true); // lease_status carries it in ResMan
+  assert.equal(unitMatchesGroup(unit(), g, NOW), false);
+});
+
+test("balanceBand is exclusive-min, inclusive-max; null max is unbounded", () => {
+  const band = groupWith({ kind: "balanceBand", min: 300, max: 800 });
+  assert.equal(unitMatchesGroup(unit({ balance: 300 }), band, NOW), false);
+  assert.equal(unitMatchesGroup(unit({ balance: 300.01 }), band, NOW), true);
+  assert.equal(unitMatchesGroup(unit({ balance: 800 }), band, NOW), true);
+  assert.equal(unitMatchesGroup(unit({ balance: 801 }), band, NOW), false);
+  assert.equal(unitMatchesGroup(unit({ balance: null }), band, NOW), false);
+  const open = groupWith({ kind: "balanceBand", min: 1500, max: null });
+  assert.equal(unitMatchesGroup(unit({ balance: 99999 }), open, NOW), true);
+  assert.equal(unitMatchesGroup(unit({ balance: 1500 }), open, NOW), false);
+});
+
+test("defaultMapFilterGroups is unchanged by the new condition kinds", () => {
+  assert.deepEqual(
+    defaultMapFilterGroups().map((g) => g.id),
+    ["prebuilt-delinquent", "prebuilt-lease-ending", "prebuilt-vacant"],
+  );
+});

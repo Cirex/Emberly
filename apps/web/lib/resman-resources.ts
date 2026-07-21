@@ -135,7 +135,12 @@ export const unitsResource = defineResource({
     "deposit_required", "deposit_held", "balance", "bedrooms", "bathrooms", "pets_permitted",
     "affordable_unit", "holding_unit", "excluded_from_occupancy", "available_for_online_marketing",
     "street", "city", "state", "postal_code", "country", "lease_start_date", "lease_end_date",
-    "move_in_date", "move_out_date", "tenant_names", "source_url", "scraped_at", "synced_at",
+    "move_in_date", "move_out_date", "tenant_names",
+    // Delinquency-with-aging enrichment — the manager app's heat map and
+    // callouts read these; harmless extras for the other apps.
+    "current_month_balance", "last_month_balance", "period_balance", "previous_balance",
+    "times_late", "delinquency_reason", "leasing_agent",
+    "source_url", "scraped_at", "synced_at",
     "created_at", "updated_at",
   ],
   filters: {

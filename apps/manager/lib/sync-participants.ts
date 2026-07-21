@@ -9,4 +9,8 @@
  * `registerSync("<name>", fn)` at module scope — see lib/stores/units.ts for
  * the reference pattern.
  */
+import "@/lib/stores/delinquency";
+import "@/lib/stores/leases";
+import "@/lib/stores/ledger";
+import "@/lib/stores/mlgw";
 import "@/lib/stores/units";

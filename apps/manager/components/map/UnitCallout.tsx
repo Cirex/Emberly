@@ -35,10 +35,9 @@ function shortDate(value: string): string {
  * "Open tenant" is a stub in v1 — the delinquency-detail cross-nav lands with
  * the tenant sheet; today it only fires analytics (see the screen).
  *
- * The DTO note: the units mirror this app syncs has no times_late or aging
- * columns yet, so the aging row is derived from the balance alone (positive
- * balance = at minimum current-month debt) — it sharpens when those columns
- * join the DTO.
+ * Aging derives from the delinquency-with-aging columns on the units mirror
+ * (current/last/period/previous month balances), so the bucket reflects how
+ * old the debt actually is, not just that it exists.
  */
 export function UnitCallout({
   unit,
@@ -61,7 +60,15 @@ export function UnitCallout({
       : t("map.callout.unoccupied")
     : "—";
   const balance = typeof data?.balance === "number" ? data.balance : null;
-  const bucket = data ? agingBucket({ balance: data.balance }) : null;
+  const bucket = data
+    ? agingBucket({
+        currentMonthBalance: data.current_month_balance,
+        lastMonthBalance: data.last_month_balance,
+        periodBalance: data.period_balance,
+        previousBalance: data.previous_balance,
+        balance: data.balance,
+      })
+    : null;
   const owes = balance !== null && balance > 0;
 
   return (

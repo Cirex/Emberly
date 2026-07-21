@@ -23,11 +23,10 @@ import {
 export const HEAT_FILL_ALPHA = 0.55;
 
 /**
- * Eviction detection for the heat override. The manager units DTO carries no
- * delinquency_reason column, so in practice this reduces to core's
- * occupancy/lease-status "evict" scan — but routing through the shared
- * evictionFlag condition keeps the two lenses (heat and the Eviction group)
- * agreeing on what counts, including delinquency_reason if the DTO grows it.
+ * Eviction detection for the heat override. Routed through the shared
+ * evictionFlag condition so the two lenses (heat and the Eviction group)
+ * agree on what counts: delinquency_reason plus the occupancy/lease-status
+ * "evict" scan.
  */
 export function hasEvictionSignal(unit: GroupUnit): boolean {
   // evictionFlag never reads the clock; 0 keeps this call pure.

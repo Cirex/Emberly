@@ -41,6 +41,7 @@ export function DetailSheet({
   const current = detail.bills.find((b) => b.is_current) ?? detail.bills[0] ?? null;
   const stats = detail.stats;
   const afterMoveIn = stats?.afterMoveIn ?? null;
+  const carriedForward = stats?.afterMoveInBalanceForward ?? null;
   const tint = account.is_house_account ? T.gas : T.water;
   const tintInk = account.is_house_account ? T.gasInk : T.waterInk;
 
@@ -159,16 +160,20 @@ export function DetailSheet({
           <div style={{ padding: "14px 18px 0" }}>
             <Panel icon="🪪" title="Occupancy Context" subtitle="ResMan unit dates overlaid against the utility ledger" padding={16}>
               {afterMoveIn ? (
-                <div style={{ display: "flex", gap: 11, alignItems: "center", background: "rgba(209,56,46,0.07)", border: "1px solid rgba(209,56,46,0.25)", borderRadius: 10, padding: "11px 14px", marginBottom: 12 }}>
-                  <span style={{ fontSize: 16, color: T.blocked }}>👤</span>
-                  <span>
-                    <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>Owner-paid utility activity after tenant move-in</span>
-                    <br />
-                    <span style={{ fontSize: 11, color: T.muted, ...NUM }}>
-                      {afterMoveIn.billCount} bills totaling {money(afterMoveIn.total)} after {shortDate(afterMoveIn.since)}
-                    </span>
-                  </span>
-                </div>
+                <OccupancyAlert
+                  icon="👤"
+                  color={T.blocked}
+                  title="Owner-paid utility activity after tenant move-in"
+                  line={`${afterMoveIn.billCount} ${afterMoveIn.billCount === 1 ? "bill" : "bills"} totaling ${money(afterMoveIn.total)} after ${shortDate(afterMoveIn.since)}`}
+                />
+              ) : null}
+              {carriedForward ? (
+                <OccupancyAlert
+                  icon="↻"
+                  color={T.review}
+                  title="Balance forward carried after tenant move-in"
+                  line={`${carriedForward.billCount} ${carriedForward.billCount === 1 ? "bill" : "bills"} carrying ${money(carriedForward.total)} forward after ${shortDate(carriedForward.since)}`}
+                />
               ) : null}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px,1fr))", gap: "12px 20px", fontSize: 12 }}>
                 <Field k="Matched Unit" v={`Unit ${detail.unit.unit_number}`} />
@@ -314,6 +319,22 @@ export function DetailSheet({
 
 function td(last: boolean): React.CSSProperties {
   return { padding: 10, borderBottom: last ? "none" : `1px solid ${T.line}`, verticalAlign: "top", color: T.ink };
+}
+
+/** The Occupancy Context alert row (XMS: red owner-paid, violet balance-forward). */
+function OccupancyAlert({ icon, color, title, line }: { icon: string; color: string; title: string; line: string }) {
+  return (
+    <div style={{ display: "flex", gap: 11, alignItems: "center", background: `${color}12`, border: `1px solid ${color}40`, borderRadius: 10, padding: "11px 14px", marginBottom: 12 }}>
+      <span style={{ width: 28, height: 28, borderRadius: 14, background: `${color}1F`, color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>
+        {icon}
+      </span>
+      <span>
+        <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{title}</span>
+        <br />
+        <span style={{ fontSize: 11, color: T.muted, ...NUM }}>{line}</span>
+      </span>
+    </div>
+  );
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

@@ -521,6 +521,8 @@ export interface BillDetailStats {
   /** Current minus previous bill amount; null without a previous. */
   previousDelta: { delta: number; previousDate: string | null } | null;
   afterMoveIn: { total: number; billCount: number; since: string } | null;
+  /** Post-move-in bills still carrying a balance forward (the XMS second alert). */
+  afterMoveInBalanceForward: { total: number; billCount: number; since: string } | null;
 }
 
 export function billDetailStats(
@@ -551,5 +553,15 @@ export function billDetailStats(
       after.length > 0
         ? { total: round2(after.reduce((acc, b) => acc + n(b.amount_due), 0)), billCount: after.length, since: facts!.move_in_date! }
         : null,
+    afterMoveInBalanceForward: (() => {
+      const carrying = after.filter((b) => n(b.balance_forward) > 0);
+      return carrying.length > 0
+        ? {
+            total: round2(carrying.reduce((acc, b) => acc + n(b.balance_forward), 0)),
+            billCount: carrying.length,
+            since: facts!.move_in_date!,
+          }
+        : null;
+    })(),
   };
 }

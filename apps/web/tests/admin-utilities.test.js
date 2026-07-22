@@ -228,4 +228,17 @@ test("bill detail stats: average, highest, previous delta, after-move-in rollup"
   assert.equal(stats.previousDelta.delta, 28.28);
   assert.equal(stats.afterMoveIn.billCount, 2); // Jun + Jul bills post 5/24
   assert.equal(stats.afterMoveIn.total, 499.26);
+  assert.equal(stats.afterMoveInBalanceForward, null); // no bill carries a balance
+});
+
+test("bill detail stats flag post-move-in bills still carrying balance forward", () => {
+  const bills = [
+    bill({ balance_forward: 118.64 }),
+    bill({ id: "b-jun", is_current: false, bill_date: "2026-06-16", amount_due: 235.49, balance_forward: 0 }),
+    bill({ id: "b-apr", is_current: false, bill_date: "2026-04-16", amount_due: 210, balance_forward: 95 }), // pre-move-in: excluded
+  ];
+  const facts = { resman_unit_id: "u-204", unit_number: "204", occupancy_status: "Occupied", tenant_names: ["Sofia"],
+                  move_in_date: "2026-05-24", move_out_date: null, lease_start_date: "2026-05-24", lease_end_date: "2027-05-24" };
+  const stats = billDetailStats(bills, bills[0], facts);
+  assert.deepEqual(stats.afterMoveInBalanceForward, { total: 118.64, billCount: 1, since: "2026-05-24" });
 });

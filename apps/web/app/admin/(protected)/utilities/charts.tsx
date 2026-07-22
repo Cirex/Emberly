@@ -180,6 +180,18 @@ export function HistoryChart({
     if (idx > 0) moveX = (x(idx - 1) + x(idx)) / 2;
     else if (idx === 0) moveX = left + 4;
   }
+
+  // Month ticks (the XMS chart's dashed verticals): two evenly spaced, deduped.
+  const ticks: Array<{ x: number; label: string }> = [];
+  if (dated.length >= 4) {
+    for (const frac of [1 / 3, 2 / 3]) {
+      const i = Math.round((dated.length - 1) * frac);
+      const date = dated[i].bill_date;
+      if (!date) continue;
+      const label = monthLabel(date.slice(0, 7));
+      if (!ticks.some((t) => t.label === label)) ticks.push({ x: x(i), label });
+    }
+  }
   // Dedupe: with a flat history (every bill the same amount) max, mid, and min
   // collapse to one value — duplicate keys and stacked labels otherwise.
   const gridVals = [...new Set([max, (max + min) / 2, min > 0 ? min : (max + min) / 4])];
@@ -190,6 +202,14 @@ export function HistoryChart({
         <g key={v}>
           <line x1={left} y1={y(v)} x2={right} y2={y(v)} stroke={T.navy} opacity={0.08} />
           <text x={right + 12} y={y(v) + 3} fontSize={9} fill={T.muted}>{Math.round(v)}</text>
+        </g>
+      ))}
+      {ticks.map((t) => (
+        <g key={t.label}>
+          <line x1={t.x} y1={topY} x2={t.x} y2={floorY} stroke={T.navy} opacity={0.12} strokeDasharray="3 5" />
+          <text x={t.x} y={H - 2} fontSize={9} fill={T.muted} textAnchor="middle">
+            {t.label}
+          </text>
         </g>
       ))}
       <path d={area} fill="rgba(38,52,138,0.10)" />

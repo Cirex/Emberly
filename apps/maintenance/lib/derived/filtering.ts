@@ -1,3 +1,4 @@
+import { isCallbackSignal, isClosedWorkOrder, isOpenWorkOrder } from "@emberly/core";
 import type {
   DisplayMode,
   FilterSets,
@@ -15,21 +16,12 @@ import type {
  * toggled me" instead of collapsing to the current selection.
  */
 
-/** Statuses the "open" board owns. Everything else is closed or unknown. */
-export const WORK_ORDER_OPEN_STATUSES = [
-  "Open",
-  "In Progress",
-  "Not Started",
-  "On Hold",
-  "Submitted",
-  "Scheduled",
-];
-
-/** Both "Cancelled" (Swift) and "Canceled" (the synced mirror's spelling). */
-export const WORK_ORDER_CLOSED_STATUSES = ["Closed", "Completed", "Cancelled", "Canceled"];
-
-const OPEN_STATUS_SET = new Set(WORK_ORDER_OPEN_STATUSES);
-const CLOSED_STATUS_SET = new Set(WORK_ORDER_CLOSED_STATUSES);
+/**
+ * The open/closed status vocabulary and the callback-signal rule now live in
+ * @emberly/core (both apps band their boards the same way); re-exported here
+ * so this module's public API is unchanged.
+ */
+export { WORK_ORDER_CLOSED_STATUSES, WORK_ORDER_OPEN_STATUSES, isCallbackSignal } from "@emberly/core";
 
 /**
  * Mode membership. Make-readies live on their own board, so open/closed/hot
@@ -39,22 +31,14 @@ const CLOSED_STATUS_SET = new Set(WORK_ORDER_CLOSED_STATUSES);
 export function matchesDisplayMode(wo: ParsedWorkOrder, mode: DisplayMode): boolean {
   switch (mode) {
     case "open":
-      return OPEN_STATUS_SET.has(wo.status) && !wo.isMakeReady;
+      return isOpenWorkOrder(wo);
     case "closed":
-      return CLOSED_STATUS_SET.has(wo.status) && !wo.isMakeReady;
+      return isClosedWorkOrder(wo);
     case "makeReady":
       return wo.isMakeReady;
     case "hotSpots":
       return !wo.isMakeReady;
   }
-}
-
-/**
- * Callback signal — persisted by the server's callback engine (no live
- * detection in the app, unlike Swift). "possible" and "confirmed" both count.
- */
-export function isCallbackSignal(wo: ParsedWorkOrder): boolean {
-  return wo.callbackStatus === "possible" || wo.callbackStatus === "confirmed";
 }
 
 /** Substring test on the precomputed searchKey; caller passes trimmed+lowercased text. */

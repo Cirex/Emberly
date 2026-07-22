@@ -136,19 +136,24 @@ function niceStep(raw: number): number {
   return nice * power;
 }
 
-/** Catmull-Rom-ish smoothing via midpoint quadratics — visually matches the
- *  artifact's smoothed path without a curve library. */
+/** Catmull-Rom → cubic Bézier smoothing that passes THROUGH every point —
+ *  midpoint-quadratic shortcuts leave the dots floating off the curve. */
 function smoothPath(pts: Array<{ x: number; y: number }>): string {
   if (pts.length === 0) return "";
   if (pts.length === 1) return `M${pts[0].x} ${pts[0].y}`;
-  let d = `M${pts[0].x} ${pts[0].y}`;
-  for (let i = 1; i < pts.length - 1; i++) {
-    const mx = (pts[i].x + pts[i + 1].x) / 2;
-    const my = (pts[i].y + pts[i + 1].y) / 2;
-    d += ` Q${pts[i].x} ${pts[i].y} ${mx} ${my}`;
+  const r = (v: number) => Math.round(v * 100) / 100;
+  let d = `M${r(pts[0].x)} ${r(pts[0].y)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] ?? pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] ?? p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C${r(c1x)} ${r(c1y)} ${r(c2x)} ${r(c2y)} ${r(p2.x)} ${r(p2.y)}`;
   }
-  const last = pts[pts.length - 1];
-  d += ` L${last.x} ${last.y}`;
   return d;
 }
 
@@ -179,7 +184,11 @@ export function HistoryChart({
   const top = Math.max(Math.ceil(max / step) * step, step);
   const gridVals: number[] = [];
   for (let v = top; v >= 0; v -= step) gridVals.push(v);
-  const x = (i: number) => left + (dated.length === 1 ? 0 : (i / (dated.length - 1)) * (right - left));
+  // Endpoint dots (r ≈ 6 on the current bill) must sit fully inside the plot,
+  // so the point range is inset from the gridline extents.
+  const plotL = left + 8;
+  const plotR = right - 8;
+  const x = (i: number) => plotL + (dated.length === 1 ? 0 : (i / (dated.length - 1)) * (plotR - plotL));
   const y = (v: number) => floorY - (v / top) * (floorY - topY);
   const pts = dated.map((b, i) => ({ x: x(i), y: y(b.amount_due ?? 0) }));
   const line = smoothPath(pts);

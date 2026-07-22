@@ -43,7 +43,7 @@ export function PortfolioSnapshot({
               Current bills {mix.month ? `dated ${monthLabel(mix.month)} ` : ""}grouped by charge category
             </span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 30, marginTop: 6 }}>
             <MixColumn label="Units" dot={T.water} group={mix.units} />
             <MixColumn label="House" dot={T.gas} group={mix.house} />
           </div>
@@ -61,7 +61,9 @@ function MixColumn({ label, dot, group }: { label: string; dot: string; group: M
       <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: T.ink, marginBottom: 6 }}>
         <span style={{ width: 7, height: 7, borderRadius: 4, background: dot }} />
         {label}
-        <span style={{ marginLeft: "auto", color: T.muted, fontWeight: 600, fontSize: 10.5, ...NUM }}>{group.billCount} bills</span>
+        <span style={{ marginLeft: "auto", color: T.muted, fontWeight: 600, fontSize: 10.5, ...NUM }}>
+          {group.billCount} {group.billCount === 1 ? "bill" : "bills"}
+        </span>
         <span style={{ fontWeight: 800, marginLeft: 10, ...NUM }}>{money(group.total)}</span>
       </div>
       <ChargeBar segments={group.segments} height={10} />
@@ -99,6 +101,7 @@ function MomRow({
   caption,
   right,
   indent = false,
+  indentEnd = false,
   last = false,
 }: {
   icon: IconName;
@@ -106,33 +109,34 @@ function MomRow({
   value: string;
   caption: string;
   right: React.ReactNode;
+  /** Child row of the one above — connector rail + inset. */
   indent?: boolean;
+  /** Last child in an indent group: the rail stops at this row's tick. */
+  indentEnd?: boolean;
   last?: boolean;
 }) {
   return (
     <div
       style={{
-        display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0",
+        display: "flex", alignItems: "center", gap: 10, padding: "9px 0",
+        paddingLeft: indent ? 26 : 0,
         borderBottom: last ? "none" : `1px solid ${T.line}`,
-        marginLeft: indent ? 20 : 0, position: "relative",
+        position: "relative",
       }}
     >
       {indent ? (
-        <span
-          style={{
-            position: "absolute", left: -14, top: -6, width: 11, height: 22,
-            borderLeft: `1.5px solid ${T.line}`, borderBottom: `1.5px solid ${T.line}`, borderBottomLeftRadius: 6,
-          }}
-        />
+        <>
+          {/* XMS's continuous connector: vertical rail through the group, a tick per row. */}
+          <span style={{ position: "absolute", left: 6, top: 0, bottom: indentEnd ? "50%" : 0, width: 1.5, background: T.line }} />
+          <span style={{ position: "absolute", left: 6, top: "50%", width: 13, height: 1.5, background: T.line }} />
+        </>
       ) : null}
       <span style={{ width: 26, height: 26, borderRadius: 8, background: T.wash, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: T.navy }}>
         <Icon name={icon} size={14} />
       </span>
-      <span style={{ flex: 1, minWidth: 0 }}>
+      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1, lineHeight: 1.35 }}>
         <span style={{ fontSize: 11.5, fontWeight: 700, color: T.ink }}>{title}</span>
-        <br />
         <span style={{ fontSize: 14, fontWeight: 800, color: T.ink, ...NUM }}>{value}</span>
-        <br />
         <span style={{ fontSize: 10, color: T.muted, ...NUM }}>{caption}</span>
       </span>
       {right}
@@ -154,7 +158,7 @@ function MonthOverMonthColumn({ mom }: { mom: MonthOverMonth }) {
         caption={`Previous ${money(mom.totalSpend.previous)}`} right={<DeltaCell entry={mom.totalSpend} />} />
       <MomRow indent icon="house" title="House Meters" value={money(mom.houseMeters.current)}
         caption={`Previous ${money(mom.houseMeters.previous)}`} right={<DeltaCell entry={mom.houseMeters} />} />
-      <MomRow indent icon="building" title="Units" value={money(mom.units.current)}
+      <MomRow indent indentEnd icon="building" title="Units" value={money(mom.units.current)}
         caption={`Previous ${money(mom.units.previous)}`} right={<DeltaCell entry={mom.units} />} />
       <MomRow icon="bolt" title="Electric" value={money(mom.electric.current)}
         caption={`Previous ${money(mom.electric.previous)}`} right={<DeltaCell entry={mom.electric} />} />
@@ -166,7 +170,7 @@ function MonthOverMonthColumn({ mom }: { mom: MonthOverMonth }) {
           <span style={{ textAlign: "right", fontSize: 10.5, fontWeight: 700, lineHeight: 1.5, color: T.gasInk, ...NUM }}>
             {mom.vacancyExposure.shareOfSpend === null ? "—" : `${mom.vacancyExposure.shareOfSpend.toFixed(1)}%`}
             <br />
-            {mom.vacancyExposure.billCount} bills
+            {mom.vacancyExposure.billCount} {mom.vacancyExposure.billCount === 1 ? "bill" : "bills"}
           </span>
         }
       />

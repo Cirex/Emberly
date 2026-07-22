@@ -460,7 +460,7 @@ function TreeNode({ node, selected }: { node: LedgerTreeNode; selected: boolean 
     <div style={{ position: "relative", padding: "10px 0 14px" }}>
       <span
         style={{
-          position: "absolute", left: -22, top: 16, width: 8, height: 8, borderRadius: 4,
+          position: "absolute", left: -22, top: 13, width: 8, height: 8, borderRadius: 4,
           background: selected ? T.accent : T.muted,
           boxShadow: selected ? "0 0 0 4px rgba(180,181,58,0.22)" : undefined,
         }}
@@ -470,35 +470,39 @@ function TreeNode({ node, selected }: { node: LedgerTreeNode; selected: boolean 
       {selected ? (
         <span style={{ fontSize: 9, fontWeight: 800, color: T.accentInk, background: "rgba(180,181,58,0.16)", borderRadius: 999, padding: "2px 8px", marginLeft: 8 }}>Selected</span>
       ) : null}
-      <div style={{ display: "flex", gap: 8, margin: "8px 0 6px", flexWrap: "wrap" }}>
-        {chips.map(([k, v]) => (
-          <span key={k} style={{ background: T.wash, border: `1px solid ${T.line}`, borderRadius: 9, padding: "6px 11px" }}>
-            <MicroLabel>{k}</MicroLabel>
-            <span style={{ fontSize: 12, fontWeight: 800, color: T.ink, ...NUM }}>{v}</span>
-          </span>
+      {/* Content column sized by the chip row, so payment rows share its right
+          edge instead of stretching across the whole panel. */}
+      <div style={{ width: "max-content", maxWidth: "100%" }}>
+        <div style={{ display: "flex", gap: 8, margin: "8px 0 6px", flexWrap: "wrap" }}>
+          {chips.map(([k, v]) => (
+            <span key={k} style={{ background: T.wash, border: `1px solid ${T.line}`, borderRadius: 9, padding: "6px 11px" }}>
+              <MicroLabel>{k}</MicroLabel>
+              <span style={{ fontSize: 12, fontWeight: 800, color: T.ink, ...NUM }}>{v}</span>
+            </span>
+          ))}
+        </div>
+        {node.isLatest ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.muted, margin: "4px 0" }}>
+            <Icon name="arrowRight" size={12} />
+            Latest bill in this account ledger.{node.payments.length === 0 ? " No payments captured before the next bill." : ""}
+          </div>
+        ) : node.reconciles !== null ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, margin: "4px 0", color: node.reconciles ? T.ready : T.blocked }}>
+            <Icon name={node.reconciles ? "check" : "close"} size={12} />
+            {node.reconciles ? "Payments line up with the next balance forward." : "Payments do not match the next balance forward."}
+          </div>
+        ) : null}
+        {node.payments.map((p) => (
+          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, background: T.wash, borderRadius: 9, padding: "8px 12px", marginTop: 6, fontSize: 11.5 }}>
+            <span style={{ display: "flex", color: T.muted }}>
+              <Icon name="card" size={14} />
+            </span>
+            <b style={{ color: T.ink, ...NUM }}>{shortDate(p.paid_date)}</b>
+            <span style={{ color: T.muted, ...NUM }}>#{p.reference_number}</span>
+            <span style={{ marginLeft: "auto", fontWeight: 800, color: T.ready, ...NUM }}>{money(p.amount)}</span>
+          </div>
         ))}
       </div>
-      {node.isLatest ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.muted, margin: "4px 0" }}>
-          <Icon name="arrowRight" size={12} />
-          Latest bill in this account ledger.{node.payments.length === 0 ? " No payments captured before the next bill." : ""}
-        </div>
-      ) : node.reconciles !== null ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, margin: "4px 0", color: node.reconciles ? T.ready : T.blocked }}>
-          <Icon name={node.reconciles ? "check" : "close"} size={12} />
-          {node.reconciles ? "Payments line up with the next balance forward." : "Payments do not match the next balance forward."}
-        </div>
-      ) : null}
-      {node.payments.map((p) => (
-        <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, background: T.wash, borderRadius: 9, padding: "8px 12px", marginTop: 6, fontSize: 11.5 }}>
-          <span style={{ display: "flex", color: T.muted }}>
-            <Icon name="card" size={14} />
-          </span>
-          <b style={{ color: T.ink, ...NUM }}>{shortDate(p.paid_date)}</b>
-          <span style={{ color: T.muted, ...NUM }}>#{p.reference_number}</span>
-          <span style={{ marginLeft: "auto", fontWeight: 800, color: T.gasInk, ...NUM }}>{money(p.amount)}</span>
-        </div>
-      ))}
     </div>
   );
 }

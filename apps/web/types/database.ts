@@ -2304,6 +2304,60 @@ export interface Database {
         };
         Relationships: [];
       };
+      manager_alert_notifications: {
+        Row: {
+          id: string;
+          kind:
+            | "application_received"
+            | "lease_signed"
+            | "balance_threshold"
+            | "eviction_milestone"
+            | "utility_spike";
+          subject_key: string;
+          unit_number: string;
+          title: string;
+          body: string;
+          amount: number | null;
+          devices: number;
+          notified_at: string;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          kind:
+            | "application_received"
+            | "lease_signed"
+            | "balance_threshold"
+            | "eviction_milestone"
+            | "utility_spike";
+          subject_key: string;
+          unit_number?: string;
+          title?: string;
+          body?: string;
+          amount?: number | null;
+          devices?: number;
+          notified_at?: string;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          kind?:
+            | "application_received"
+            | "lease_signed"
+            | "balance_threshold"
+            | "eviction_milestone"
+            | "utility_spike";
+          subject_key?: string;
+          unit_number?: string;
+          title?: string;
+          body?: string;
+          amount?: number | null;
+          devices?: number;
+          notified_at?: string;
+          created_at?: string | null;
+        };
+        Relationships: [];
+      };
       mlgw_accounts: {
         Row: {
           id: string;

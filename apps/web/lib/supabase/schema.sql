@@ -1532,6 +1532,8 @@ alter table public.resident_entry_token_uses enable row level security;
 -- Expo push tokens for the staff apps (see deltas/2026-07-21-push-tokens.sql):
 -- the maintenance app registers its device token via POST /api/admin/push-tokens
 -- and the sync worker fans emergency work-order alerts out to every active row.
+-- `app` is the fleet discriminator ('maintenance' | 'manager') — every sender
+-- MUST filter on it so one app's alerts never reach the other's devices.
 -- Service-role only (RLS on, no policies), like the rest of the first-party tables.
 create table if not exists public.push_tokens (
   id uuid primary key default gen_random_uuid(),
@@ -1541,6 +1543,10 @@ create table if not exists public.push_tokens (
   platform text not null default 'ios'
     constraint push_tokens_platform_check check (platform in ('ios', 'android')),
   app text not null default 'maintenance',
+  -- Manager app per-kind alert preferences (manager_alert_notifications.kind
+  -- values). Empty = no recorded preference = every kind; maintenance rows
+  -- leave it empty. See deltas/2026-07-22-manager-alerts.sql.
+  alert_kinds text[] not null default '{}',
   active boolean not null default true,
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
@@ -1554,3 +1560,46 @@ create trigger push_tokens_updated_at
   for each row execute function public.update_updated_at_column();
 
 alter table public.push_tokens enable row level security;
+
+-- ------------------------------------------------------------
+-- manager_alert_notifications — the manager app's push-alert ledger.
+--
+-- One row per alert that has been SENT (or claimed for sending). The sync
+-- worker's manager-alerts job inserts the row BEFORE calling Expo, so an
+-- alert can fire at most once: (kind, subject_key) is unique and the insert
+-- is the claim. `subject_key` is the source row's natural id per kind —
+-- resman_lease_id (application_received / lease_signed), resman_unit_id
+-- (balance_threshold), delinquency_actions.id (eviction_milestone), or
+-- mlgw_bills.id (utility_spike).
+--
+-- Only balance_threshold rows are ever removed: the job deletes them once a
+-- unit's balance falls back under the re-arm band so a later climb over the
+-- threshold can alert again. Every other kind's row is permanent.
+--
+-- Service-role only (RLS on, no policies).
+-- ------------------------------------------------------------
+create table if not exists public.manager_alert_notifications (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null
+    constraint manager_alert_notifications_kind_check check (kind in (
+      'application_received',
+      'lease_signed',
+      'balance_threshold',
+      'eviction_milestone',
+      'utility_spike'
+    )),
+  subject_key text not null,             -- source row id; unique with kind
+  unit_number text not null default '',
+  title text not null default '',
+  body text not null default '',         -- PII-light copy as sent
+  amount numeric(12,2),
+  devices integer not null default 0,    -- tokens the alert was addressed to
+  notified_at timestamptz not null default now(),
+  created_at timestamptz default now(),
+  constraint manager_alert_notifications_subject_unique unique (kind, subject_key)
+);
+
+create index if not exists manager_alert_notifications_notified_at_idx
+  on public.manager_alert_notifications (notified_at desc);
+
+alter table public.manager_alert_notifications enable row level security;

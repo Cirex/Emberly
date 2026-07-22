@@ -10,6 +10,7 @@
  * the reference pattern.
  */
 import "@/lib/stores/delinquency";
+import "@/lib/stores/insurance";
 import "@/lib/stores/leases";
 import "@/lib/stores/ledger";
 import "@/lib/stores/mlgw";

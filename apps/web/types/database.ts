@@ -2304,6 +2304,63 @@ export interface Database {
         };
         Relationships: [];
       };
+      renewal_offers: {
+        Row: {
+          id: string;
+          resman_lease_id: string;
+          resman_unit_id: string;
+          unit_number: string;
+          prior_rent: number | null;
+          proposed_rent: number;
+          term_months: number | null;
+          is_month_to_month: boolean;
+          status: "sent" | "accepted" | "declined" | "withdrawn";
+          sent_at: string | null;
+          responded_at: string | null;
+          note: string;
+          created_by: string;
+          created_by_admin_id: string;
+          created_at: string | null;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          resman_lease_id: string;
+          resman_unit_id?: string;
+          unit_number?: string;
+          prior_rent?: number | null;
+          proposed_rent: number;
+          term_months?: number | null;
+          is_month_to_month?: boolean;
+          status?: "sent" | "accepted" | "declined" | "withdrawn";
+          sent_at?: string | null;
+          responded_at?: string | null;
+          note?: string;
+          created_by?: string;
+          created_by_admin_id?: string;
+          created_at?: string | null;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          resman_lease_id?: string;
+          resman_unit_id?: string;
+          unit_number?: string;
+          prior_rent?: number | null;
+          proposed_rent?: number;
+          term_months?: number | null;
+          is_month_to_month?: boolean;
+          status?: "sent" | "accepted" | "declined" | "withdrawn";
+          sent_at?: string | null;
+          responded_at?: string | null;
+          note?: string;
+          created_by?: string;
+          created_by_admin_id?: string;
+          created_at?: string | null;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
       manager_alert_notifications: {
         Row: {
           id: string;

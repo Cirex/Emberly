@@ -576,7 +576,8 @@ export interface ScoreMetric {
   captionParams?: Record<string, string | number>;
 }
 
-const TINT = {
+/** Metric-value tints shared by the leasing-family engines (renewals too). */
+export const TINT = {
   green: "#33A666",
   red: "#D1382E",
   blue: "#2563B4",

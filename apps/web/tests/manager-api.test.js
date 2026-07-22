@@ -34,6 +34,7 @@ const {
   summarizeLedgerEntries,
 } = require("../lib/manager-ledger");
 const { monthKey, monthlyBillTotals, mlgwReviewId } = require("../lib/manager-mlgw");
+const { renewalOfferActor } = require("../lib/renewal-offers");
 
 const leasesRoute = require("../app/api/resman/manager/leases/route.ts");
 const delinquencyRoute = require("../app/api/resman/manager/delinquency/route.ts");
@@ -43,6 +44,8 @@ const ledgerSummaryRoute = require("../app/api/resman/manager/ledger-summary/rou
 const ledgerRoute = require("../app/api/resman/manager/ledger/route.ts");
 const mlgwRoute = require("../app/api/resman/manager/mlgw/route.ts");
 const mlgwReviewsRoute = require("../app/api/resman/manager/mlgw-reviews/route.ts");
+const renewalOffersRoute = require("../app/api/resman/manager/renewal-offers/route.ts");
+const renewalOfferIdRoute = require("../app/api/resman/manager/renewal-offers/[id]/route.ts");
 
 // --- shared fakes ---------------------------------------------------------
 
@@ -167,6 +170,17 @@ function jsonPost(path, body) {
 const ACTION_ID = "3f0a2b6c-9d1e-4f5a-8b7c-1d2e3f4a5b6c";
 const actionIdParams = { params: Promise.resolve({ id: ACTION_ID }) };
 
+const OFFER_ID = "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+const offerIdParams = { params: Promise.resolve({ id: OFFER_ID }) };
+
+function jsonPatch(path, body) {
+  return managerRequest(path, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 // --- pure helpers: attribution & board membership -------------------------
 
 test("delinquencyActionActor attributes the token label and admin id", () => {
@@ -179,6 +193,21 @@ test("delinquencyActionActor attributes the token label and admin id", () => {
     { createdBy: "Priya Manager", createdByAdminId: "" },
   );
   assert.deepEqual(delinquencyActionActor({ kind: "scanner" }), {
+    createdBy: "scanner",
+    createdByAdminId: "",
+  });
+});
+
+test("renewalOfferActor attributes the token label and admin id", () => {
+  assert.deepEqual(renewalOfferActor(tokenAuth()), {
+    createdBy: "Priya Manager",
+    createdByAdminId: "admin-7",
+  });
+  assert.deepEqual(
+    renewalOfferActor(tokenAuth({ subjectType: "integration", subjectId: "int-1" })),
+    { createdBy: "Priya Manager", createdByAdminId: "" },
+  );
+  assert.deepEqual(renewalOfferActor({ kind: "scanner" }), {
     createdBy: "scanner",
     createdByAdminId: "",
   });
@@ -363,6 +392,16 @@ function allRouteAttempts() {
     () =>
       mlgwReviewsRoute.POST(
         jsonPost("/mlgw-reviews", { billId: "b", exceptionKind: "k", reviewed: true }),
+      ),
+    () => renewalOffersRoute.GET(managerRequest("/renewal-offers")),
+    () =>
+      renewalOffersRoute.POST(
+        jsonPost("/renewal-offers", { resmanLeaseId: "l", proposedRent: 1200 }),
+      ),
+    () =>
+      renewalOfferIdRoute.PATCH(
+        jsonPatch(`/renewal-offers/${OFFER_ID}`, { status: "accepted" }),
+        offerIdParams,
       ),
   ];
 }
@@ -1093,4 +1132,269 @@ test("reviewed=false clears the row by bill and kind, no bill lookup", async () 
     ["bill_id", "bill-1"],
     ["exception_kind", "late_fee"],
   ]);
+});
+
+// --- GET /manager/renewal-offers ------------------------------------------
+
+function offerRow(overrides = {}) {
+  return {
+    id: OFFER_ID,
+    resman_lease_id: "lease-1",
+    resman_unit_id: "unit-1",
+    unit_number: "0327",
+    prior_rent: 1240,
+    proposed_rent: 1335,
+    term_months: 14,
+    is_month_to_month: false,
+    status: "sent",
+    sent_at: "2026-07-10T15:00:00.000Z",
+    responded_at: null,
+    note: "",
+    created_by: "Priya Manager",
+    created_at: "2026-07-10T15:00:00.000Z",
+    ...overrides,
+  };
+}
+
+test("GET renewal-offers returns live offers newest first as camelCase DTOs", async () => {
+  const operations = [];
+  state.auth = tokenAuth();
+  state.db = scriptedSupabase(
+    [{ table: "renewal_offers", select: { data: [offerRow()], error: null } }],
+    operations,
+  );
+
+  const response = await renewalOffersRoute.GET(managerRequest("/renewal-offers"));
+  assert.equal(response.status, 200);
+  const { data } = await response.json();
+  assert.deepEqual(data.offers, [
+    {
+      id: OFFER_ID,
+      resmanLeaseId: "lease-1",
+      resmanUnitId: "unit-1",
+      unitNumber: "0327",
+      priorRent: 1240,
+      proposedRent: 1335,
+      termMonths: 14,
+      isMonthToMonth: false,
+      status: "sent",
+      sentAt: "2026-07-10T15:00:00.000Z",
+      respondedAt: null,
+      note: "",
+      createdBy: "Priya Manager",
+      createdAt: "2026-07-10T15:00:00.000Z",
+    },
+  ]);
+
+  const [op] = operations;
+  assert.deepEqual(op.filters, [["is:deleted_at", null]]);
+  assert.deepEqual(op.orderBy, [["created_at", { ascending: false }]]);
+});
+
+// --- POST /manager/renewal-offers -----------------------------------------
+
+test("offer create rejects malformed bodies without touching the DB", async () => {
+  state.auth = tokenAuth();
+  state.db = untouchableDb();
+
+  const badBodies = [
+    {},
+    { resmanLeaseId: "", proposedRent: 1200 },
+    { resmanLeaseId: "lease-1" }, // proposedRent missing
+    { resmanLeaseId: "lease-1", proposedRent: -5 },
+    { resmanLeaseId: "lease-1", proposedRent: 1200, termMonths: 2.5 },
+    { resmanLeaseId: "lease-1", proposedRent: 1200, termMonths: 0 },
+    // MTM and a fixed term are mutually exclusive.
+    { resmanLeaseId: "lease-1", proposedRent: 1200, termMonths: 12, isMonthToMonth: true },
+  ];
+  for (const body of badBodies) {
+    const response = await renewalOffersRoute.POST(jsonPost("/renewal-offers", body));
+    assert.equal(response.status, 400, JSON.stringify(body));
+    assert.equal((await response.json()).error, "Invalid request");
+  }
+
+  const noBody = await renewalOffersRoute.POST(
+    managerRequest("/renewal-offers", { method: "POST" }),
+  );
+  assert.equal(noBody.status, 400);
+});
+
+test("offer create stores the offer with token attribution and answers 201", async () => {
+  const operations = [];
+  state.auth = tokenAuth();
+  state.db = scriptedSupabase(
+    [{ table: "renewal_offers", insert: { data: offerRow(), error: null } }],
+    operations,
+  );
+
+  const response = await renewalOffersRoute.POST(
+    jsonPost("/renewal-offers", {
+      resmanLeaseId: "lease-1",
+      resmanUnitId: "unit-1",
+      unitNumber: "0327",
+      priorRent: 1240,
+      proposedRent: 1335,
+      termMonths: 14,
+      note: "",
+    }),
+  );
+  assert.equal(response.status, 201);
+  const { data } = await response.json();
+  assert.equal(data.id, OFFER_ID);
+  assert.equal(data.status, "sent");
+  assert.equal(data.proposedRent, 1335);
+
+  assert.deepEqual(operations[0].values, {
+    resman_lease_id: "lease-1",
+    resman_unit_id: "unit-1",
+    unit_number: "0327",
+    prior_rent: 1240,
+    proposed_rent: 1335,
+    term_months: 14,
+    is_month_to_month: false,
+    note: "",
+    created_by: "Priya Manager",
+    created_by_admin_id: "admin-7",
+  });
+});
+
+test("offer create defaults optionals: an MTM offer stores null term", async () => {
+  const operations = [];
+  state.auth = tokenAuth();
+  state.db = scriptedSupabase(
+    [
+      {
+        table: "renewal_offers",
+        insert: {
+          data: offerRow({ term_months: null, is_month_to_month: true, prior_rent: null }),
+          error: null,
+        },
+      },
+    ],
+    operations,
+  );
+
+  const response = await renewalOffersRoute.POST(
+    jsonPost("/renewal-offers", {
+      resmanLeaseId: "lease-1",
+      proposedRent: 1390,
+      isMonthToMonth: true,
+    }),
+  );
+  assert.equal(response.status, 201);
+  assert.deepEqual(operations[0].values, {
+    resman_lease_id: "lease-1",
+    resman_unit_id: "",
+    unit_number: "",
+    prior_rent: null,
+    proposed_rent: 1390,
+    term_months: null,
+    is_month_to_month: true,
+    note: "",
+    created_by: "Priya Manager",
+    created_by_admin_id: "admin-7",
+  });
+});
+
+// --- PATCH /manager/renewal-offers/[id] -----------------------------------
+
+test("offer resolve rejects malformed bodies without touching the DB", async () => {
+  state.auth = tokenAuth();
+  state.db = untouchableDb();
+
+  const badBodies = [{}, { status: "sent" }, { status: "ghosted" }, { status: 1 }];
+  for (const body of badBodies) {
+    const response = await renewalOfferIdRoute.PATCH(
+      jsonPatch(`/renewal-offers/${OFFER_ID}`, body),
+      offerIdParams,
+    );
+    assert.equal(response.status, 400, JSON.stringify(body));
+    assert.equal((await response.json()).error, "Invalid request");
+  }
+});
+
+test("offer resolve stamps responded_at and returns the updated offer", async () => {
+  const operations = [];
+  state.auth = tokenAuth();
+  state.db = scriptedSupabase(
+    [
+      { table: "renewal_offers", select: { data: { id: OFFER_ID, status: "sent" }, error: null } },
+      {
+        table: "renewal_offers",
+        update: {
+          data: offerRow({ status: "accepted", responded_at: "2026-07-21T12:00:00.000Z" }),
+          error: null,
+        },
+      },
+    ],
+    operations,
+  );
+
+  const response = await renewalOfferIdRoute.PATCH(
+    jsonPatch(`/renewal-offers/${OFFER_ID}`, { status: "accepted" }),
+    offerIdParams,
+  );
+  assert.equal(response.status, 200);
+  const { data } = await response.json();
+  assert.equal(data.status, "accepted");
+  assert.equal(data.respondedAt, "2026-07-21T12:00:00.000Z");
+
+  const [selectOp, updateOp] = operations;
+  assert.deepEqual(selectOp.filters, [
+    ["id", OFFER_ID],
+    ["is:deleted_at", null],
+  ]);
+  assert.deepEqual(updateOp.filters, [["id", OFFER_ID]]);
+  assert.equal(updateOp.patch.status, "accepted");
+  assert.match(updateOp.patch.responded_at, /^20\d{2}-/);
+});
+
+test("offer resolve answers 400 once the offer already resolved", async () => {
+  const operations = [];
+  state.auth = tokenAuth();
+  state.db = scriptedSupabase(
+    [
+      {
+        table: "renewal_offers",
+        select: { data: { id: OFFER_ID, status: "accepted" }, error: null },
+      },
+    ],
+    operations,
+  );
+
+  const response = await renewalOfferIdRoute.PATCH(
+    jsonPatch(`/renewal-offers/${OFFER_ID}`, { status: "declined" }),
+    offerIdParams,
+  );
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, "Offer already resolved");
+  assert.equal(operations.length, 1); // no update issued
+});
+
+test("offer resolve answers 404 for unknown or deleted offers", async () => {
+  const operations = [];
+  state.auth = tokenAuth();
+  state.db = scriptedSupabase(
+    [{ table: "renewal_offers", select: { data: null, error: null } }],
+    operations,
+  );
+
+  const response = await renewalOfferIdRoute.PATCH(
+    jsonPatch(`/renewal-offers/${OFFER_ID}`, { status: "withdrawn" }),
+    offerIdParams,
+  );
+  assert.equal(response.status, 404);
+  assert.equal((await response.json()).error, "Offer not found");
+  assert.equal(operations.length, 1);
+});
+
+test("offer resolve answers 404 for a malformed id without touching the DB", async () => {
+  state.auth = tokenAuth();
+  state.db = untouchableDb();
+
+  const response = await renewalOfferIdRoute.PATCH(
+    jsonPatch("/renewal-offers/not-a-uuid", { status: "accepted" }),
+    { params: Promise.resolve({ id: "not-a-uuid" }) },
+  );
+  assert.equal(response.status, 404);
 });

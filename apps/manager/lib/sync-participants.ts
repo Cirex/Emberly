@@ -14,6 +14,7 @@ import "@/lib/stores/leases";
 import "@/lib/stores/ledger";
 import "@/lib/stores/mlgw";
 import "@/lib/stores/people";
+import "@/lib/stores/renewals";
 import "@/lib/stores/snapshots";
 import "@/lib/stores/units";
 import "@/lib/stores/work-orders";

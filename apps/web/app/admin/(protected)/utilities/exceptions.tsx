@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import type { AccountSummary, UtilityException } from "@/lib/admin-utilities";
+import { Icon, type IconName } from "./icons";
 import { NUM, Panel, T, money, shortDate } from "./ui";
 
 /**
@@ -13,24 +14,24 @@ import { NUM, Panel, T, money, shortDate } from "./ui";
 
 const KIND_META: Record<
   UtilityException["kind"],
-  { title: string; description: string; icon: string; tone: "amber" | "red" }
+  { title: string; description: string; icon: IconName; tone: "amber" | "red" }
 > = {
   high_electrical: {
     title: "High Electrical Spike",
     description: "Check HVAC, thermostat settings, lights, vacant-unit usage, and abnormal electrical usage.",
-    icon: "⚡",
+    icon: "bolt",
     tone: "amber",
   },
   spike: {
     title: "Bill Spike",
     description: "New charges are well above this account's history — verify usage and billing.",
-    icon: "↗",
+    icon: "riseArrow",
     tone: "amber",
   },
   billed_after_move_in: {
     title: "Billed After Move-In",
     description: "Verify tenant responsibility for utility usage billed after move-in.",
-    icon: "👤",
+    icon: "user",
     tone: "red",
   },
 };
@@ -90,12 +91,14 @@ export function ExceptionsTab({
         onToggleReviewed(e);
       }}
       style={{
+        display: "inline-flex", alignItems: "center", gap: 5,
         fontSize: 10.5, fontWeight: 800, borderRadius: 999, padding: "6px 11px", whiteSpace: "nowrap", cursor: "pointer",
         border: `1px solid ${e.reviewed ? T.line : "rgba(180,181,58,0.55)"}`,
         color: e.reviewed ? T.muted : T.accentInk, background: e.reviewed ? T.wash : "#fff",
       }}
     >
-      {e.reviewed ? "Reviewed ✓" : "✓ Mark as Reviewed"}
+      <Icon name="check" size={12} />
+      {e.reviewed ? "Reviewed" : "Mark as Reviewed"}
     </button>
   );
 
@@ -110,11 +113,13 @@ export function ExceptionsTab({
           type="button"
           onClick={exportCsv}
           style={{
-            marginLeft: "auto", fontSize: 11, fontWeight: 800, color: T.accentInk, cursor: "pointer",
+            marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
+            fontSize: 11, fontWeight: 800, color: T.accentInk, cursor: "pointer",
             border: "1px solid rgba(180,181,58,0.55)", borderRadius: 999, padding: "6px 13px", background: "#fff",
           }}
         >
-          ⬆ Export Report
+          <Icon name="upload" size={13} />
+          Export Report
         </button>
       </div>
 
@@ -127,8 +132,12 @@ export function ExceptionsTab({
         return (
           <div key={accountId} style={{ borderLeft: `3px solid ${colors.rail}`, borderRadius: 3, marginBottom: 4 }}>
             <div style={{ display: "grid", gridTemplateColumns: "18px 30px minmax(0,1fr) 90px 150px", gap: 12, alignItems: "center", padding: "12px 14px", background: "#fff" }}>
-              <span style={{ color: T.muted, fontSize: 10 }}>▾</span>
-              <span style={{ fontSize: 14, color: colors.ink }}>{KIND_META[headline.kind].icon}</span>
+              <span style={{ color: T.muted, display: "flex" }}>
+                <Icon name="chevronDown" size={13} />
+              </span>
+              <span style={{ color: colors.ink, display: "flex" }}>
+                <Icon name={KIND_META[headline.kind].icon} size={17} />
+              </span>
               <span style={{ minWidth: 0 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{s?.account.service_address ?? accountId}</span>
                 <br />
@@ -150,7 +159,9 @@ export function ExceptionsTab({
                     opacity: e.reviewed ? 0.55 : 1,
                   }}
                 >
-                  <span style={{ fontSize: 14, color: tone.ink }}>{meta.icon}</span>
+                  <span style={{ color: tone.ink, display: "flex" }}>
+                    <Icon name={meta.icon} size={17} />
+                  </span>
                   <span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: T.ink, ...NUM }}>{shortDate(e.billDate)}</span>
                     <br />

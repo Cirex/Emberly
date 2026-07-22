@@ -126,7 +126,7 @@ export function UtilitiesClient({
         <ExceptionsTab exceptions={exceptions} summaries={payload.summaries} onToggleReviewed={toggleReviewed} />
       ) : null}
       {tab === "Move-In Risk" ? (
-        <Panel icon="👤" title="Move-In Risk" subtitle="Accounts still billing the owner after a tenant moved in">
+        <Panel icon="user" title="Move-In Risk" subtitle="Accounts still billing the owner after a tenant moved in">
           {moveInRisk.map((s, i) => (
             <AccountRow
               key={s.account.id}

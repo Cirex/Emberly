@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { feeItemsOf, type AccountSummary } from "@/lib/admin-utilities";
+import { Icon, type IconName } from "./icons";
 import { ChargeBar, NUM, Panel, SEGMENT_FILL, T, money, shortDate, type BarSegment } from "./ui";
 
 /**
@@ -26,7 +27,7 @@ export function LedgerTab({
   const house = summaries.filter((s) => s.account.is_house_account);
   const visible = filter === "units" ? units : filter === "house" ? house : summaries;
 
-  const chip = (key: LedgerFilter, label: string, count: number) => (
+  const chip = (key: LedgerFilter, icon: IconName, label: string, count: number) => (
     <button
       key={key}
       type="button"
@@ -39,6 +40,7 @@ export function LedgerTab({
         color: filter === key ? T.accentInk : T.muted,
       }}
     >
+      <Icon name={icon} size={13} />
       {label} <span style={{ fontSize: 10, opacity: 0.8, ...NUM }}>{count}</span>
     </button>
   );
@@ -46,9 +48,9 @@ export function LedgerTab({
   return (
     <>
       <div style={{ display: "flex", gap: 8, margin: "14px 0 0" }}>
-        {chip("all", "☰ All", summaries.length)}
-        {chip("units", "🏢 Units", units.length)}
-        {chip("house", "🏠 House Accounts", house.length)}
+        {chip("all", "list", "All", summaries.length)}
+        {chip("units", "building", "Units", units.length)}
+        {chip("house", "house", "House Accounts", house.length)}
       </div>
       <Panel padding={4}>
         {visible.map((s, i) => (
@@ -92,9 +94,11 @@ export function AccountRow({
         borderBottom: last ? "none" : `1px solid ${T.line}`,
       }}
     >
-      <span style={{ color: T.muted, fontSize: 10 }}>›</span>
-      <span style={{ position: "relative", width: 42, height: 42, borderRadius: 11, background: T.wash, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>
-        {account.is_house_account ? "🏠" : "🏢"}
+      <span style={{ color: T.muted, display: "flex" }}>
+        <Icon name="chevronRight" size={13} />
+      </span>
+      <span style={{ position: "relative", width: 42, height: 42, borderRadius: 11, background: T.wash, color: T.navy, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Icon name={account.is_house_account ? "house" : "building"} size={19} />
         <span
           style={{
             position: "absolute", bottom: -5, left: -5, minWidth: 17, height: 16, borderRadius: 9,
@@ -160,7 +164,7 @@ export function PayablesTab({
   );
 
   return (
-    <Panel icon="✓" title="Payables" subtitle="Accounts with a balance, past due first">
+    <Panel icon="check" title="Payables" subtitle="Accounts with a balance, past due first">
       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
         {pill("Ready", ready.length, T.ready)}
         {pill("Past Due", pastDue.length, T.blocked)}

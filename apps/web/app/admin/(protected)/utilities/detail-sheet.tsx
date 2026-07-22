@@ -11,6 +11,7 @@ import type {
 } from "@/lib/admin-utilities";
 import { chargeSegmentsOf } from "@/lib/admin-utilities";
 import { HistoryChart } from "./charts";
+import { Icon, type IconName } from "./icons";
 import { MicroLabel, NUM, Panel, Pill, SEGMENT_FILL, SEGMENT_INK, Strip, T, money, shortDate } from "./ui";
 
 /**
@@ -87,14 +88,15 @@ export function DetailSheet({
             background: `linear-gradient(120deg, ${tint}29, #fff 65%)`, borderBottom: `1px solid ${tint}73`,
           }}
         >
-          <span style={{ width: 54, height: 54, borderRadius: 13, background: `${tint}29`, color: tintInk, border: `1px solid ${tint}66`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 23, flexShrink: 0 }}>
-            {account.is_house_account ? "🏠" : "🏢"}
+          <span style={{ width: 54, height: 54, borderRadius: 13, background: `${tint}29`, color: tintInk, border: `1px solid ${tint}66`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Icon name={account.is_house_account ? "house" : "building"} size={25} />
           </span>
           <span style={{ flex: 1, minWidth: 0 }}>
             <span style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{account.service_address || account.account_number}</span>
             {detail.unit?.move_in_date && afterMoveIn ? (
-              <span style={{ marginLeft: 10, fontSize: 10, fontWeight: 800, color: "#fff", background: T.blocked, borderRadius: 999, padding: "3px 10px", verticalAlign: 2 }}>
-                👤 Move-In {shortDate(detail.unit.move_in_date)}
+              <span style={{ marginLeft: 10, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 800, color: "#fff", background: T.blocked, borderRadius: 999, padding: "3px 10px", verticalAlign: 2 }}>
+                <Icon name="user" size={11} />
+                Move-In {shortDate(detail.unit.move_in_date)}
               </span>
             ) : null}
             <span style={{ display: "flex", gap: 7, marginTop: 9, flexWrap: "wrap" }}>
@@ -114,16 +116,18 @@ export function DetailSheet({
                 target="_blank"
                 rel="noreferrer"
                 title="Open the bill PDF in a new tab"
-                style={{ display: "inline-block", marginTop: 5, fontSize: 10.5, fontWeight: 800, color: "#fff", background: T.navy, borderRadius: 999, padding: "6px 13px", textDecoration: "none" }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 5, fontSize: 10.5, fontWeight: 800, color: "#fff", background: T.navy, borderRadius: 999, padding: "6px 13px", textDecoration: "none" }}
               >
-                🧾 Open Invoice
+                <Icon name="invoice" size={13} />
+                Open Invoice
               </a>
             ) : (
               <span
                 title="MLGW published no PDF for this bill"
-                style={{ display: "inline-block", marginTop: 5, fontSize: 10.5, fontWeight: 800, color: T.muted, background: T.wash, borderRadius: 999, padding: "6px 13px" }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 5, fontSize: 10.5, fontWeight: 800, color: T.muted, background: T.wash, borderRadius: 999, padding: "6px 13px" }}
               >
-                🧾 No invoice file
+                <Icon name="invoice" size={13} />
+                No invoice file
               </span>
             )}
           </span>
@@ -131,25 +135,25 @@ export function DetailSheet({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            style={{ width: 28, height: 28, borderRadius: 14, background: T.wash, color: T.muted, border: "none", cursor: "pointer" }}
+            style={{ width: 28, height: 28, borderRadius: 14, background: T.wash, color: T.muted, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
           >
-            ✕
+            <Icon name="close" size={14} />
           </button>
         </div>
 
         {/* Metric tiles */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px,1fr))", gap: 10, padding: "16px 18px 0" }}>
-          <Tile icon="📄" tintBg="rgba(180,181,58,0.16)" tintFg={T.accentInk} label="Due Now"
+          <Tile icon="file" label="Due Now"
             value={money(summary.dueNow)} caption={current ? `Bill date ${shortDate(current.bill_date)}` : "No current bill"} />
-          <Tile icon="＝" tintBg="rgba(69,138,219,0.13)" tintFg={T.waterInk} label="Average"
+          <Tile icon="equals" label="Average"
             value={money(stats?.average ?? null)} caption={`${stats?.amountRecords ?? 0} amount records`} />
-          <Tile icon="↗" tintBg="rgba(227,135,54,0.14)" tintFg={T.gasInk} label="Highest"
+          <Tile icon="riseArrow" label="Highest"
             value={money(stats?.highest?.amount ?? null)} caption={stats?.highest ? shortDate(stats.highest.billDate) : "—"} />
-          <Tile icon="🕐" tintBg="rgba(122,107,199,0.14)" tintFg={T.review} label="Previous"
+          <Tile icon="clock" label="Previous"
             value={stats?.previousDelta ? `${stats.previousDelta.delta >= 0 ? "+" : "−"}${money(Math.abs(stats.previousDelta.delta))}` : "No prior"}
             caption={stats?.previousDelta ? `Compared to ${shortDate(stats.previousDelta.previousDate)}` : "First bill on record"} />
           {afterMoveIn ? (
-            <Tile icon="👤" tintBg="rgba(209,56,46,0.10)" tintFg={T.blocked} label="After Move-In"
+            <Tile icon="user" tone="risk" label="After Move-In"
               value={<span style={{ color: T.blocked }}>{money(afterMoveIn.total)}</span>}
               caption={`${afterMoveIn.billCount} bills since ${shortDate(afterMoveIn.since)}`} />
           ) : null}
@@ -158,10 +162,10 @@ export function DetailSheet({
         {/* Occupancy Context */}
         {detail.unit ? (
           <div style={{ padding: "14px 18px 0" }}>
-            <Panel icon="🪪" title="Occupancy Context" subtitle="ResMan unit dates overlaid against the utility ledger" padding={16}>
+            <Panel icon="badge" title="Occupancy Context" subtitle="ResMan unit dates overlaid against the utility ledger" padding={16}>
               {afterMoveIn ? (
                 <OccupancyAlert
-                  icon="👤"
+                  icon="user"
                   color={T.blocked}
                   title="Owner-paid utility activity after tenant move-in"
                   line={`${afterMoveIn.billCount} ${afterMoveIn.billCount === 1 ? "bill" : "bills"} totaling ${money(afterMoveIn.total)} after ${shortDate(afterMoveIn.since)}`}
@@ -169,7 +173,7 @@ export function DetailSheet({
               ) : null}
               {carriedForward ? (
                 <OccupancyAlert
-                  icon="↻"
+                  icon="rotate"
                   color={T.review}
                   title="Balance forward carried after tenant move-in"
                   line={`${carriedForward.billCount} ${carriedForward.billCount === 1 ? "bill" : "bills"} carrying ${money(carriedForward.total)} forward after ${shortDate(carriedForward.since)}`}
@@ -192,12 +196,12 @@ export function DetailSheet({
 
         {/* Charts */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, padding: "0 18px", marginTop: 14 }}>
-          <Panel icon="📈" title="Amount History" subtitle={`${stats?.amountRecords ?? 0} bills with amount data`} padding={14}>
+          <Panel icon="trend" title="Amount History" subtitle={`${stats?.amountRecords ?? 0} bills with amount data`} padding={14}>
             {current ? (
               <HistoryChart bills={historyAsc} currentId={current.id} moveInDate={detail.unit?.move_in_date ?? null} />
             ) : null}
           </Panel>
-          <Panel icon="📊" title="Current Charge Mix" subtitle="Service totals from the selected bill" padding={14}>
+          <Panel icon="bars" title="Current Charge Mix" subtitle="Service totals from the selected bill" padding={14}>
             {/* XMS row structure: hairline-separated rows — label above a
                 full-width bar track, amount in a right-aligned column. */}
             <div style={{ borderBottom: currentSegments.length > 0 ? `1px solid ${T.line}` : "none" }}>
@@ -223,7 +227,7 @@ export function DetailSheet({
 
         <div style={{ padding: "0 18px 14px" }}>
           {/* Expense Ledger */}
-          <Panel icon="☰" title="Expense Ledger" subtitle="Current bill plus archived expenses for this account">
+          <Panel icon="list" title="Expense Ledger" subtitle="Current bill plus archived expenses for this account">
             <Strip
               items={[
                 { label: "Bills", value: detail.bills.length },
@@ -258,7 +262,7 @@ export function DetailSheet({
           </Panel>
 
           {/* Ledger Tree */}
-          <Panel icon="🌿" title="Ledger Tree" subtitle="Bill and payment flow with balance forward tracking">
+          <Panel icon="branch" title="Ledger Tree" subtitle="Bill and payment flow with balance forward tracking">
             <Strip
               items={[
                 { label: "Bills", value: detail.bills.length },
@@ -276,7 +280,7 @@ export function DetailSheet({
           </Panel>
 
           {/* Payments */}
-          <Panel icon="💳" title="Account Payments" subtitle={`${detail.payments.length} payments saved for account ${account.account_number}`}>
+          <Panel icon="card" title="Account Payments" subtitle={`${detail.payments.length} payments saved for account ${account.account_number}`}>
             <Strip
               items={[
                 { label: "Payments", value: detail.payments.length },
@@ -332,11 +336,11 @@ function td(last: boolean): React.CSSProperties {
 }
 
 /** The Occupancy Context alert row (XMS: red owner-paid, violet balance-forward). */
-function OccupancyAlert({ icon, color, title, line }: { icon: string; color: string; title: string; line: string }) {
+function OccupancyAlert({ icon, color, title, line }: { icon: IconName; color: string; title: string; line: string }) {
   return (
     <div style={{ display: "flex", gap: 11, alignItems: "center", background: `${color}12`, border: `1px solid ${color}40`, borderRadius: 10, padding: "11px 14px", marginBottom: 12 }}>
-      <span style={{ width: 28, height: 28, borderRadius: 14, background: `${color}1F`, color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>
-        {icon}
+      <span style={{ width: 28, height: 28, borderRadius: 14, background: `${color}1F`, color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Icon name={icon} size={15} />
       </span>
       <span>
         <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{title}</span>
@@ -356,15 +360,17 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Metric tile. Icon chips stay neutral; only a risk tone carries color. */
 function Tile({
-  icon, tintBg, tintFg, label, value, caption,
+  icon, tone = "neutral", label, value, caption,
 }: {
-  icon: string; tintBg: string; tintFg: string; label: string; value: React.ReactNode; caption: string;
+  icon: IconName; tone?: "neutral" | "risk"; label: string; value: React.ReactNode; caption: string;
 }) {
+  const risk = tone === "risk";
   return (
     <div style={{ background: "#fff", border: `1px solid ${T.line}`, borderRadius: 12, padding: 13, display: "flex", gap: 11, alignItems: "flex-start" }}>
-      <span style={{ width: 30, height: 30, borderRadius: 15, background: tintBg, color: tintFg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>
-        {icon}
+      <span style={{ width: 30, height: 30, borderRadius: 15, background: risk ? "rgba(209,56,46,0.10)" : T.wash, color: risk ? T.blocked : T.navy, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Icon name={icon} size={15} />
       </span>
       <span>
         <span style={{ fontSize: 10.5, fontWeight: 600, color: T.muted }}>{label}</span>
@@ -409,7 +415,10 @@ function LedgerRow({
         <Pill tone={b.is_current ? "current" : "archived"}>{b.is_current ? "Current" : "Archived"}</Pill>
         <b style={{ marginLeft: 6, color: T.ink, ...NUM }}>{shortDate(b.bill_date)}</b>
         {after ? (
-          <div style={{ fontSize: 10, fontWeight: 700, color: T.blocked, marginTop: 5 }}>👤 After tenant move-in on {shortDate(moveIn)}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 700, color: T.blocked, marginTop: 5 }}>
+            <Icon name="user" size={11} />
+            After tenant move-in on {shortDate(moveIn)}
+          </div>
         ) : null}
       </td>
       {cell(b.balance_forward, "balfwd")}
@@ -426,12 +435,14 @@ function LedgerRow({
             rel="noreferrer"
             aria-label="Open invoice"
             title="Open the bill PDF in a new tab"
-            style={{ textDecoration: "none" }}
+            style={{ display: "inline-flex", color: T.navy }}
           >
-            🧾
+            <Icon name="invoice" size={15} />
           </a>
         ) : (
-          <span style={{ opacity: 0.35 }} title="MLGW published no PDF for this bill">🧾</span>
+          <span style={{ display: "inline-flex", color: T.line }} title="MLGW published no PDF for this bill">
+            <Icon name="invoice" size={15} />
+          </span>
         )}
       </td>
     </tr>
@@ -468,17 +479,22 @@ function TreeNode({ node, selected }: { node: LedgerTreeNode; selected: boolean 
         ))}
       </div>
       {node.isLatest ? (
-        <div style={{ fontSize: 11, color: T.muted, margin: "4px 0" }}>
-          → Latest bill in this account ledger.{node.payments.length === 0 ? " No payments captured before the next bill." : ""}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.muted, margin: "4px 0" }}>
+          <Icon name="arrowRight" size={12} />
+          Latest bill in this account ledger.{node.payments.length === 0 ? " No payments captured before the next bill." : ""}
         </div>
       ) : node.reconciles !== null ? (
-        <div style={{ fontSize: 11, fontWeight: 600, margin: "4px 0", color: node.reconciles ? T.gasInk : T.blocked }}>
-          {node.reconciles ? "✓ Payments line up with the next balance forward." : "✕ Payments do not match the next balance forward."}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, margin: "4px 0", color: node.reconciles ? T.ready : T.blocked }}>
+          <Icon name={node.reconciles ? "check" : "close"} size={12} />
+          {node.reconciles ? "Payments line up with the next balance forward." : "Payments do not match the next balance forward."}
         </div>
       ) : null}
       {node.payments.map((p) => (
         <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, background: T.wash, borderRadius: 9, padding: "8px 12px", marginTop: 6, fontSize: 11.5 }}>
-          💳 <b style={{ color: T.ink, ...NUM }}>{shortDate(p.paid_date)}</b>
+          <span style={{ display: "flex", color: T.muted }}>
+            <Icon name="card" size={14} />
+          </span>
+          <b style={{ color: T.ink, ...NUM }}>{shortDate(p.paid_date)}</b>
           <span style={{ color: T.muted, ...NUM }}>#{p.reference_number}</span>
           <span style={{ marginLeft: "auto", fontWeight: 800, color: T.gasInk, ...NUM }}>{money(p.amount)}</span>
         </div>

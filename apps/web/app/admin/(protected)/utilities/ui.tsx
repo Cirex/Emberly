@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { Icon, type IconName } from "./icons";
 
 /**
  * Visual vocabulary for /admin/utilities, transcribed from the approved
@@ -100,7 +101,7 @@ export function Panel({
   children,
   padding = 16,
 }: {
-  icon?: ReactNode;
+  icon?: IconName;
   title?: string;
   subtitle?: string;
   right?: ReactNode;
@@ -114,11 +115,11 @@ export function Panel({
           {icon ? (
             <span
               style={{
-                width: 28, height: 28, borderRadius: 8, background: "rgba(180,181,58,0.16)", color: T.accentInk,
-                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0,
+                width: 28, height: 28, borderRadius: 8, background: T.wash, color: T.navy,
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
               }}
             >
-              {icon}
+              <Icon name={icon} size={15} />
             </span>
           ) : null}
           <span>

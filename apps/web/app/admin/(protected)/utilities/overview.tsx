@@ -1,5 +1,6 @@
 import type { CurrentMonthMix, MixGroup, MonthOverMonth, MonthPoint, MoMEntry } from "@/lib/admin-utilities";
 import { SpendChart } from "./charts";
+import { Icon, type IconName } from "./icons";
 import { ChargeBar, NUM, Panel, SEGMENT_FILL, T, money, monthLabel, signedMoney, signedPct } from "./ui";
 
 /** The Portfolio Snapshot panel — artifact overview, left column + MoM. */
@@ -16,7 +17,7 @@ export function PortfolioSnapshot({
 }) {
   const latest = series.at(-1);
   return (
-    <Panel icon="📈" title="Portfolio Snapshot" subtitle="Monthly trend, current split, and portfolio movement">
+    <Panel icon="trend" title="Portfolio Snapshot" subtitle="Monthly trend, current split, and portfolio movement">
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.6fr) minmax(0,1fr)", gap: 24 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "baseline" }}>
@@ -93,7 +94,6 @@ function DeltaCell({ entry, invert = false }: { entry: MoMEntry; invert?: boolea
 
 function MomRow({
   icon,
-  iconColor,
   title,
   value,
   caption,
@@ -101,8 +101,7 @@ function MomRow({
   indent = false,
   last = false,
 }: {
-  icon: string;
-  iconColor?: string;
+  icon: IconName;
   title: string;
   value: string;
   caption: string;
@@ -126,8 +125,8 @@ function MomRow({
           }}
         />
       ) : null}
-      <span style={{ width: 26, height: 26, borderRadius: 8, background: T.wash, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0, color: iconColor }}>
-        {icon}
+      <span style={{ width: 26, height: 26, borderRadius: 8, background: T.wash, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: T.navy }}>
+        <Icon name={icon} size={14} />
       </span>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ fontSize: 11.5, fontWeight: 700, color: T.ink }}>{title}</span>
@@ -144,21 +143,24 @@ function MomRow({
 function MonthOverMonthColumn({ mom }: { mom: MonthOverMonth }) {
   return (
     <div style={{ minWidth: 0 }}>
-      <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>⇄ Month Over Month</span>
+      <span style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, color: T.ink }}>
+        <Icon name="exchange" size={14} />
+        Month Over Month
+      </span>
       <div style={{ fontSize: 10.5, color: T.muted, marginBottom: 8 }}>
         {mom.currentMonth ? monthLabel(mom.currentMonth) : "—"} compared with {mom.previousMonth ? monthLabel(mom.previousMonth) : "—"}
       </div>
-      <MomRow icon="$" title="Total Spend" value={money(mom.totalSpend.current)}
+      <MomRow icon="dollar" title="Total Spend" value={money(mom.totalSpend.current)}
         caption={`Previous ${money(mom.totalSpend.previous)}`} right={<DeltaCell entry={mom.totalSpend} />} />
-      <MomRow indent icon="🏠" title="House Meters" value={money(mom.houseMeters.current)}
+      <MomRow indent icon="house" title="House Meters" value={money(mom.houseMeters.current)}
         caption={`Previous ${money(mom.houseMeters.previous)}`} right={<DeltaCell entry={mom.houseMeters} />} />
-      <MomRow indent icon="🏢" title="Units" value={money(mom.units.current)}
+      <MomRow indent icon="building" title="Units" value={money(mom.units.current)}
         caption={`Previous ${money(mom.units.previous)}`} right={<DeltaCell entry={mom.units} />} />
-      <MomRow icon="⚡" iconColor={T.electricInk} title="Electric" value={money(mom.electric.current)}
+      <MomRow icon="bolt" title="Electric" value={money(mom.electric.current)}
         caption={`Previous ${money(mom.electric.previous)}`} right={<DeltaCell entry={mom.electric} />} />
-      <MomRow icon="💧" iconColor={T.waterInk} title="Water + Sewer" value={money(mom.waterSewer.current)}
+      <MomRow icon="droplet" title="Water + Sewer" value={money(mom.waterSewer.current)}
         caption={`Previous ${money(mom.waterSewer.previous)}`} right={<DeltaCell entry={mom.waterSewer} />} />
-      <MomRow icon="🚪" title="Vacancy Exposure" value={money(mom.vacancyExposure.total)}
+      <MomRow icon="exit" title="Vacancy Exposure" value={money(mom.vacancyExposure.total)}
         caption="Total bill from vacant units"
         right={
           <span style={{ textAlign: "right", fontSize: 10.5, fontWeight: 700, lineHeight: 1.5, color: T.gasInk, ...NUM }}>
@@ -168,7 +170,7 @@ function MonthOverMonthColumn({ mom }: { mom: MonthOverMonth }) {
           </span>
         }
       />
-      <MomRow last icon="🗓" title="Average Monthly Bill" value={money(mom.averageMonthlyBill.average)}
+      <MomRow last icon="calendar" title="Average Monthly Bill" value={money(mom.averageMonthlyBill.average)}
         caption="12-month average from synced bills"
         right={
           <span style={{ textAlign: "right", fontSize: 10.5, fontWeight: 700, lineHeight: 1.5, color: T.gasInk, ...NUM }}>

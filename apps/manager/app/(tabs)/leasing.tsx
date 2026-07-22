@@ -16,10 +16,18 @@ import {
   OfferSentRowView,
   ResolvedRowView,
 } from "@/components/leasing/renewal-rows";
+import {
+  CoverageBar,
+  ExpiringRowView,
+  LapsedRowView,
+  NeverFiledRowView,
+} from "@/components/leasing/insurance-rows";
+import { InsuranceDetailSheet } from "@/components/leasing/InsuranceDetailSheet";
 import { RenewalOfferSheet, type RenewalOfferDraft } from "@/components/leasing/RenewalOfferSheet";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import { BoardHeader, type BoardMetric } from "@/components/ui/BoardHeader";
 import { capture } from "@/lib/analytics";
+import type { InsuranceActionKind } from "@/lib/api/insurance";
 import type { RenewalResolutionStatus } from "@/lib/api/renewals";
 import {
   buildExpirationRows,
@@ -37,6 +45,13 @@ import {
   type ScoreMetric,
 } from "@/lib/derived/leasing";
 import {
+  actionsByLease,
+  buildInsuranceBoard,
+  buildInsuranceMetrics,
+  buildInsuranceTimeline,
+  type InsuranceRowView,
+} from "@/lib/derived/insurance-view";
+import {
   buildInternalComps,
   buildOfferTimeline,
   buildRenewalMetrics,
@@ -46,6 +61,7 @@ import {
 } from "@/lib/derived/renewals-view";
 import { activeLocale } from "@/lib/i18n";
 import { useConfig } from "@/lib/stores/config";
+import { useInsurance } from "@/lib/stores/insurance";
 import { useLeases } from "@/lib/stores/leases";
 import { useRenewals } from "@/lib/stores/renewals";
 import { useUnits } from "@/lib/stores/units";
@@ -53,17 +69,18 @@ import { screenHPad } from "@/theme/tokens";
 
 /**
  * Leasing — the Work Orders anatomy applied to the funnel: ONE screen, a mode
- * dropdown (Pipeline · Expirations · Forecast · Vacancy · Renewals), a
- * mode-specific score strip, quick-filter chips with live counts, and banded
- * lists. All board math is lib/derived/leasing.ts (renewals:
- * lib/derived/renewals-view.ts); this file only renders.
+ * dropdown (Pipeline · Expirations · Forecast · Vacancy · Renewals ·
+ * Compliance), a mode-specific score strip, quick-filter chips with live
+ * counts, and banded lists. All board math is lib/derived/leasing.ts
+ * (renewals: lib/derived/renewals-view.ts; insurance compliance:
+ * lib/derived/insurance-view.ts); this file only renders.
  */
 
 /** Chips filter within a mode; "all" is every mode's default. */
 type ChipKey = string;
 
-/** The board modes: the leasing engine's four plus the Renewals pipeline. */
-type ScreenMode = LeasingMode | "renewals";
+/** The board modes: the leasing engine's four plus Renewals and Compliance. */
+type ScreenMode = LeasingMode | "renewals" | "compliance";
 
 export default function LeasingScreen() {
   const { t } = useTranslation();
@@ -77,6 +94,10 @@ export default function LeasingScreen() {
   const [headerH, setHeaderH] = useState(insets.top + 150);
   /** Renewal offer sheet target; a fresh nonce remounts the sheet per open. */
   const [offerSheet, setOfferSheet] = useState<{ nonce: number; leaseId: string } | null>(null);
+  /** Compliance detail sheet target; same fresh-nonce remount pattern. */
+  const [insuranceSheet, setInsuranceSheet] = useState<{ nonce: number; leaseId: string } | null>(
+    null,
+  );
 
   const baseUrl = useConfig((s) => s.baseUrl);
   const token = useConfig((s) => s.token);
@@ -89,6 +110,9 @@ export default function LeasingScreen() {
   const offers = useRenewals((s) => s.offers);
   const sendOffer = useRenewals((s) => s.sendOffer);
   const resolveOffer = useRenewals((s) => s.resolveOffer);
+  const policies = useInsurance((s) => s.policies);
+  const insuranceActions = useInsurance((s) => s.actions);
+  const logInsuranceAction = useInsurance((s) => s.logAction);
 
   // "Now" is state, refreshed whenever the tab regains focus — calendar math
   // stays render-pure and still tracks the day across a long-lived session.
@@ -128,14 +152,21 @@ export default function LeasingScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [leases, unitsIdx, offers],
   );
+  const insuranceBoard = useMemo(
+    () => buildInsuranceBoard(policies, insuranceActions, nowMs),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [policies, insuranceActions],
+  );
 
   const metrics: BoardMetric[] = useMemo(() => {
     const raw: ScoreMetric[] =
       mode === "renewals"
         ? buildRenewalMetrics(renewalsBoard)
-        : buildLeasingMetrics({
-            mode, pipelineRows, expirationRows90: expirationRows, forecastRows, vacancyRows, leases, nowMs,
-          });
+        : mode === "compliance"
+          ? buildInsuranceMetrics(insuranceBoard)
+          : buildLeasingMetrics({
+              mode, pipelineRows, expirationRows90: expirationRows, forecastRows, vacancyRows, leases, nowMs,
+            });
     return raw.map((m: ScoreMetric) => ({
       value: m.value,
       tint: m.tint,
@@ -143,7 +174,7 @@ export default function LeasingScreen() {
       caption: m.captionKey ? t(m.captionKey, m.captionParams) : undefined,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, pipelineRows, expirationRows, forecastRows, vacancyRows, renewalsBoard, leases, t]);
+  }, [mode, pipelineRows, expirationRows, forecastRows, vacancyRows, renewalsBoard, insuranceBoard, leases, t]);
 
   const modeCounts: Record<ScreenMode, number> = {
     pipeline: pipelineRows.length,
@@ -151,6 +182,7 @@ export default function LeasingScreen() {
     forecast: forecastRows.length,
     vacancy: vacancyRows.length,
     renewals: renewalsBoard.total,
+    compliance: insuranceBoard.needsAction,
   };
 
   const onMode = (key: string) => {
@@ -207,8 +239,32 @@ export default function LeasingScreen() {
         },
       ];
     }
+    if (mode === "compliance") {
+      return [
+        {
+          key: "all",
+          label: t("leasing.compliance.chips.needsAction"),
+          count: insuranceBoard.needsAction,
+        },
+        {
+          key: "lapsed",
+          label: t("leasing.compliance.chips.lapsed"),
+          count: insuranceBoard.lapsed.length,
+        },
+        {
+          key: "expiring",
+          label: t("leasing.compliance.chips.expiring"),
+          count: insuranceBoard.expiring.length,
+        },
+        {
+          key: "neverFiled",
+          label: t("leasing.compliance.chips.neverFiled"),
+          count: insuranceBoard.neverFiled.length,
+        },
+      ];
+    }
     return [];
-  }, [mode, pipelineRows, expirationRows, vacancyRows, renewalsBoard, t]);
+  }, [mode, pipelineRows, expirationRows, vacancyRows, renewalsBoard, insuranceBoard, t]);
 
   // ── Chip-filtered lists ───────────────────────────────────────────────────
   const visiblePipeline = useMemo(
@@ -427,6 +483,95 @@ export default function LeasingScreen() {
     );
   };
 
+  // ── Compliance mode ───────────────────────────────────────────────────────
+  const openInsuranceSheet = (leaseId: string) => {
+    setInsuranceSheet((prev) => ({ nonce: (prev?.nonce ?? 0) + 1, leaseId }));
+  };
+
+  const complianceBody = () => {
+    const lapsed = chip === "expiring" || chip === "neverFiled" ? [] : insuranceBoard.lapsed;
+    const expiring = chip === "lapsed" || chip === "neverFiled" ? [] : insuranceBoard.expiring;
+    const neverFiled =
+      chip === "lapsed" || chip === "expiring" ? [] : insuranceBoard.neverFiled;
+
+    if (lapsed.length + expiring.length + neverFiled.length === 0) return emptyState;
+    return (
+      <View style={{ gap: 4 }}>
+        <CoverageBar
+          covered={insuranceBoard.distribution.covered}
+          expiring={insuranceBoard.distribution.expiring}
+          lapsed={insuranceBoard.distribution.lapsed}
+          none={insuranceBoard.distribution.none}
+        />
+        {band(
+          t("leasing.compliance.bands.lapsed"), true,
+          lapsed.map((r, i) => (
+            <LapsedRowView
+              key={r.policy.leaseId}
+              row={r}
+              last={i === lapsed.length - 1}
+              onPress={() => openInsuranceSheet(r.policy.leaseId)}
+            />
+          )),
+          "lapsed",
+        )}
+        {band(
+          t("leasing.compliance.bands.expiring", { count: expiring.length }), false,
+          expiring.map((r, i) => (
+            <ExpiringRowView
+              key={r.policy.leaseId}
+              row={r}
+              last={i === expiring.length - 1}
+              onPress={() => openInsuranceSheet(r.policy.leaseId)}
+            />
+          )),
+          "expiring",
+        )}
+        {band(
+          t("leasing.compliance.bands.neverFiled", { count: neverFiled.length }), false,
+          neverFiled.map((r, i) => (
+            <NeverFiledRowView
+              key={r.policy.leaseId}
+              row={r}
+              last={i === neverFiled.length - 1}
+              onPress={() => openInsuranceSheet(r.policy.leaseId)}
+            />
+          )),
+          "neverFiled",
+        )}
+      </View>
+    );
+  };
+
+  // ── Compliance sheet wiring ───────────────────────────────────────────────
+  const insuranceRow: InsuranceRowView | null = insuranceSheet
+    ? insuranceBoard.rows.find((r) => r.policy.leaseId === insuranceSheet.leaseId) ?? null
+    : null;
+  const insuranceLeaseActions = insuranceRow
+    ? actionsByLease(insuranceActions).get(insuranceRow.policy.leaseId) ?? []
+    : [];
+  const insuranceTimeline = insuranceRow
+    ? buildInsuranceTimeline(insuranceRow, insuranceLeaseActions)
+    : [];
+  const insuranceUnit = insuranceRow
+    ? allUnits.find((u) => u.number === insuranceRow.policy.unitNumber) ?? null
+    : null;
+
+  const submitInsuranceAction = async (
+    kind: InsuranceActionKind,
+    note?: string,
+  ): Promise<boolean> => {
+    if (!insuranceRow) return false;
+    const ok = await logInsuranceAction(config, {
+      resmanLeaseId: insuranceRow.policy.leaseId,
+      unitNumber: insuranceRow.policy.unitNumber || undefined,
+      kind,
+      note,
+    });
+    if (ok) capture("insurance_action_logged", { kind });
+    return ok;
+  };
+
   // ── Offer sheet wiring ────────────────────────────────────────────────────
   const sheetLease = offerSheet ? leases.find((l) => l.id === offerSheet.leaseId) ?? null : null;
   const sheetSubject = sheetLease ? renewalSubject(sheetLease, allUnits) : null;
@@ -494,6 +639,7 @@ export default function LeasingScreen() {
           { key: "forecast", label: t("leasing.modes.forecast"), icon: "trending-up-outline" },
           { key: "vacancy", label: t("leasing.modes.vacancy"), icon: "home-outline", count: modeCounts.vacancy },
           { key: "renewals", label: t("leasing.modes.renewals"), icon: "refresh-outline", count: modeCounts.renewals },
+          { key: "compliance", label: t("leasing.modes.compliance"), icon: "shield-checkmark-outline", count: modeCounts.compliance },
         ]}
         activeMode={mode}
         onMode={onMode}
@@ -521,7 +667,9 @@ export default function LeasingScreen() {
                 ? forecastBody()
                 : mode === "renewals"
                   ? renewalsBody()
-                  : vacancyBody()}
+                  : mode === "compliance"
+                    ? complianceBody()
+                    : vacancyBody()}
         </View>
       </ScrollView>
 
@@ -537,6 +685,19 @@ export default function LeasingScreen() {
           onClose={() => setOfferSheet(null)}
           onSend={submitOffer}
           onResolve={submitResolve}
+        />
+      ) : null}
+
+      {insuranceSheet && insuranceRow ? (
+        <InsuranceDetailSheet
+          key={insuranceSheet.nonce}
+          visible
+          row={insuranceRow}
+          bedrooms={typeof insuranceUnit?.bedrooms === "number" ? insuranceUnit.bedrooms : null}
+          classification={insuranceUnit?.classification ?? ""}
+          timeline={insuranceTimeline}
+          onClose={() => setInsuranceSheet(null)}
+          onLog={submitInsuranceAction}
         />
       ) : null}
     </View>

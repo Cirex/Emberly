@@ -2304,6 +2304,42 @@ export interface Database {
         };
         Relationships: [];
       };
+      insurance_actions: {
+        Row: {
+          id: string;
+          resman_lease_id: string;
+          unit_number: string;
+          kind: "proof_requested" | "second_notice" | "verified" | "note";
+          note: string;
+          created_by: string;
+          created_by_admin_id: string;
+          created_at: string | null;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          resman_lease_id: string;
+          unit_number?: string;
+          kind: "proof_requested" | "second_notice" | "verified" | "note";
+          note?: string;
+          created_by?: string;
+          created_by_admin_id?: string;
+          created_at?: string | null;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          resman_lease_id?: string;
+          unit_number?: string;
+          kind?: "proof_requested" | "second_notice" | "verified" | "note";
+          note?: string;
+          created_by?: string;
+          created_by_admin_id?: string;
+          created_at?: string | null;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
       renewal_offers: {
         Row: {
           id: string;

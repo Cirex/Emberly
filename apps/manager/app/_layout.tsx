@@ -17,6 +17,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { PostHogProvider } from "posthog-react-native";
 import { WorkspaceBackdrop } from "@/components/ui/WorkspaceBackdrop";
 import { posthog } from "@/lib/analytics";
+import { registerForManagerPush, useManagerNotificationResponses } from "@/lib/push";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
 import { useSettings } from "@/lib/stores/settings";
 import { accentVars } from "@/theme/tokens";
@@ -46,6 +47,7 @@ function RootLayout() {
   const hydrated = useConfig((s) => s.hydrated);
   const hydrate = useConfig((s) => s.hydrate);
   const token = useConfig((s) => s.token);
+  const baseUrl = useConfig((s) => s.baseUrl);
   const signedIn = isSignedIn({ token });
 
   // Apply the light/dark preference; field mode is for daylight, so it wins.
@@ -58,6 +60,19 @@ function RootLayout() {
   useEffect(() => {
     if (!hydrated) void hydrate();
   }, [hydrated, hydrate]);
+
+  // Register for manager alerts once the device is hydrated AND signed in —
+  // the POST needs the staff token, and this covers both a cold start with a
+  // stored session and the moment sign-in lands. Idempotent and never throws.
+  useEffect(() => {
+    if (!hydrated || !signedIn) return;
+    void registerForManagerPush({ baseUrl, token });
+  }, [hydrated, signedIn, baseUrl, token]);
+
+  // Alert taps → the tab the alert announces. Gated on the same condition that
+  // mounts the protected stack: navigating any earlier (cold start from a
+  // killed app) would push before the route exists.
+  useManagerNotificationResponses(hydrated && signedIn);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

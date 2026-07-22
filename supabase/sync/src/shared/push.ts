@@ -38,13 +38,22 @@ export interface EmergencyWorkOrder {
   title: string;
 }
 
+/**
+ * The `data` blob Expo hands back to the device on tap. Deliberately a loose
+ * record: the maintenance app's emergency pushes carry
+ * `{ workOrderId, unitNumber }` while the manager app's alerts carry
+ * `{ route, kind, id }` (manager/alerts.ts), and both go through the one
+ * sender below.
+ */
+export type ExpoPushData = Record<string, string | number | boolean | null>;
+
 export interface ExpoPushMessage {
   to: string;
   title: string;
   body: string;
   sound: "default";
   priority: "high";
-  data: { workOrderId: string; unitNumber: string };
+  data: ExpoPushData;
 }
 
 /**

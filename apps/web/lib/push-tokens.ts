@@ -1,9 +1,11 @@
 /**
  * Expo push-token registry for the staff apps (public.push_tokens).
  *
- * The maintenance app registers its device token after staff sign-in and
- * deactivates it on sign-out; the sync worker reads the active rows to fan
- * emergency work-order alerts out. Schemas + row builders live here so the
+ * Both staff apps register their device token after sign-in and deactivate it
+ * on sign-out; the sync worker reads the active rows to fan alerts out. The
+ * `app` column is the fleet discriminator — the maintenance app's emergency
+ * work-order pushes and the manager app's operational alerts must never cross
+ * over, so every sender filters on it. Schemas + row builders live here so the
  * route handler stays a thin auth/validate/delegate shell and the logic is
  * unit-testable without Next.js.
  */
@@ -13,10 +15,28 @@ import type { UntypedSupabase } from "./supabase/types";
 
 export const PUSH_TOKENS_TABLE = "push_tokens";
 
+/** The staff apps that register tokens; `app` scopes every send. */
+export const PUSH_TOKEN_APPS = ["maintenance", "manager"] as const;
+export type PushTokenApp = (typeof PUSH_TOKEN_APPS)[number];
+
+/**
+ * The fleet a caller that omits `app` belongs to. The maintenance app shipped
+ * before the column existed and still posts without it, so its rows (and every
+ * historic row, via the column default) must keep resolving here.
+ */
+export const DEFAULT_PUSH_TOKEN_APP: PushTokenApp = "maintenance";
+
 /** POST /api/admin/push-tokens — register or refresh a device token. */
 export const RegisterPushTokenSchema = z.object({
   token: z.string().min(1).max(512),
   platform: z.enum(["ios", "android"]).optional(),
+  /** Which staff app is registering. Omitted = maintenance (see above). */
+  app: z.enum(PUSH_TOKEN_APPS).optional(),
+  /**
+   * Per-kind alert opt-ins (manager app settings toggles). Omitted or empty
+   * means "no recorded preference" — the sender treats that as all kinds.
+   */
+  alertKinds: z.array(z.string().min(1).max(64)).max(20).optional(),
 });
 
 /** DELETE /api/admin/push-tokens — deactivate a device token (sign-out). */
@@ -37,7 +57,10 @@ export function buildPushTokenUpsert(
     admin_id: admin.adminId,
     display_name: admin.displayName ?? "",
     platform: input.platform ?? "ios",
-    app: "maintenance",
+    app: input.app ?? DEFAULT_PUSH_TOKEN_APP,
+    // Deduped + sorted so re-registering with the same toggles is a no-op
+    // write and the stored order never depends on the client.
+    alert_kinds: [...new Set(input.alertKinds ?? [])].sort(),
     active: true,
     last_seen_at: now.toISOString(),
     updated_at: now.toISOString(),

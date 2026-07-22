@@ -51,6 +51,7 @@ test("buildPushTokenUpsert attributes the row to the authenticated staff subject
     display_name: "Jane Staff",
     platform: "ios",
     app: "maintenance",
+    alert_kinds: [],
     active: true,
     last_seen_at: "2026-07-21T12:00:00.000Z",
     updated_at: "2026-07-21T12:00:00.000Z",
@@ -62,6 +63,52 @@ test("buildPushTokenUpsert attributes the row to the authenticated staff subject
     now,
   );
   assert.equal(android.platform, "android");
+});
+
+test("buildPushTokenUpsert scopes the row to the registering app", () => {
+  const now = new Date("2026-07-21T12:00:00.000Z");
+  // The maintenance app predates the field and still omits it; its rows must
+  // keep landing in the maintenance fleet.
+  assert.equal(buildPushTokenUpsert(admin, { token: "t" }, now).app, "maintenance");
+  assert.equal(buildPushTokenUpsert(admin, { token: "t", app: "manager" }, now).app, "manager");
+});
+
+test("buildPushTokenUpsert stores alert kinds deduped and sorted", () => {
+  const now = new Date("2026-07-21T12:00:00.000Z");
+  const row = buildPushTokenUpsert(
+    admin,
+    {
+      token: "t",
+      app: "manager",
+      alertKinds: ["utility_spike", "lease_signed", "utility_spike"],
+    },
+    now,
+  );
+  assert.deepEqual(row.alert_kinds, ["lease_signed", "utility_spike"]);
+  // Omitted = no recorded preference = every kind, server-side.
+  assert.deepEqual(buildPushTokenUpsert(admin, { token: "t" }, now).alert_kinds, []);
+});
+
+test("RegisterPushTokenSchema validates the app and alertKinds fields", () => {
+  const ok = RegisterPushTokenSchema.safeParse({
+    token: "ExponentPushToken[a]",
+    app: "manager",
+    alertKinds: ["lease_signed"],
+  });
+  assert.equal(ok.success, true);
+  assert.equal(ok.data.app, "manager");
+  assert.equal(
+    RegisterPushTokenSchema.safeParse({ token: "ExponentPushToken[a]", app: "resident" }).success,
+    false,
+  );
+  assert.equal(
+    RegisterPushTokenSchema.safeParse({ token: "ExponentPushToken[a]", alertKinds: [""] }).success,
+    false,
+  );
+  assert.equal(
+    RegisterPushTokenSchema.safeParse({ token: "ExponentPushToken[a]", alertKinds: "all" }).success,
+    false,
+  );
 });
 
 test("registerPushToken upserts by expo_push_token", async () => {

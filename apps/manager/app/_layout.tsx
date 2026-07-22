@@ -97,6 +97,7 @@ function RootLayout() {
                     as the only place to land. */}
                   <Stack.Protected guard={signedIn}>
                     <Stack.Screen name="(tabs)" />
+                    <Stack.Screen name="people" options={{ presentation: "formSheet" }} />
                     <Stack.Screen name="settings" options={{ presentation: "formSheet" }} />
                   </Stack.Protected>
                   <Stack.Screen name="sign-in" />

@@ -3,6 +3,7 @@ import { BlurView } from "expo-blur";
 import { useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Alert,
   Modal,
@@ -44,6 +45,7 @@ export function AccountMenu() {
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
   const router = useRouter();
+  const { t } = useTranslation();
   const dark = useColorScheme().colorScheme === "dark";
   const field = useFieldMode();
   const admin = useConfig((s) => s.admin);
@@ -108,6 +110,10 @@ export function AccountMenu() {
     setTimeout(() => setOpen((v) => (anchor === null ? true : v)), 80);
   };
 
+  const onPeople = () => {
+    setOpen(false);
+    router.push("/people");
+  };
   const onSettings = () => {
     setOpen(false);
     router.push("/settings");
@@ -186,6 +192,14 @@ export function AccountMenu() {
                 </View>
               </View>
               <View style={styles.separator} />
+              <Pressable onPress={onPeople} accessibilityRole="button" style={styles.row}>
+                <View style={styles.rowIcon}>
+                  <Ionicons name="people-outline" size={18} color={NAVY} />
+                </View>
+                <Text style={styles.rowLabel}>{t("people.title")}</Text>
+                <Ionicons name="chevron-forward" size={14} color="rgba(9,27,84,0.30)" />
+              </Pressable>
+              <View style={styles.separatorInset} />
               <Pressable onPress={onSettings} accessibilityRole="button" style={styles.row}>
                 <View style={styles.rowIcon}>
                   <Ionicons name="settings-outline" size={18} color={NAVY} />

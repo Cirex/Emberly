@@ -30,6 +30,7 @@ import type {
 import type { MLGWHTTPClient } from "../http";
 import { debugLog, debugStage } from "../env";
 import type { BillFileStore, PdfTextExtractor } from "./file-store";
+import type { BillCaptureOptions } from "./target-downloader";
 import { downloadBillTargets } from "./target-downloader";
 import { logProfileDuration, logStageDuration } from "./logging";
 
@@ -107,6 +108,7 @@ export async function downloadUnsyncedBillTargets(
   skipDebugMessage: string,
   cancellation: MLGWScriptCancellation | undefined,
   progress: ((message: string) => void) | undefined,
+  capture?: BillCaptureOptions,
 ): Promise<MLGWBillDownloadBatch> {
   const filter = filterKnownBillTargets(targets, knownDocumentIds);
   if (filter.skipped > 0) {
@@ -141,6 +143,7 @@ export async function downloadUnsyncedBillTargets(
     backgroundSyncWorkerCount,
     cancellation,
     progress,
+    capture,
   );
   logStageDuration(`${collection.displayName} download`, downloadStartedAt);
   return { downloaded, skippedKnownDocuments: filter.skipped };

@@ -1,12 +1,17 @@
 /**
  * Dependency-free text→PDF renderer for bill captures.
  *
- * MLGW publishes a real PDF for only some bills; for the rest, the sync's
- * source of truth is the portal page text it parses. This module renders that
- * text into a small, valid PDF (Letter pages, Courier body so the bill's
- * column layout survives, bold header + capture note) so EVERY bill can carry
- * an invoice file. The output is deliberately labeled as an Emberly capture of
- * the portal text — it is a transcript, not a reproduction of an MLGW invoice.
+ * LAST RESORT ONLY. A PDF-less bill is normally captured as self-contained HTML
+ * and rendered to a real, bill-shaped PDF by `mlgw/capture`; this transcript is
+ * what the bills job falls back to when no Chromium is available to render.
+ * Because every transcript shares this title block and monospace layout, bills
+ * that land here all look alike — that is the degraded mode, not the target.
+ *
+ * It renders the parsed portal text into a small, valid PDF (Letter pages,
+ * Courier body so the bill's column layout survives, bold header + capture
+ * note) so EVERY bill can carry an invoice file. The output is deliberately
+ * labeled as an Emberly capture of the portal text — it is a transcript, not a
+ * reproduction of an MLGW invoice.
  *
  * Hand-rolled on purpose: a text transcript needs ~1% of a PDF library, and
  * the workspace lockfile stays untouched.

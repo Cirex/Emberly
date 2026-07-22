@@ -207,17 +207,54 @@ The container listens on port 3000 and runs as a non-root user.
 A long-lived worker that runs the ResMan/MLGW sync pipeline on a schedule. Its credentials
 live **only** in Coolify's secret store — never in the web env, never in the iOS apps.
 
-1. **New Resource → Application** from the repo, Dockerfile build pack, base dir
-   `supabase/sync`.
+> ### ⚠ Build-context change (do this before the next deploy)
+>
+> The worker used to build from Base Directory `supabase/sync`. It now ships
+> `supabase/sync/Dockerfile`, and — exactly like the web app — **the build context must be
+> the repository root**: `@emberly/sync` depends on `@emberly/core` (`workspace:*` at
+> `packages/core`) and on the root `bun.lock`, neither of which is visible from
+> `supabase/sync/`. The image also installs a system Chromium, which no buildpack provides.
+>
+> In Coolify, on the existing sync resource, set:
+>
+> | Setting | Value |
+> | --- | --- |
+> | Build Pack | **Dockerfile** |
+> | Base Directory | `/` (repository root) |
+> | Dockerfile Location | `supabase/sync/Dockerfile` |
+>
+> Local equivalent: `docker build -f supabase/sync/Dockerfile -t emberly-sync .` (from the
+> repo root). Leaving the base directory at `supabase/sync` will fail the build.
+
+1. **New Resource → Application** from the repo, Dockerfile build pack, base dir `/`,
+   Dockerfile location `supabase/sync/Dockerfile` (see the box above).
 2. **Environment variables** — from `supabase/sync/.env.example`:
    - **Required:** `RESMAN_SYNC_USERNAME`, `RESMAN_SYNC_PASSWORD` (the **rotated** password),
      `RESMAN_PROPERTY_ID`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
    - **Optional (have defaults):** `RESMAN_ACCOUNT_ID` (`1659`), `RESMAN_SUBDOMAIN`
      (`multisouth`); MLGW: `MLGW_SYNC_USERNAME`, `MLGW_SYNC_PASSWORD`,
      `MLGW_SYNC_RESTART_ATTEMPTS`, `MLGW_BILL_PAGE_SIZE`, `XMS_MLGW_DEBUG_LOGS`.
+   - **Bill capture (set by the image):** `CHROMIUM_PATH=/usr/bin/chromium-browser`. Override
+     only if you supply your own browser. If Chromium is missing or fails to launch, the MLGW
+     bills job logs one clear line and falls back to the legacy text-transcript invoice PDFs —
+     the sync still succeeds, but every PDF-less bill looks alike again.
    - **Sentry (optional):** its own DSN if you want worker error reporting.
 3. Configure the run schedule for the worker's sync runners (units, available units, unit
-   details/info, lease details, delinquency, work orders, MLGW bills/payments).
+   details/info, lease details, delinquency, work orders, MLGW bills/payments). The image's
+   default command, `bun run sync:all:once`, runs the whole sequence; a scheduled task can
+   instead invoke one runner, e.g. `bun run src/run-mlgw-bills.ts`.
+
+### MLGW bill capture (what lands in the `mlgw-bills` bucket)
+
+Every bill is stored under one stem, `<yyyyMMdd>-<account>[-<document>]`:
+
+| Object | Content | When |
+| --- | --- | --- |
+| `<stem>.pdf` | The invoice served by the admin portal (`mlgw_bills.file_path`). MLGW's own PDF when it publishes one, otherwise a Chromium render of the captured bill page. | Always, unless no PDF could be produced at all |
+| `<stem>.html` | Self-contained archive of the bill page — stylesheets, images and fonts inlined as `data:` URIs, `<script>` stripped. Needs no network and no session to open. | Every bill MLGW serves as HTML |
+
+The HTML archive is written even when rendering fails, so the bill's real appearance is never
+lost. It is an archive, never an invoice: it is deliberately never used as `file_path`.
 
 ---
 

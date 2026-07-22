@@ -22,11 +22,13 @@
     "sync:mlgw-payments": "bun --env-file=.env run src/run-mlgw-payments.ts",
     "sync:pm": "bun --env-file=.env run src/run-pm-generate.ts",
     "sync:manager-alerts": "bun --env-file=.env run src/run-manager-alerts.ts",
-    "sync:all": "bun --env-file=.env run src/run-units.ts && bun --env-file=.env run src/run-unit-info.ts && bun --env-file=.env run src/run-available-units.ts && bun --env-file=.env run src/run-delinquency.ts && bun --env-file=.env run src/run-work-orders.ts && bun --env-file=.env run src/run-unit-details.ts && bun --env-file=.env run src/run-lease-details.ts && bun --env-file=.env run src/run-mlgw-bills.ts && bun --env-file=.env run src/run-mlgw-payments.ts && bun --env-file=.env run src/run-pm-generate.ts && bun --env-file=.env run src/run-manager-alerts.ts"
+    "sync:all:once": "bun run src/run-units.ts && bun run src/run-unit-info.ts && bun run src/run-available-units.ts && bun run src/run-delinquency.ts && bun run src/run-work-orders.ts && bun run src/run-unit-details.ts && bun run src/run-lease-details.ts && bun run src/run-mlgw-bills.ts && bun run src/run-mlgw-payments.ts && bun run src/run-pm-generate.ts && bun run src/run-manager-alerts.ts",
+    "sync:all": "bun --env-file=.env run sync:all:once"
   },
   "dependencies": {
     "@emberly/core": "workspace:*",
-    "@supabase/supabase-js": "^2.110.2"
+    "@supabase/supabase-js": "^2.110.2",
+    "playwright-core": "^1.61.1"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

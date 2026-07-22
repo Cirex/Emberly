@@ -126,6 +126,24 @@ export function billFilenameDate(text: string, fallback: string | null): string 
 }
 
 /**
+ * The extension-less `<yyyyMMdd>-<account>[-<document>]` stem shared by a bill's
+ * stored variants, or `null` when the date or account digits are missing.
+ */
+export function billFilenameStem(
+  dateText: string,
+  accountNumber: string,
+  documentId: string | null | undefined,
+): string | null {
+  const datePart = formattedDate(parseMLGWDate(dateText), "yyyyMMdd");
+  const accountPart = digitsOnly(accountNumber);
+  if (datePart.length === 0 || accountPart.length === 0) return null;
+  const documentPart = digitsOnly(documentId);
+  return documentPart.length > 0
+    ? `${datePart}-${accountPart}-${documentPart}`
+    : `${datePart}-${accountPart}`;
+}
+
+/**
  * Build the deterministic `<yyyyMMdd>-<account>[-<document>].<ext>` filename, or
  * `null` when the date or account digits are missing. Port of `desiredBillFilename`.
  */
@@ -135,14 +153,33 @@ export function desiredBillFilename(
   documentId: string | null | undefined,
   fileExtension: string,
 ): string | null {
-  const datePart = formattedDate(parseMLGWDate(dateText), "yyyyMMdd");
-  const accountPart = digitsOnly(accountNumber);
-  if (datePart.length === 0 || accountPart.length === 0) return null;
-  const documentPart = digitsOnly(documentId);
-  if (documentPart.length > 0) {
-    return `${datePart}-${accountPart}-${documentPart}.${fileExtension}`;
-  }
-  return `${datePart}-${accountPart}.${fileExtension}`;
+  const stem = billFilenameStem(dateText, accountNumber, documentId);
+  return stem === null ? null : `${stem}.${fileExtension}`;
+}
+
+/** The paired object names a captured bill occupies in the bills bucket. */
+export interface BillCaptureFilenames {
+  /** The invoice the portal serves (`file_path` on the bill row). */
+  pdf: string;
+  /** The self-contained archival copy of the bill page, same stem. */
+  html: string;
+}
+
+/**
+ * The `.pdf` / `.html` pair for one bill. Both variants MUST share a stem so the
+ * archive of a bill is discoverable from its invoice path (and vice versa) by
+ * swapping the extension — hence one helper rather than two `desiredBillFilename`
+ * calls that could drift. `fallbackStem` (e.g. `mlgw-bill-7`) is used when the
+ * bill has no usable date/account.
+ */
+export function billCaptureFilenames(
+  dateText: string,
+  accountNumber: string,
+  documentId: string | null | undefined,
+  fallbackStem: string,
+): BillCaptureFilenames {
+  const stem = billFilenameStem(dateText, accountNumber, documentId) ?? fallbackStem;
+  return { pdf: `${stem}.pdf`, html: `${stem}.html` };
 }
 
 /**

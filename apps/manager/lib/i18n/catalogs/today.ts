@@ -52,6 +52,23 @@ const en = {
       renewed: "renewed",
       notice: "notice",
     },
+    makeReady: {
+      title: "Make ready",
+      go: "Work",
+      progress: "{{count}} turns in progress · {{moveIns}} move-ins this week",
+      late: "{{count}} late for move-in",
+      blocked: "{{count}} blocked",
+      onTrack: "All turns on track",
+      readyPill: "{{count}} ready",
+      attentionPill: "needs attention",
+    },
+    utilities: {
+      title: "Utilities",
+      go: "Utilities",
+      due: "Utilities due {{amount}} · {{count}} bills",
+      spikes: "{{count}} spikes",
+      noSpikes: "no spikes",
+    },
   },
 };
 
@@ -108,6 +125,23 @@ const es: typeof en = {
       title: "Vencen pronto",
       renewed: "renovado",
       notice: "aviso",
+    },
+    makeReady: {
+      title: "Preparación",
+      go: "Trabajo",
+      progress: "{{count}} unidades en preparación · {{moveIns}} entradas esta semana",
+      late: "{{count}} retrasadas para entrada",
+      blocked: "{{count}} bloqueadas",
+      onTrack: "Todas las preparaciones al día",
+      readyPill: "{{count}} listas",
+      attentionPill: "requiere atención",
+    },
+    utilities: {
+      title: "Servicios",
+      go: "Servicios",
+      due: "Servicios por pagar {{amount}} · {{count}} facturas",
+      spikes: "{{count}} picos",
+      noSpikes: "sin picos",
     },
   },
 };

@@ -8,8 +8,11 @@ import {
   FlowCard,
   FlowChartCard,
   LinkedFeatureCard,
+  MakeReadyCard,
   RunwayCard,
+  UtilitiesCard,
   type RunwaySummary,
+  type UtilitiesDueSummary,
 } from "@/components/today/cards";
 import { BoardHeader, type BoardMetric } from "@/components/ui/BoardHeader";
 import { capture } from "@/lib/analytics";
@@ -22,19 +25,41 @@ import {
   unitFactsIndex,
   unitFactsOf,
 } from "@/lib/derived/leasing";
+import {
+  buildUtilitySummary,
+  computeUtilityExceptions,
+  type ExceptionCopy,
+} from "@/lib/derived/utility-exceptions";
+import { buildWorkData, makeReadySnapshot } from "@/lib/derived/work-boards";
 import { activeLocale } from "@/lib/i18n";
 import { useLeases } from "@/lib/stores/leases";
+import { useMlgw } from "@/lib/stores/mlgw";
 import { useUnits } from "@/lib/stores/units";
+import { useWorkOrders } from "@/lib/stores/work-orders";
 import { MUTED, screenHPad } from "@/theme/tokens";
+
+// The Today cards only need the exception COUNTS; display copy is never
+// rendered here, so the derivation runs with inert strings rather than
+// duplicating the Utilities screen's full i18n seam.
+const COUNT_ONLY_COPY: ExceptionCopy = {
+  title: () => "",
+  action: () => "",
+  detail: () => "",
+};
+
+// Evaluated once per app launch (module scope keeps render pure), matching the
+// Utilities screen's day-granularity convention.
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
 
 /**
  * Today — the manager's morning board (mockup: "Today — the manager's day").
  * KPI strip in the glass header (occupancy · balances owed · move-ins 30d ·
  * expiring 60d), then the flow feed, the move-in/move-out chart, and the
  * leasing runway. iPad (width ≥ 1040) lays the cards out as the three-column
- * workspace. Everything derives from the lease + unit mirrors on device;
- * cards owned by other features (make ready, utilities due) stay hidden until
- * their data is wired by the coordinator (LinkedFeatureCard).
+ * workspace. Everything derives from the synced mirrors on device; the
+ * cross-feature cards (make ready from the work-order mirror, utilities due
+ * from the MLGW mirror) read their stores read-only and hide until data
+ * exists (LinkedFeatureCard).
  */
 export default function TodayScreen() {
   const { t } = useTranslation();
@@ -46,6 +71,8 @@ export default function TodayScreen() {
 
   const leases = useLeases((s) => s.leases);
   const allUnits = useUnits((s) => s.allUnits);
+  const workOrders = useWorkOrders((s) => s.workOrders);
+  const mlgwData = useMlgw((s) => s.data);
 
   // "Now" is state, refreshed whenever the tab regains focus — calendar math
   // stays render-pure and still tracks the day across a long-lived session.
@@ -131,10 +158,51 @@ export default function TodayScreen() {
   const runwayCard = <RunwayCard summary={runway} onGo={() => openCard("runway", "/(tabs)/leasing")} />;
   const expiringSoonCard = <ExpiringSoonCard rows={expirationRows.filter((r) => r.daysLeft <= 45)} />;
 
-  // Cross-feature cards: hidden until the coordinator wires their data source
-  // (this screen must not import the maintenance/utilities stores).
-  const makeReadyCard = <LinkedFeatureCard data={null} render={() => null} />;
-  const utilitiesCard = <LinkedFeatureCard data={null} render={() => null} />;
+  // Cross-feature cards, read-only: the make-ready line from the shared
+  // work-order engine and the utilities-due line from the MLGW mirror. Both
+  // keep LinkedFeatureCard's hide-when-no-data behavior — a cold cache (or a
+  // property with no turns) renders nothing rather than a row of zeros.
+  const makeReady = useMemo(
+    () =>
+      workOrders.length === 0 ? null : makeReadySnapshot(buildWorkData(workOrders, allUnits), nowMs),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workOrders, allUnits],
+  );
+  const utilities: UtilitiesDueSummary | null = useMemo(() => {
+    if (mlgwData === null) return null;
+    const exceptions = computeUtilityExceptions(
+      {
+        ...mlgwData,
+        units: allUnits.map((u) => ({ unitNumber: u.number, moveInDate: u.move_in_date })),
+        nowIso: TODAY_ISO,
+      },
+      COUNT_ONLY_COPY,
+    );
+    const s = buildUtilitySummary(mlgwData.accounts, mlgwData.currentBills, exceptions, TODAY_ISO);
+    return { due: s.currentDue, billCount: s.currentBillCount, spikeCount: s.spikeCount };
+  }, [mlgwData, allUnits]);
+
+  const makeReadyCard = (
+    <LinkedFeatureCard
+      data={makeReady}
+      render={(snapshot) => (
+        <MakeReadyCard
+          snapshot={snapshot}
+          onGo={() =>
+            openCard("makeReady", { pathname: "/(tabs)/work", params: { mode: "makeReady" } })
+          }
+        />
+      )}
+    />
+  );
+  const utilitiesCard = (
+    <LinkedFeatureCard
+      data={utilities}
+      render={(summary) => (
+        <UtilitiesCard summary={summary} onGo={() => openCard("utilities", "/(tabs)/utilities")} />
+      )}
+    />
+  );
 
   const headerTrailing = wide ? (
     <Text style={{ fontSize: 11, color: MUTED, marginRight: 6 }}>

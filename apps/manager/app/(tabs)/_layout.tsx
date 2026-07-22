@@ -61,6 +61,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" options={{ title: t("tabs.today") }} />
       <Tabs.Screen name="leasing" options={{ title: t("tabs.leasing") }} />
       <Tabs.Screen name="delinquency" options={{ title: t("tabs.money") }} />
+      <Tabs.Screen name="work" options={{ title: t("work.title") }} />
       <Tabs.Screen name="utilities" options={{ title: t("tabs.utilities") }} />
       <Tabs.Screen name="property-map" options={{ title: t("tabs.map") }} />
     </Tabs>

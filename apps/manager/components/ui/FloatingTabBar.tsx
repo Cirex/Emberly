@@ -27,6 +27,7 @@ const ICONS: Record<string, ComponentIcon> = {
   index: "sunny",
   leasing: "key",
   delinquency: "cash",
+  work: "construct",
   utilities: "water",
   "property-map": "map",
 };

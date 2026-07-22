@@ -14,6 +14,7 @@ import {
   type MonthlyFlow,
 } from "@/lib/derived/leasing";
 import { calendarDaysBetween } from "@/lib/derived/time";
+import type { MakeReadySnapshot } from "@/lib/derived/work-boards";
 import { activeLocale } from "@/lib/i18n";
 import { HAIRLINE, MUTED, NAVY, OLIVE_GLASS } from "@/theme/tokens";
 
@@ -306,6 +307,90 @@ export function ExpiringSoonCard({ rows }: { rows: ExpirationRow[] }) {
           )}
         </View>
       ))}
+    </TodayCard>
+  );
+}
+
+// ── Make ready (Work tab's Today line) ──────────────────────────────────────
+
+/**
+ * The turn board's morning summary: "N turns in progress · M move-ins this
+ * week", then the late/blocked line. Pure presenter — the screen derives the
+ * snapshot from the shared work-order engine and passes it down; tapping "go"
+ * lands on the Work tab in make-ready mode.
+ */
+export function MakeReadyCard({
+  snapshot,
+  onGo,
+}: {
+  snapshot: MakeReadySnapshot;
+  onGo: () => void;
+}) {
+  const { t } = useTranslation();
+  const alerts = [
+    snapshot.lateForMoveIn > 0 ? t("today.makeReady.late", { count: snapshot.lateForMoveIn }) : null,
+    snapshot.blockedCount > 0 ? t("today.makeReady.blocked", { count: snapshot.blockedCount }) : null,
+  ].filter((part): part is string => part !== null);
+
+  return (
+    <TodayCard title={t("today.makeReady.title")} goLabel={t("today.makeReady.go")} onGo={onGo}>
+      <RunwayLine
+        text={t("today.makeReady.progress", {
+          count: snapshot.turnsInProgress,
+          moveIns: snapshot.moveInsThisWeek,
+        })}
+        pill={<StatusPill label={t("today.makeReady.readyPill", { count: snapshot.readyUnits })} tone="good" />}
+        last={false}
+      />
+      <RunwayLine
+        text={alerts.length > 0 ? alerts.join(" · ") : t("today.makeReady.onTrack")}
+        pill={
+          alerts.length > 0 ? (
+            <StatusPill label={t("today.makeReady.attentionPill")} tone="soon" />
+          ) : null
+        }
+        last
+      />
+    </TodayCard>
+  );
+}
+
+// ── Utilities due (Utilities tab's Today line) ──────────────────────────────
+
+/** The Today board's read-only cut of the MLGW mirror. */
+export interface UtilitiesDueSummary {
+  /** Sum of positive balances due across accounts. */
+  due: number;
+  billCount: number;
+  /** Open (unreviewed) spike + high-electrical exceptions. */
+  spikeCount: number;
+}
+
+/** "Utilities due $X · N bills", with the spike count as the pill. */
+export function UtilitiesCard({
+  summary,
+  onGo,
+}: {
+  summary: UtilitiesDueSummary;
+  onGo: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <TodayCard title={t("today.utilities.title")} goLabel={t("today.utilities.go")} onGo={onGo}>
+      <RunwayLine
+        text={t("today.utilities.due", {
+          amount: `$${Math.round(summary.due).toLocaleString()}`,
+          count: summary.billCount,
+        })}
+        pill={
+          summary.spikeCount > 0 ? (
+            <StatusPill label={t("today.utilities.spikes", { count: summary.spikeCount })} tone="soon" />
+          ) : (
+            <StatusPill label={t("today.utilities.noSpikes")} tone="good" />
+          )
+        }
+        last
+      />
     </TodayCard>
   );
 }

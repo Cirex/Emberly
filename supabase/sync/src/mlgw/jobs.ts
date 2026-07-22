@@ -56,6 +56,65 @@ export interface SyncMlgwBillsResult {
   skippedKnownDocuments: number;
 }
 
+/**
+ * Digits-only account number → account id, for payment FK linkage (the Swift
+ * importer linked payments to accounts by normalized account number; the TS
+ * port left it to the job layer). Ambiguous numbers are dropped rather than
+ * guessed, mirroring the unit matcher's unique-bucket discipline.
+ */
+export function accountIdByNormalizedNumber(
+  accounts: Array<{ id: string; account_number: string | null }>,
+): Map<string, string> {
+  const idByNumber = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  for (const account of accounts) {
+    const key = (account.account_number ?? "").replace(/[^0-9]/g, "");
+    if (key.length === 0) continue;
+    if (idByNumber.has(key) && idByNumber.get(key) !== account.id) ambiguous.add(key);
+    else idByNumber.set(key, account.id);
+  }
+  for (const key of ambiguous) idByNumber.delete(key);
+  return idByNumber;
+}
+
+/** Set `mlgw_account_id` on rows whose account number resolves; returns the linked count. */
+export function linkPaymentRowsToAccounts(
+  rows: MlgwPaymentRow[],
+  idByNumber: Map<string, string>,
+): number {
+  let linked = 0;
+  for (const row of rows) {
+    const key = (row.account_number ?? "").replace(/[^0-9]/g, "");
+    const id = key.length > 0 ? idByNumber.get(key) : undefined;
+    if (id !== undefined) {
+      row.mlgw_account_id = id;
+      linked += 1;
+    }
+  }
+  return linked;
+}
+
+/** The property's persisted account rows, for payment linkage in the payments job. */
+async function fetchAccountLinkageRows(
+  supabase: ServiceClient,
+  propertyId: string,
+): Promise<Array<{ id: string; account_number: string | null }>> {
+  const PAGE = 1000;
+  const rows: Array<{ id: string; account_number: string | null }> = [];
+  for (let from = 0; ; from += PAGE) {
+    const res = await supabase
+      .from("mlgw_accounts")
+      .select("id, account_number")
+      .eq("resman_property_id", propertyId)
+      .order("id")
+      .range(from, from + PAGE - 1);
+    if (res.error) throw new Error(`mlgw_accounts read failed: ${res.error.message}`);
+    const page = (res.data ?? []) as Array<{ id: string; account_number: string | null }>;
+    rows.push(...page);
+    if (page.length < PAGE) return rows;
+  }
+}
+
 /** The property's resman_units mirror rows, shaped for `buildUnitLookup`. */
 async function fetchPropertyUnits(supabase: ServiceClient, propertyId: string): Promise<PropertyUnitInput[]> {
   const PAGE = 1000;
@@ -125,6 +184,7 @@ export async function syncMlgwBills(params: SyncMlgwBillsParams): Promise<SyncMl
   const paymentRows = result.payments
     .map((payment) => toPaymentRow(payment, propertyId))
     .filter((row): row is MlgwPaymentRow => row !== null);
+  linkPaymentRowsToAccounts(paymentRows, accountIdByNormalizedNumber([...accountsById.values()]));
 
   // Accounts first — mlgw_bills.mlgw_account_id FKs into mlgw_accounts. The typed
   // row shapes are cast to the loose upsert row type at the DB boundary.
@@ -201,13 +261,16 @@ export async function syncMlgwPayments(params: SyncMlgwPaymentsParams): Promise<
     return { payments: paymentRows.length, targets: result.paymentTargets, dryRun: true };
   }
 
+  const linkage = accountIdByNormalizedNumber(await fetchAccountLinkageRows(supabase, propertyId));
+  const linked = linkPaymentRowsToAccounts(paymentRows, linkage);
+
   const out = await upsertMirror(
     supabase,
     "mlgw_payments",
     paymentRows as unknown as Array<Record<string, unknown>>,
     { conflictColumn: "id" },
   );
-  log(`[mlgw-payments] payments=${out.upserted} targets=${result.paymentTargets}`);
+  log(`[mlgw-payments] payments=${out.upserted} linked=${linked} targets=${result.paymentTargets}`);
 
   return { payments: out.upserted, targets: result.paymentTargets, dryRun: false };
 }

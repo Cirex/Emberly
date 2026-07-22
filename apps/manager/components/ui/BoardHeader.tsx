@@ -30,6 +30,13 @@ export interface BoardMetric {
   label: string;
   /** Small context line under the label. */
   caption?: string;
+  /**
+   * Optional inline mini chart rendered after the label (the Trends
+   * sparklines — see components/trends/Spark). The element itself decides
+   * whether to render (Spark gates on 14 days of snapshots), so passing a
+   * Spark unconditionally is safe.
+   */
+  spark?: ReactNode;
   /** When present the cell is pressable and shows the chevron affordance. */
   onPress?: () => void;
 }
@@ -213,13 +220,16 @@ export function BoardHeader({
                   >
                     {metric.value}
                   </Text>
-                  <Text
-                    className="text-slate dark:text-white/60"
-                    numberOfLines={1}
-                    style={{ fontSize: 10, fontWeight: "600", marginTop: 1 }}
-                  >
-                    {metric.label}
-                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 1 }}>
+                    <Text
+                      className="text-slate dark:text-white/60"
+                      numberOfLines={1}
+                      style={{ fontSize: 10, fontWeight: "600", flexShrink: 1 }}
+                    >
+                      {metric.label}
+                    </Text>
+                    {metric.spark}
+                  </View>
                   {metric.caption ? (
                     <Text
                       className="text-muted dark:text-white/45"

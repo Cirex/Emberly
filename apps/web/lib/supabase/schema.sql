@@ -1603,3 +1603,43 @@ create index if not exists manager_alert_notifications_notified_at_idx
   on public.manager_alert_notifications (notified_at desc);
 
 alter table public.manager_alert_notifications enable row level security;
+
+-- ------------------------------------------------------------
+-- property_snapshots — one row per property per day, written by the sync
+-- worker's nightly snapshots step after the mirror jobs run. The Trends
+-- charts read this table directly; no per-request aggregation.
+--
+-- ALL metric columns are nullable ON PURPOSE: the one-shot backfill
+-- reconstructs only what lease spans can prove (the occupancy family) and
+-- leaves every other column null, so a null reads as "series not yet begun"
+-- and the charts label the series start instead of faking a flat past.
+--
+-- `source` records which writer produced the row: 'nightly' (the daily job;
+-- a same-day re-run overwrites) or 'backfill' (the lease-span reconstruction;
+-- it never overwrites an existing row).
+--
+-- Service-role only (RLS on, no policies).
+-- ------------------------------------------------------------
+create table if not exists public.property_snapshots (
+  snapshot_date date primary key,
+  total_units integer,
+  occupied_units integer,
+  vacant_units integer,
+  occupancy_pct numeric(5,2),
+  rent_roll numeric(14,2),
+  lease_rent_total numeric(14,2),
+  balance_total numeric(14,2),
+  balance_0_30 numeric(14,2),
+  balance_31_60 numeric(14,2),
+  balance_61_90 numeric(14,2),
+  balance_90_plus numeric(14,2),
+  delinquent_units integer,
+  turns_in_progress integer,
+  open_work_orders integer,
+  utility_due numeric(14,2),
+  source text not null default 'nightly'
+    constraint property_snapshots_source_check check (source in ('nightly','backfill')),
+  created_at timestamptz default now()
+);
+
+alter table public.property_snapshots enable row level security;

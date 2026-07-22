@@ -13,8 +13,9 @@
  * from a PDF will surface a clear "not implemented" error at runtime.
  */
 import { upsertMirror, type ServiceClient } from "../db/client";
-import { downloadBillsInBackground, downloadPaymentsInBackground, SupabaseStorageBillFileStore } from "./download";
+import { desiredBillFilename, downloadBillsInBackground, downloadPaymentsInBackground, SupabaseStorageBillFileStore } from "./download";
 import type { BillFileStore } from "./download";
+import { billTextPdf } from "./parse/text-pdf";
 import {
   billSummaries,
   buildBillDTO,
@@ -151,6 +152,7 @@ export async function syncMlgwBills(params: SyncMlgwBillsParams): Promise<SyncMl
   const { supabase, propertyId, propertyName, credentials } = params;
   const log = params.log ?? (() => {});
   const property: MLGWSyncProperty = { id: propertyId, name: propertyName };
+  const fileStore = params.fileStore ?? new SupabaseStorageBillFileStore(supabase, undefined, log);
 
   const result = await downloadBillsInBackground({
     username: credentials.username,
@@ -159,11 +161,19 @@ export async function syncMlgwBills(params: SyncMlgwBillsParams): Promise<SyncMl
     progress: log,
     // Persist invoice PDFs to storage so the admin portal can serve them; the
     // in-memory default would silently drop the bytes after the run.
-    fileStore: params.fileStore ?? new SupabaseStorageBillFileStore(supabase, undefined, log),
+    fileStore,
   });
 
   const parsed = uniqueParsedBills(await parseDownloadedBills(result.downloadedBills));
   const summaries = billSummaries(parsed);
+
+  // Capture text per document, for bills MLGW publishes no PDF for: those get
+  // a generated text-capture PDF below so EVERY bill carries an invoice file.
+  const textByDocId = new Map<string, string>();
+  for (const downloaded of result.downloadedBills) {
+    const text = downloaded.extractedText?.trim();
+    if (downloaded.documentId && text) textByDocId.set(downloaded.documentId, text);
+  }
 
   // Account → unit linkage (XMS's address heuristic): built from the property's
   // resman_units mirror so vacancy exposure / occupancy overlays have real ids.
@@ -172,13 +182,39 @@ export async function syncMlgwBills(params: SyncMlgwBillsParams): Promise<SyncMl
 
   const accountsById = new Map<string, MlgwAccountRow>();
   const billRows: MlgwBillRow[] = [];
+  let generatedInvoices = 0;
   for (const summary of summaries) {
     const dto = buildBillDTO(summary);
     const resolved = resolveAccountUnit(dto.servicesAt ?? "", unitLookup);
     const accountRow = toAccountRow(dto, property, resolved.resman_unit_id ? resolved : undefined);
     accountsById.set(accountRow.id, accountRow);
     const billRow = toBillRow(dto, property);
-    if (billRow !== null) billRows.push(billRow);
+    if (billRow === null) continue;
+    if (!billRow.file_path) {
+      const text = textByDocId.get(billRow.document_id);
+      if (text) {
+        const name =
+          desiredBillFilename(summary.billDate, summary.accountNumber, summary.documentId, "pdf") ??
+          `mlgw-bill-${billRow.document_id}.pdf`;
+        const bytes = billTextPdf({
+          title: `MLGW Bill - Account ${summary.accountNumber}`,
+          facts: [
+            `Service at ${summary.servicesAt || "(unknown address)"}`,
+            `Bill date ${summary.billDate || "unknown"} - Due ${summary.dueDate || "unknown"} - Document #${billRow.document_id}`,
+          ],
+          text,
+        });
+        const path = await fileStore.put(name, bytes, "application/pdf");
+        if (path) {
+          billRow.file_path = path;
+          generatedInvoices += 1;
+        }
+      }
+    }
+    billRows.push(billRow);
+  }
+  if (generatedInvoices > 0) {
+    log(`[mlgw-bills] generated ${generatedInvoices} text-capture invoice PDF(s) for bills without an MLGW PDF`);
   }
 
   const paymentRows = result.payments

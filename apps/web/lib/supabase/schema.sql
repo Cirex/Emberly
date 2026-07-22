@@ -1633,8 +1633,9 @@ alter table public.push_tokens enable row level security;
 -- alert can fire at most once: (kind, subject_key) is unique and the insert
 -- is the claim. `subject_key` is the source row's natural id per kind —
 -- resman_lease_id (application_received / lease_signed), resman_unit_id
--- (balance_threshold), delinquency_actions.id (eviction_milestone), or
--- mlgw_bills.id (utility_spike).
+-- (balance_threshold), delinquency_actions.id (eviction_milestone),
+-- mlgw_bills.id (utility_spike), renewal_offers.id (renewal_offer_silent), or
+-- resman_lease_insurance.resman_insurance_id (policy_lapsed).
 --
 -- Only balance_threshold rows are ever removed: the job deletes them once a
 -- unit's balance falls back under the re-arm band so a later climb over the
@@ -1650,7 +1651,9 @@ create table if not exists public.manager_alert_notifications (
       'lease_signed',
       'balance_threshold',
       'eviction_milestone',
-      'utility_spike'
+      'utility_spike',
+      'renewal_offer_silent',
+      'policy_lapsed'
     )),
   subject_key text not null,             -- source row id; unique with kind
   unit_number text not null default '',

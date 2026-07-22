@@ -62,8 +62,10 @@ describe("managerPushTargetFrom", () => {
 });
 
 describe("isManagerAlertKind", () => {
-  test("accepts exactly the five kinds", () => {
-    expect(MANAGER_ALERT_KINDS).toHaveLength(5);
+  test("accepts exactly the seven kinds", () => {
+    expect(MANAGER_ALERT_KINDS).toHaveLength(7);
+    expect(MANAGER_ALERT_KINDS).toContain("renewal_offer_silent");
+    expect(MANAGER_ALERT_KINDS).toContain("policy_lapsed");
     for (const kind of MANAGER_ALERT_KINDS) expect(isManagerAlertKind(kind)).toBe(true);
     expect(isManagerAlertKind("emergency_work_order")).toBe(false);
     expect(isManagerAlertKind(undefined)).toBe(false);

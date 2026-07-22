@@ -225,7 +225,19 @@ export async function syncManagerAlerts(
   // --- read the mirror ------------------------------------------------------
   // Leases are pulled twice (applied-recently, signed-recently) and merged so
   // neither date's window is widened by the other's.
-  const [applied, signed, units, actions, bills, accounts, notified] = await Promise.all([
+  const [
+    applied,
+    signed,
+    units,
+    actions,
+    bills,
+    accounts,
+    offers,
+    policies,
+    residents,
+    currentLeases,
+    notified,
+  ] = await Promise.all([
     readAll<Record<string, unknown>>(
       supabase,
       "resman_leases",
@@ -261,6 +273,33 @@ export async function syncManagerAlerts(
       "mlgw_accounts",
       "id, unit_number, is_house_account",
     ),
+    // Renewal offers: silence is a standing state (no freshness gate), so no
+    // sent_at lower bound — the status/answered filters bound the read instead.
+    readAll<Record<string, unknown>>(
+      supabase,
+      "renewal_offers",
+      "id, unit_number, status, sent_at, responded_at, deleted_at",
+      (q) => q.eq("status", "sent").is("responded_at", null).is("deleted_at", null),
+    ),
+    // Policies ending inside the lookback (future end dates included — the
+    // lease's BEST policy must be visible so a filed renewal keeps it quiet).
+    readAll<Record<string, unknown>>(
+      supabase,
+      "resman_lease_insurance",
+      "resman_insurance_id, resman_person_lease_id, provider, end_date",
+      (q) => q.gte("end_date", since),
+    ),
+    readAll<Record<string, unknown>>(
+      supabase,
+      "resman_residents",
+      "resman_person_lease_id, resman_lease_id",
+    ),
+    readAll<Record<string, unknown>>(
+      supabase,
+      "resman_leases",
+      "resman_lease_id, unit_number, is_current_lease",
+      (q) => q.eq("is_current_lease", true),
+    ),
     loadNotified(supabase),
   ]);
 
@@ -277,6 +316,10 @@ export async function syncManagerAlerts(
     delinquencyActions: actions as never[],
     utilityBills: bills as never[],
     utilityAccounts: accounts as never[],
+    renewalOffers: offers as never[],
+    insurancePolicies: policies as never[],
+    insuranceResidents: residents as never[],
+    currentLeases: currentLeases as never[],
     notified,
     nowIso,
     balanceThreshold: params.balanceThreshold,

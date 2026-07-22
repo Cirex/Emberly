@@ -13,7 +13,7 @@ import { enabledAlertKinds, useSettings } from "@/lib/stores/settings";
 /**
  * Manager alert push notifications. Registration ties this device's Expo push
  * token to the signed-in staff member via /api/admin/push-tokens; the sync
- * worker's manager-alerts job fans the five alert kinds out to every
+ * worker's manager-alerts job fans the seven alert kinds out to every
  * registered MANAGER device (push_tokens.app = 'manager' — the maintenance
  * app's emergency work orders never reach these phones, and vice versa).
  *

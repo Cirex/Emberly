@@ -1,7 +1,7 @@
 /**
  * Manager push alerts — pure detectors + notification copy.
  *
- * The manager app (apps/manager) subscribes to five operational alerts. This
+ * The manager app (apps/manager) subscribes to seven operational alerts. This
  * module owns the RULES and the COPY for all of them; it has no imports, no
  * Supabase, and no I/O so it can be unit-tested directly (tests/manager-alerts.test.js)
  * and mirrored byte-for-byte into the sync worker, which is what actually
@@ -39,7 +39,9 @@ export type ManagerAlertKind =
   | "lease_signed"
   | "balance_threshold"
   | "eviction_milestone"
-  | "utility_spike";
+  | "utility_spike"
+  | "renewal_offer_silent"
+  | "policy_lapsed";
 
 /** Every alert kind, in the order the settings screen lists them. */
 export const MANAGER_ALERT_KINDS = [
@@ -48,6 +50,8 @@ export const MANAGER_ALERT_KINDS = [
   "balance_threshold",
   "eviction_milestone",
   "utility_spike",
+  "renewal_offer_silent",
+  "policy_lapsed",
 ] as const satisfies readonly ManagerAlertKind[];
 
 /** In-app destination per kind — the manager app's tab routes. */
@@ -57,6 +61,8 @@ export const MANAGER_ALERT_ROUTES: Record<ManagerAlertKind, string> = {
   balance_threshold: "/(tabs)/delinquency",
   eviction_milestone: "/(tabs)/delinquency",
   utility_spike: "/(tabs)/utilities",
+  renewal_offer_silent: "/(tabs)/leasing",
+  policy_lapsed: "/(tabs)/leasing",
 };
 
 export function isManagerAlertKind(value: unknown): value is ManagerAlertKind {
@@ -86,6 +92,12 @@ export const UTILITY_SPIKE_RATIO = 1.75;
 
 /** ...and at least this many dollars, so trivial bills never flag. */
 export const UTILITY_SPIKE_MIN_AMOUNT = 40;
+
+/**
+ * A renewal offer still unanswered STRICTLY MORE than this many days after it
+ * went out is "silent" — day 10 is quiet, day 11 alerts.
+ */
+export const RENEWAL_OFFER_SILENT_DAYS = 10;
 
 /** Delinquency action kinds that count as an eviction milestone. */
 export const EVICTION_MILESTONE_KINDS = ["fed_filed", "eviction_completed"] as const;
@@ -203,6 +215,19 @@ export type ManagerAlertContext =
       billId: string;
       charges: number;
       typical: number;
+    }
+  | {
+      kind: "renewal_offer_silent";
+      unitNumber: string;
+      offerId: string;
+      daysSilent: number;
+    }
+  | {
+      kind: "policy_lapsed";
+      unitNumber: string;
+      policyId: string;
+      /** Provider name is org-level, not personal — allowed in copy. */
+      provider: string;
     };
 
 /**
@@ -269,6 +294,31 @@ export function buildManagerAlert(context: ManagerAlertContext): ManagerAlert {
         unitNumber: text(context.unitNumber),
         amount: Math.round(context.charges * 100) / 100,
       };
+    case "renewal_offer_silent":
+      // No rent amounts and no tenant names — the offer terms stay in the app.
+      return {
+        kind: context.kind,
+        title: "Renewal offer silent",
+        body: bodyOf([
+          unitLabel(context.unitNumber),
+          `silent ${context.daysSilent} day${context.daysSilent === 1 ? "" : "s"}`,
+        ]),
+        data: { route, id: context.offerId },
+        subjectKey: context.offerId,
+        unitNumber: text(context.unitNumber),
+        amount: null,
+      };
+    case "policy_lapsed":
+      // Provider is fine; policy numbers and tenant names never are.
+      return {
+        kind: context.kind,
+        title: "Renter's insurance lapsed",
+        body: bodyOf([unitLabel(context.unitNumber), text(context.provider)]),
+        data: { route, id: context.policyId },
+        subjectKey: context.policyId,
+        unitNumber: text(context.unitNumber),
+        amount: null,
+      };
   }
 }
 
@@ -313,6 +363,37 @@ export interface UtilityAccountRow {
   id: string;
   unit_number?: string | null;
   is_house_account?: boolean | null;
+}
+
+/** renewal_offers slice. */
+export interface RenewalOfferAlertRow {
+  id: string;
+  unit_number?: string | null;
+  status?: string | null;
+  sent_at?: string | null;
+  responded_at?: string | null;
+  deleted_at?: string | null;
+}
+
+/** resman_lease_insurance slice. */
+export interface InsurancePolicyAlertRow {
+  resman_insurance_id: string;
+  resman_person_lease_id?: string | null;
+  provider?: string | null;
+  end_date?: string | null;
+}
+
+/** resman_residents slice — the person-lease → lease join. */
+export interface InsuranceResidentAlertRow {
+  resman_person_lease_id: string;
+  resman_lease_id: string;
+}
+
+/** resman_leases slice for the insurance join (current leases only). */
+export interface CurrentLeaseAlertRow {
+  resman_lease_id: string;
+  unit_number?: string | null;
+  is_current_lease?: boolean | null;
 }
 
 // ---- detectors -------------------------------------------------------------
@@ -527,6 +608,116 @@ export function detectUtilitySpikes(
   return out;
 }
 
+/**
+ * Renewal offers still marked 'sent', unanswered, and STRICTLY older than
+ * RENEWAL_OFFER_SILENT_DAYS. One alert per offer row, forever — there is no
+ * re-arm because a revised offer is a new row with its own id. Like
+ * balance_threshold this is a STANDING STATE, not an event, so it is not
+ * freshness-gated: the ledger alone bounds it, and a first run announcing
+ * every already-silent offer is the intended "here is your chase list" moment
+ * (the table is Emberly-owned and young, so there is no deep history to blast).
+ */
+export function detectRenewalOfferSilent(
+  offers: ReadonlyArray<RenewalOfferAlertRow>,
+  notified: ReadonlySet<string>,
+  options: { nowIso: string },
+): ManagerAlert[] {
+  const today = isoDay(options.nowIso);
+  const out: ManagerAlert[] = [];
+  for (const offer of offers) {
+    const offerId = text(offer.id);
+    if (!offerId || notified.has(offerId)) continue;
+    if (text(offer.status) !== "sent") continue; // accepted/declined/withdrawn
+    if (text(offer.deleted_at) || text(offer.responded_at)) continue;
+    const sentDay = isoDay(offer.sent_at);
+    if (!sentDay) continue;
+    const daysSilent = daysBetween(sentDay, today);
+    if (!Number.isFinite(daysSilent) || daysSilent <= RENEWAL_OFFER_SILENT_DAYS) continue;
+    out.push(
+      buildManagerAlert({
+        kind: "renewal_offer_silent",
+        unitNumber: text(offer.unit_number),
+        offerId,
+        daysSilent,
+      }),
+    );
+  }
+  return out;
+}
+
+/**
+ * Current leases whose BEST insurance policy (latest end_date across the
+ * lease's residents' rows — the same selection as apps/web/lib/
+ * manager-insurance.ts bestPolicy) has an end_date that crossed into the past.
+ *
+ * Judging the best policy, not every row, is what keeps a renewal quiet: a
+ * lease whose old policy just ended but whose replacement row is already on
+ * file is compliant on the board, so it must not page anyone here either.
+ *
+ * Subject key = the lapsed row's resman_insurance_id, so a renewed policy (a
+ * NEW row) can lapse and alert later while the old row never re-fires. The
+ * end_date on its own end date is still in force — lapse starts the day after.
+ * Freshness-gated on end_date so a cold start cannot blast months-old lapses.
+ */
+export function detectPolicyLapses(
+  policies: ReadonlyArray<InsurancePolicyAlertRow>,
+  residents: ReadonlyArray<InsuranceResidentAlertRow>,
+  leases: ReadonlyArray<CurrentLeaseAlertRow>,
+  notified: ReadonlySet<string>,
+  options: { nowIso: string; freshnessDays?: number },
+): ManagerAlert[] {
+  const leaseById = new Map<string, CurrentLeaseAlertRow>();
+  for (const lease of leases) {
+    if (lease.is_current_lease === false) continue; // absent = caller pre-filtered
+    const leaseId = text(lease.resman_lease_id);
+    if (leaseId) leaseById.set(leaseId, lease);
+  }
+  const leaseByPerson = new Map<string, string>();
+  for (const resident of residents) {
+    const person = text(resident.resman_person_lease_id);
+    const leaseId = text(resident.resman_lease_id);
+    if (person && leaseId) leaseByPerson.set(person, leaseId);
+  }
+
+  // The lease's best policy: latest end_date wins; dated rows beat undated;
+  // among ties/undated the first row wins (stable) — mirrors bestPolicy.
+  const bestByLease = new Map<string, InsurancePolicyAlertRow>();
+  for (const policy of policies) {
+    if (!text(policy.resman_insurance_id)) continue;
+    const leaseId = leaseByPerson.get(text(policy.resman_person_lease_id));
+    if (!leaseId || !leaseById.has(leaseId)) continue;
+    const best = bestByLease.get(leaseId);
+    if (!best) {
+      bestByLease.set(leaseId, policy);
+      continue;
+    }
+    if (isoDay(policy.end_date) > isoDay(best.end_date)) bestByLease.set(leaseId, policy);
+  }
+
+  const today = isoDay(options.nowIso);
+  const windowDays = options.freshnessDays ?? ALERT_FRESHNESS_DAYS;
+  const out: ManagerAlert[] = [];
+  for (const [leaseId, policy] of bestByLease) {
+    const policyId = text(policy.resman_insurance_id);
+    if (notified.has(policyId)) continue;
+    const endDay = isoDay(policy.end_date);
+    if (!endDay) continue; // undated best = never-filed band, not a lapse
+    const age = daysBetween(endDay, today);
+    // age <= 0: still in force (or future-dated). age > window: stale lapse.
+    if (!Number.isFinite(age) || age <= 0 || age > windowDays) continue;
+    const lease = leaseById.get(leaseId);
+    out.push(
+      buildManagerAlert({
+        kind: "policy_lapsed",
+        unitNumber: text(lease?.unit_number),
+        policyId,
+        provider: text(policy.provider),
+      }),
+    );
+  }
+  return out;
+}
+
 // ---- the whole pass --------------------------------------------------------
 
 export interface ManagerAlertInput {
@@ -535,6 +726,11 @@ export interface ManagerAlertInput {
   delinquencyActions: ReadonlyArray<DelinquencyActionRow>;
   utilityBills: ReadonlyArray<UtilityBillRow>;
   utilityAccounts: ReadonlyArray<UtilityAccountRow>;
+  renewalOffers: ReadonlyArray<RenewalOfferAlertRow>;
+  insurancePolicies: ReadonlyArray<InsurancePolicyAlertRow>;
+  insuranceResidents: ReadonlyArray<InsuranceResidentAlertRow>;
+  /** CURRENT leases only — the policy-lapse join target. */
+  currentLeases: ReadonlyArray<CurrentLeaseAlertRow>;
   /** Already-claimed subject keys, per kind (from manager_alert_notifications). */
   notified: Record<ManagerAlertKind, ReadonlySet<string>>;
   /** ISO instant the pass runs at — injected for purity. */
@@ -556,6 +752,8 @@ export function emptyNotifiedMap(): Record<ManagerAlertKind, ReadonlySet<string>
     balance_threshold: new Set<string>(),
     eviction_milestone: new Set<string>(),
     utility_spike: new Set<string>(),
+    renewal_offer_silent: new Set<string>(),
+    policy_lapsed: new Set<string>(),
   };
 }
 
@@ -582,6 +780,16 @@ export function detectManagerAlerts(input: ManagerAlertInput): ManagerAlertPass 
         input.utilityBills,
         input.utilityAccounts,
         input.notified.utility_spike,
+        dates,
+      ),
+      ...detectRenewalOfferSilent(input.renewalOffers, input.notified.renewal_offer_silent, {
+        nowIso: input.nowIso,
+      }),
+      ...detectPolicyLapses(
+        input.insurancePolicies,
+        input.insuranceResidents,
+        input.currentLeases,
+        input.notified.policy_lapsed,
         dates,
       ),
     ],

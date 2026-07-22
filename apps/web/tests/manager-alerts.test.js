@@ -10,6 +10,7 @@ const {
   DEFAULT_BALANCE_THRESHOLD,
   MANAGER_ALERT_KINDS,
   MANAGER_ALERT_ROUTES,
+  RENEWAL_OFFER_SILENT_DAYS,
   UTILITY_SPIKE_MIN_AMOUNT,
   UTILITY_SPIKE_RATIO,
   buildManagerAlert,
@@ -18,6 +19,8 @@ const {
   detectEvictionMilestones,
   detectLeaseSigned,
   detectManagerAlerts,
+  detectPolicyLapses,
+  detectRenewalOfferSilent,
   detectUtilitySpikes,
   deviceWantsKind,
   emptyNotifiedMap,
@@ -103,6 +106,18 @@ test("copy is PII-light: no names, only units, dates, and amounts", () => {
       charges: 412.3,
       typical: 180,
     }),
+    buildManagerAlert({
+      kind: "renewal_offer_silent",
+      unitNumber: "0433",
+      offerId: "o1",
+      daysSilent: 11,
+    }),
+    buildManagerAlert({
+      kind: "policy_lapsed",
+      unitNumber: "0731",
+      policyId: "p1",
+      provider: "State Farm",
+    }),
   ];
   assert.deepEqual(
     built.map((a) => `${a.title} — ${a.body}`),
@@ -112,8 +127,21 @@ test("copy is PII-light: no names, only units, dates, and amounts", () => {
       "Balance over $1,500.00 — Unit 0644 · balance $1,820.50",
       "FED filed — Unit 0644 · $350.00",
       "Utility spike — Unit 0644 · $412.30 vs $180.00 typical",
+      "Renewal offer silent — Unit 0433 · silent 11 days",
+      "Renter's insurance lapsed — Unit 0731 · State Farm",
     ],
   );
+});
+
+test("policy_lapsed copy drops a missing provider rather than dangling a separator", () => {
+  const bare = buildManagerAlert({
+    kind: "policy_lapsed",
+    unitNumber: "0731",
+    policyId: "p1",
+    provider: "",
+  });
+  assert.equal(bare.body, "Unit 0731");
+  assert.equal(bare.amount, null);
 });
 
 test("eviction copy distinguishes the milestone and drops a missing amount", () => {
@@ -136,6 +164,8 @@ test("every kind routes to its manager tab and carries the source id", () => {
     "balance_threshold",
     "eviction_milestone",
     "utility_spike",
+    "renewal_offer_silent",
+    "policy_lapsed",
   ]);
   assert.deepEqual(MANAGER_ALERT_ROUTES, {
     application_received: "/(tabs)/leasing",
@@ -143,6 +173,8 @@ test("every kind routes to its manager tab and carries the source id", () => {
     balance_threshold: "/(tabs)/delinquency",
     eviction_milestone: "/(tabs)/delinquency",
     utility_spike: "/(tabs)/utilities",
+    renewal_offer_silent: "/(tabs)/leasing",
+    policy_lapsed: "/(tabs)/leasing",
   });
   const spike = buildManagerAlert({
     kind: "utility_spike",
@@ -359,6 +391,147 @@ test("detectUtilitySpikes skips bills already claimed in the ledger", () => {
   assert.deepEqual(detectUtilitySpikes(bills, [UNIT_ACCOUNT], new Set(["spike"]), { nowIso: NOW }), []);
 });
 
+// --- renewal_offer_silent ---------------------------------------------------
+
+function offer(overrides = {}) {
+  return {
+    id: "offer-1",
+    unit_number: "0433",
+    status: "sent",
+    sent_at: "2026-07-10T09:00:00Z", // 11 days before NOW
+    responded_at: null,
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
+test("detectRenewalOfferSilent fires strictly after 10 silent days", () => {
+  assert.equal(RENEWAL_OFFER_SILENT_DAYS, 10);
+  // Day 11 fires…
+  const alerts = detectRenewalOfferSilent([offer()], none, { nowIso: NOW });
+  assert.equal(alerts.length, 1);
+  assert.equal(alerts[0].kind, "renewal_offer_silent");
+  assert.equal(alerts[0].subjectKey, "offer-1");
+  assert.equal(alerts[0].body, "Unit 0433 · silent 11 days");
+  assert.deepEqual(alerts[0].data, { route: "/(tabs)/leasing", id: "offer-1" });
+  // …day 10 does not.
+  assert.deepEqual(
+    detectRenewalOfferSilent([offer({ sent_at: "2026-07-11T09:00:00Z" })], none, { nowIso: NOW }),
+    [],
+  );
+});
+
+test("detectRenewalOfferSilent ignores answered, withdrawn, and deleted offers", () => {
+  // Responded (even while status still reads 'sent' mid-write).
+  assert.deepEqual(
+    detectRenewalOfferSilent([offer({ responded_at: "2026-07-15T00:00:00Z" })], none, { nowIso: NOW }),
+    [],
+  );
+  // Resolved statuses.
+  for (const status of ["accepted", "declined", "withdrawn"]) {
+    assert.deepEqual(detectRenewalOfferSilent([offer({ status })], none, { nowIso: NOW }), []);
+  }
+  // Soft-deleted rows never alert.
+  assert.deepEqual(
+    detectRenewalOfferSilent([offer({ deleted_at: "2026-07-15T00:00:00Z" })], none, { nowIso: NOW }),
+    [],
+  );
+  // No sent_at = nothing to measure silence from.
+  assert.deepEqual(detectRenewalOfferSilent([offer({ sent_at: null })], none, { nowIso: NOW }), []);
+});
+
+test("detectRenewalOfferSilent fires once per offer — claimed rows stay silent", () => {
+  assert.deepEqual(
+    detectRenewalOfferSilent([offer()], new Set(["offer-1"]), { nowIso: NOW }),
+    [],
+  );
+  // A revised offer is a NEW row with its own id, so it alerts independently.
+  const revised = offer({ id: "offer-2", sent_at: "2026-07-01T09:00:00Z" });
+  const alerts = detectRenewalOfferSilent([offer(), revised], new Set(["offer-1"]), { nowIso: NOW });
+  assert.deepEqual(alerts.map((a) => a.subjectKey), ["offer-2"]);
+  assert.equal(alerts[0].body, "Unit 0433 · silent 20 days");
+});
+
+// --- policy_lapsed ----------------------------------------------------------
+
+function policy(overrides = {}) {
+  return {
+    resman_insurance_id: "ins-1",
+    resman_person_lease_id: "person-1",
+    provider: "State Farm",
+    end_date: "2026-07-20", // ended yesterday
+    ...overrides,
+  };
+}
+
+const RESIDENTS = [{ resman_person_lease_id: "person-1", resman_lease_id: "lease-1" }];
+const CURRENT_LEASES = [
+  { resman_lease_id: "lease-1", unit_number: "0731", is_current_lease: true },
+];
+
+test("detectPolicyLapses fires once a current lease's policy end_date is past", () => {
+  const alerts = detectPolicyLapses([policy()], RESIDENTS, CURRENT_LEASES, none, { nowIso: NOW });
+  assert.equal(alerts.length, 1);
+  assert.equal(alerts[0].kind, "policy_lapsed");
+  assert.equal(alerts[0].subjectKey, "ins-1");
+  assert.equal(alerts[0].title, "Renter's insurance lapsed");
+  assert.equal(alerts[0].body, "Unit 0731 · State Farm");
+  assert.deepEqual(alerts[0].data, { route: "/(tabs)/leasing", id: "ins-1" });
+});
+
+test("detectPolicyLapses is quiet for future, today, undated, and stale end dates", () => {
+  const run = (p) => detectPolicyLapses([p], RESIDENTS, CURRENT_LEASES, none, { nowIso: NOW });
+  assert.deepEqual(run(policy({ end_date: "2026-09-01" })), []); // still covered
+  assert.deepEqual(run(policy({ end_date: "2026-07-21" })), []); // in force through today
+  assert.deepEqual(run(policy({ end_date: null })), []); // never-filed band, not a lapse
+  // The freshness guard (same boundary as isFresh: exactly 14 days still
+  // counts): a lapse older than the window is cold-start history.
+  assert.deepEqual(run(policy({ end_date: "2026-07-06" })), []); // 15 days — stale
+  assert.equal(run(policy({ end_date: "2026-07-07" })).length, 1); // 14 days — the last fresh day
+});
+
+test("detectPolicyLapses only pages for CURRENT leases", () => {
+  // Lease marked non-current.
+  assert.deepEqual(
+    detectPolicyLapses(
+      [policy()],
+      RESIDENTS,
+      [{ resman_lease_id: "lease-1", unit_number: "0731", is_current_lease: false }],
+      none,
+      { nowIso: NOW },
+    ),
+    [],
+  );
+  // Lease absent from the current-lease read entirely.
+  assert.deepEqual(detectPolicyLapses([policy()], RESIDENTS, [], none, { nowIso: NOW }), []);
+  // Resident join missing — no lease to attribute the policy to.
+  assert.deepEqual(detectPolicyLapses([policy()], [], CURRENT_LEASES, none, { nowIso: NOW }), []);
+});
+
+test("detectPolicyLapses judges the lease's BEST policy, so a filed renewal is quiet", () => {
+  // Old policy lapsed but a renewal row already covers the lease: no alert —
+  // the compliance board shows this lease as covered, and the push must agree.
+  const renewed = policy({ resman_insurance_id: "ins-2", end_date: "2027-07-20" });
+  assert.deepEqual(
+    detectPolicyLapses([policy(), renewed], RESIDENTS, CURRENT_LEASES, none, { nowIso: NOW }),
+    [],
+  );
+  // When the renewal itself lapses later, it alerts under its OWN id even
+  // though the old row's id is long claimed — a new row is a new subject.
+  const bothLapsed = [policy({ end_date: "2026-06-01" }), policy({ resman_insurance_id: "ins-2", end_date: "2026-07-19" })];
+  const alerts = detectPolicyLapses(bothLapsed, RESIDENTS, CURRENT_LEASES, new Set(["ins-1"]), {
+    nowIso: NOW,
+  });
+  assert.deepEqual(alerts.map((a) => a.subjectKey), ["ins-2"]);
+});
+
+test("detectPolicyLapses never re-fires a claimed policy row", () => {
+  assert.deepEqual(
+    detectPolicyLapses([policy()], RESIDENTS, CURRENT_LEASES, new Set(["ins-1"]), { nowIso: NOW }),
+    [],
+  );
+});
+
 // --- the whole pass ---------------------------------------------------------
 
 test("detectManagerAlerts runs every detector in kind order", () => {
@@ -368,6 +541,10 @@ test("detectManagerAlerts runs every detector in kind order", () => {
     delinquencyActions: [action()],
     utilityBills: [...history(), bill({ id: "spike", amount_due: 400 })],
     utilityAccounts: [UNIT_ACCOUNT],
+    renewalOffers: [offer()],
+    insurancePolicies: [policy()],
+    insuranceResidents: RESIDENTS,
+    currentLeases: CURRENT_LEASES,
     notified: emptyNotifiedMap(),
     nowIso: NOW,
   });
@@ -377,6 +554,8 @@ test("detectManagerAlerts runs every detector in kind order", () => {
     "balance_threshold",
     "eviction_milestone",
     "utility_spike",
+    "renewal_offer_silent",
+    "policy_lapsed",
   ]);
   assert.deepEqual(pass.rearmedUnitIds, []);
 });
@@ -388,6 +567,10 @@ test("detectManagerAlerts is silent on a second pass once everything is claimed"
     delinquencyActions: [action()],
     utilityBills: [...history(), bill({ id: "spike", amount_due: 400 })],
     utilityAccounts: [UNIT_ACCOUNT],
+    renewalOffers: [offer()],
+    insurancePolicies: [policy()],
+    insuranceResidents: RESIDENTS,
+    currentLeases: CURRENT_LEASES,
     notified: emptyNotifiedMap(),
     nowIso: NOW,
   };

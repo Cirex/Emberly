@@ -21,6 +21,8 @@ export const MANAGER_ALERT_KINDS = [
   "balance_threshold",
   "eviction_milestone",
   "utility_spike",
+  "renewal_offer_silent",
+  "policy_lapsed",
 ] as const;
 
 export type ManagerAlertKind = (typeof MANAGER_ALERT_KINDS)[number];

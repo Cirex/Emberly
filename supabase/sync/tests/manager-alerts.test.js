@@ -76,19 +76,54 @@ test("buildManagerPushMessages sends nothing when every device opted out", () =>
 });
 
 test("every alert kind maps to a manager tab route", () => {
+  const contexts = {
+    application_received: { unitNumber: "1", leaseId: "l", applicationDate: "2026-07-18" },
+    lease_signed: { unitNumber: "1", leaseId: "l", signedDate: "2026-07-18" },
+    balance_threshold: { unitNumber: "1", unitId: "u", balance: 1600, threshold: 1500 },
+    eviction_milestone: { unitNumber: "1", actionId: "a", milestone: "fed_filed", amount: null },
+    utility_spike: { unitNumber: "1", billId: "b", charges: 400, typical: 180 },
+    renewal_offer_silent: { unitNumber: "1", offerId: "o", daysSilent: 11 },
+    policy_lapsed: { unitNumber: "1", policyId: "p", provider: "Acme Mutual" },
+  };
   const routes = new Set(["/(tabs)/leasing", "/(tabs)/delinquency", "/(tabs)/utilities"]);
+  assert.equal(MANAGER_ALERT_KINDS.length, Object.keys(contexts).length);
   for (const kind of MANAGER_ALERT_KINDS) {
-    const built = buildManagerAlert(
-      kind === "application_received"
-        ? { kind, unitNumber: "1", leaseId: "l", applicationDate: "2026-07-18" }
-        : kind === "lease_signed"
-          ? { kind, unitNumber: "1", leaseId: "l", signedDate: "2026-07-18" }
-          : kind === "balance_threshold"
-            ? { kind, unitNumber: "1", unitId: "u", balance: 1600, threshold: 1500 }
-            : kind === "eviction_milestone"
-              ? { kind, unitNumber: "1", actionId: "a", milestone: "fed_filed", amount: null }
-              : { kind, unitNumber: "1", billId: "b", charges: 400, typical: 180 },
-    );
+    assert.ok(contexts[kind], `${kind} has no test context`);
+    const built = buildManagerAlert({ kind, ...contexts[kind] });
     assert.ok(routes.has(built.data.route), `${kind} has no manager route`);
   }
+});
+
+test("the new kinds honour per-device opt-ins like the original five", () => {
+  const silent = buildManagerAlert({
+    kind: "renewal_offer_silent",
+    unitNumber: "0433",
+    offerId: "offer-1",
+    daysSilent: 11,
+  });
+  const lapsed = buildManagerAlert({
+    kind: "policy_lapsed",
+    unitNumber: "0731",
+    policyId: "ins-1",
+    provider: "State Farm",
+  });
+  const devices = [
+    { expoPushToken: "tok-all", alertKinds: [] },
+    { expoPushToken: "tok-renewals", alertKinds: ["renewal_offer_silent"] },
+    { expoPushToken: "tok-balances", alertKinds: ["balance_threshold"] },
+  ];
+  assert.deepEqual(
+    buildManagerPushMessages(silent, devices).map((m) => m.to),
+    ["tok-all", "tok-renewals"],
+  );
+  const lapsedMessages = buildManagerPushMessages(lapsed, devices);
+  assert.deepEqual(lapsedMessages.map((m) => m.to), ["tok-all"]);
+  assert.deepEqual(lapsedMessages[0], {
+    to: "tok-all",
+    title: "Renter's insurance lapsed",
+    body: "Unit 0731 · State Farm",
+    sound: "default",
+    priority: "high",
+    data: { route: "/(tabs)/leasing", kind: "policy_lapsed", id: "ins-1" },
+  });
 });

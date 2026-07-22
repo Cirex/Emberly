@@ -33,6 +33,8 @@ const ALERT_KIND_I18N: Record<ManagerAlertKind, string> = {
   balance_threshold: "balanceThreshold",
   eviction_milestone: "evictionMilestone",
   utility_spike: "utilitySpike",
+  renewal_offer_silent: "renewalOfferSilent",
+  policy_lapsed: "policyLapsed",
 };
 
 function initialsOf(name: string): string {

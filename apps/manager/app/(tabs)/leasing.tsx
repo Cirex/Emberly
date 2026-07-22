@@ -11,9 +11,16 @@ import {
   PipelineRowView,
   VacancyRowView,
 } from "@/components/leasing/rows";
+import {
+  NeedsOfferRowView,
+  OfferSentRowView,
+  ResolvedRowView,
+} from "@/components/leasing/renewal-rows";
+import { RenewalOfferSheet, type RenewalOfferDraft } from "@/components/leasing/RenewalOfferSheet";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import { BoardHeader, type BoardMetric } from "@/components/ui/BoardHeader";
 import { capture } from "@/lib/analytics";
+import type { RenewalResolutionStatus } from "@/lib/api/renewals";
 import {
   buildExpirationRows,
   buildForecastRows,
@@ -29,20 +36,34 @@ import {
   type PipelineStage,
   type ScoreMetric,
 } from "@/lib/derived/leasing";
+import {
+  buildInternalComps,
+  buildOfferTimeline,
+  buildRenewalMetrics,
+  buildRenewalsBoard,
+  governingOfferByLease,
+  renewalSubject,
+} from "@/lib/derived/renewals-view";
 import { activeLocale } from "@/lib/i18n";
+import { useConfig } from "@/lib/stores/config";
 import { useLeases } from "@/lib/stores/leases";
+import { useRenewals } from "@/lib/stores/renewals";
 import { useUnits } from "@/lib/stores/units";
 import { screenHPad } from "@/theme/tokens";
 
 /**
  * Leasing — the Work Orders anatomy applied to the funnel: ONE screen, a mode
- * dropdown (Pipeline · Expirations · Forecast · Vacancy), a mode-specific
- * score strip, quick-filter chips with live counts, and banded lists. All
- * board math is lib/derived/leasing.ts; this file only renders.
+ * dropdown (Pipeline · Expirations · Forecast · Vacancy · Renewals), a
+ * mode-specific score strip, quick-filter chips with live counts, and banded
+ * lists. All board math is lib/derived/leasing.ts (renewals:
+ * lib/derived/renewals-view.ts); this file only renders.
  */
 
 /** Chips filter within a mode; "all" is every mode's default. */
 type ChipKey = string;
+
+/** The board modes: the leasing engine's four plus the Renewals pipeline. */
+type ScreenMode = LeasingMode | "renewals";
 
 export default function LeasingScreen() {
   const { t } = useTranslation();
@@ -51,14 +72,23 @@ export default function LeasingScreen() {
   const pad = screenHPad(width);
   const wide = width >= 1040;
 
-  const [mode, setMode] = useState<LeasingMode>("pipeline");
+  const [mode, setMode] = useState<ScreenMode>("pipeline");
   const [chip, setChip] = useState<ChipKey>("all");
   const [headerH, setHeaderH] = useState(insets.top + 150);
+  /** Renewal offer sheet target; a fresh nonce remounts the sheet per open. */
+  const [offerSheet, setOfferSheet] = useState<{ nonce: number; leaseId: string } | null>(null);
+
+  const baseUrl = useConfig((s) => s.baseUrl);
+  const token = useConfig((s) => s.token);
+  const config = useMemo(() => ({ baseUrl, token }), [baseUrl, token]);
 
   const leases = useLeases((s) => s.leases);
   const loading = useLeases((s) => s.loading);
   const error = useLeases((s) => s.error);
   const allUnits = useUnits((s) => s.allUnits);
+  const offers = useRenewals((s) => s.offers);
+  const sendOffer = useRenewals((s) => s.sendOffer);
+  const resolveOffer = useRenewals((s) => s.resolveOffer);
 
   // "Now" is state, refreshed whenever the tab regains focus — calendar math
   // stays render-pure and still tracks the day across a long-lived session.
@@ -93,11 +123,19 @@ export default function LeasingScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [leases],
   );
+  const renewalsBoard = useMemo(
+    () => buildRenewalsBoard(leases, unitsIdx, offers, nowMs),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [leases, unitsIdx, offers],
+  );
 
   const metrics: BoardMetric[] = useMemo(() => {
-    const raw = buildLeasingMetrics({
-      mode, pipelineRows, expirationRows90: expirationRows, forecastRows, vacancyRows, leases, nowMs,
-    });
+    const raw: ScoreMetric[] =
+      mode === "renewals"
+        ? buildRenewalMetrics(renewalsBoard)
+        : buildLeasingMetrics({
+            mode, pipelineRows, expirationRows90: expirationRows, forecastRows, vacancyRows, leases, nowMs,
+          });
     return raw.map((m: ScoreMetric) => ({
       value: m.value,
       tint: m.tint,
@@ -105,17 +143,18 @@ export default function LeasingScreen() {
       caption: m.captionKey ? t(m.captionKey, m.captionParams) : undefined,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, pipelineRows, expirationRows, forecastRows, vacancyRows, leases, t]);
+  }, [mode, pipelineRows, expirationRows, forecastRows, vacancyRows, renewalsBoard, leases, t]);
 
-  const modeCounts: Record<LeasingMode, number> = {
+  const modeCounts: Record<ScreenMode, number> = {
     pipeline: pipelineRows.length,
     expirations: expirationRows.length,
     forecast: forecastRows.length,
     vacancy: vacancyRows.length,
+    renewals: renewalsBoard.total,
   };
 
   const onMode = (key: string) => {
-    const next = key as LeasingMode;
+    const next = key as ScreenMode;
     capture("board_mode_switched", { mode: `leasing:${next}` });
     setMode(next);
     setChip("all");
@@ -148,8 +187,28 @@ export default function LeasingScreen() {
         { key: "notReady", label: t("leasing.row.notReady"), count: vacancyRows.filter((r) => !r.ready).length },
       ];
     }
+    if (mode === "renewals") {
+      return [
+        { key: "all", label: t("leasing.chips.all"), count: renewalsBoard.total },
+        {
+          key: "needsOffer",
+          label: t("leasing.renewals.chips.needsOffer"),
+          count: renewalsBoard.needsOffer.length,
+        },
+        {
+          key: "noResponse",
+          label: t("leasing.renewals.chips.noResponse"),
+          count: renewalsBoard.silentCount,
+        },
+        {
+          key: "accepted",
+          label: t("leasing.renewals.chips.accepted"),
+          count: renewalsBoard.resolvedThisMonth.filter((r) => r.accepted).length,
+        },
+      ];
+    }
     return [];
-  }, [mode, pipelineRows, expirationRows, vacancyRows, t]);
+  }, [mode, pipelineRows, expirationRows, vacancyRows, renewalsBoard, t]);
 
   // ── Chip-filtered lists ───────────────────────────────────────────────────
   const visiblePipeline = useMemo(
@@ -283,6 +342,129 @@ export default function LeasingScreen() {
     </View>
   );
 
+  // ── Renewals mode ─────────────────────────────────────────────────────────
+  // The bumped nonce remounts the sheet with fresh state on every open.
+  const openOfferSheet = (leaseId: string) => {
+    setOfferSheet((prev) => ({ nonce: (prev?.nonce ?? 0) + 1, leaseId }));
+  };
+
+  const renewalsBody = () => {
+    const needsOffer =
+      chip === "noResponse" || chip === "accepted" ? [] : renewalsBoard.needsOffer;
+    const offersOut =
+      chip === "needsOffer" || chip === "accepted"
+        ? []
+        : chip === "noResponse"
+          ? renewalsBoard.offersOut.filter((r) => r.silent)
+          : renewalsBoard.offersOut;
+    const resolved =
+      chip === "needsOffer" || chip === "noResponse"
+        ? []
+        : chip === "accepted"
+          ? renewalsBoard.resolvedThisMonth.filter((r) => r.accepted)
+          : renewalsBoard.resolvedThisMonth;
+
+    const urgent = needsOffer.filter((r) => r.urgent);
+    const later = needsOffer.filter((r) => !r.urgent);
+    if (needsOffer.length + offersOut.length + resolved.length === 0) return emptyState;
+    return (
+      <View style={{ gap: 4 }}>
+        {band(
+          t("leasing.renewals.bands.needsOfferUrgent"), true,
+          urgent.map((r, i) => (
+            <NeedsOfferRowView
+              key={r.expiration.lease.id}
+              row={r}
+              last={i === urgent.length - 1}
+              onPress={() => openOfferSheet(r.expiration.lease.id)}
+            />
+          )),
+          "needsOfferUrgent",
+        )}
+        {band(
+          t("leasing.renewals.bands.needsOfferLater"), false,
+          later.map((r, i) => (
+            <NeedsOfferRowView
+              key={r.expiration.lease.id}
+              row={r}
+              last={i === later.length - 1}
+              onPress={() => openOfferSheet(r.expiration.lease.id)}
+            />
+          )),
+          "needsOfferLater",
+        )}
+        {band(
+          t("leasing.renewals.bands.offerSent"), false,
+          offersOut.map((r, i) => (
+            <OfferSentRowView
+              key={r.offer.id}
+              row={r}
+              last={i === offersOut.length - 1}
+              onPress={() => (r.lease ? openOfferSheet(r.lease.id) : undefined)}
+            />
+          )),
+          "offerSent",
+        )}
+        {band(
+          t("leasing.renewals.bands.resolved"), false,
+          resolved.map((r, i) => (
+            <ResolvedRowView
+              key={r.offer.id}
+              row={r}
+              last={i === resolved.length - 1}
+              onPress={r.lease ? () => openOfferSheet(r.lease!.id) : undefined}
+            />
+          )),
+          "resolved",
+        )}
+        <Text
+          className="text-muted dark:text-white/50"
+          style={{ fontSize: 10.5, textAlign: "center", paddingVertical: 12 }}
+        >
+          {t("leasing.renewals.foot")}
+        </Text>
+      </View>
+    );
+  };
+
+  // ── Offer sheet wiring ────────────────────────────────────────────────────
+  const sheetLease = offerSheet ? leases.find((l) => l.id === offerSheet.leaseId) ?? null : null;
+  const sheetSubject = sheetLease ? renewalSubject(sheetLease, allUnits) : null;
+  const sheetComps = sheetLease ? buildInternalComps(sheetLease, leases, allUnits, nowMs) : null;
+  const sheetActiveOffer = sheetLease
+    ? (() => {
+        const governing = governingOfferByLease(offers).get(sheetLease.id);
+        return governing && governing.status === "sent" ? governing : null;
+      })()
+    : null;
+  const sheetTimeline = sheetLease ? buildOfferTimeline(sheetLease, offers, nowMs) : [];
+
+  const submitOffer = async (draft: RenewalOfferDraft): Promise<boolean> => {
+    if (!sheetLease) return false;
+    const ok = await sendOffer(config, {
+      resmanLeaseId: sheetLease.id,
+      resmanUnitId: sheetLease.unitId ?? undefined,
+      unitNumber: sheetLease.unitNumber || undefined,
+      ...draft,
+    });
+    if (ok) {
+      capture("renewal_offer_sent", {
+        termMonths: draft.termMonths ?? null,
+        isMonthToMonth: draft.isMonthToMonth === true,
+      });
+    }
+    return ok;
+  };
+
+  const submitResolve = async (
+    offerId: string,
+    status: RenewalResolutionStatus,
+  ): Promise<boolean> => {
+    const ok = await resolveOffer(config, offerId, status);
+    if (ok) capture("renewal_offer_resolved", { status });
+    return ok;
+  };
+
   const vacancyBody = () => {
     const ready = visibleVacancy.filter((r) => r.ready);
     const notReady = visibleVacancy.filter((r) => !r.ready);
@@ -311,6 +493,7 @@ export default function LeasingScreen() {
           { key: "expirations", label: t("leasing.modes.expirations"), icon: "calendar-outline", count: modeCounts.expirations },
           { key: "forecast", label: t("leasing.modes.forecast"), icon: "trending-up-outline" },
           { key: "vacancy", label: t("leasing.modes.vacancy"), icon: "home-outline", count: modeCounts.vacancy },
+          { key: "renewals", label: t("leasing.modes.renewals"), icon: "refresh-outline", count: modeCounts.renewals },
         ]}
         activeMode={mode}
         onMode={onMode}
@@ -336,9 +519,26 @@ export default function LeasingScreen() {
               ? expirationsBody()
               : mode === "forecast"
                 ? forecastBody()
-                : vacancyBody()}
+                : mode === "renewals"
+                  ? renewalsBody()
+                  : vacancyBody()}
         </View>
       </ScrollView>
+
+      {offerSheet && sheetLease && sheetSubject ? (
+        <RenewalOfferSheet
+          key={offerSheet.nonce}
+          visible
+          lease={sheetLease}
+          subject={sheetSubject}
+          comps={sheetComps}
+          activeOffer={sheetActiveOffer}
+          timeline={sheetTimeline}
+          onClose={() => setOfferSheet(null)}
+          onSend={submitOffer}
+          onResolve={submitResolve}
+        />
+      ) : null}
     </View>
   );
 }

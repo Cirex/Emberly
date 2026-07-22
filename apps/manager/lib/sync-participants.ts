@@ -13,4 +13,5 @@ import "@/lib/stores/delinquency";
 import "@/lib/stores/leases";
 import "@/lib/stores/ledger";
 import "@/lib/stores/mlgw";
+import "@/lib/stores/renewals";
 import "@/lib/stores/units";

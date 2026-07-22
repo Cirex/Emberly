@@ -1643,3 +1643,17 @@ create table if not exists public.property_snapshots (
 );
 
 alter table public.property_snapshots enable row level security;
+
+-- ------------------------------------------------------------
+-- owner-reports — monthly owner-report archive (Storage bucket)
+-- ------------------------------------------------------------
+-- The sync worker's monthly job (supabase/sync/src/run-owner-report.ts)
+-- renders last month into <YYYY-MM>.pdf / <YYYY-MM>.html plus the FROZEN
+-- figures payload <YYYY-MM>.json ("report numbers freeze" — the archive is an
+-- audit trail, not a live view). Served to the manager app through
+-- /api/resman/manager/reports; no table rows — the bucket listing IS the
+-- archive index. Private (service role only), like the other buckets.
+insert into storage.buckets (id, name, public)
+values ('owner-reports', 'owner-reports', false)
+on conflict (id) do update
+set public = excluded.public;

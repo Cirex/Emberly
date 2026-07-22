@@ -2358,6 +2358,69 @@ export interface Database {
         };
         Relationships: [];
       };
+      property_snapshots: {
+        Row: {
+          snapshot_date: string;
+          total_units: number | null;
+          occupied_units: number | null;
+          vacant_units: number | null;
+          occupancy_pct: number | null;
+          rent_roll: number | null;
+          lease_rent_total: number | null;
+          balance_total: number | null;
+          balance_0_30: number | null;
+          balance_31_60: number | null;
+          balance_61_90: number | null;
+          balance_90_plus: number | null;
+          delinquent_units: number | null;
+          turns_in_progress: number | null;
+          open_work_orders: number | null;
+          utility_due: number | null;
+          source: "nightly" | "backfill";
+          created_at: string | null;
+        };
+        Insert: {
+          snapshot_date: string;
+          total_units?: number | null;
+          occupied_units?: number | null;
+          vacant_units?: number | null;
+          occupancy_pct?: number | null;
+          rent_roll?: number | null;
+          lease_rent_total?: number | null;
+          balance_total?: number | null;
+          balance_0_30?: number | null;
+          balance_31_60?: number | null;
+          balance_61_90?: number | null;
+          balance_90_plus?: number | null;
+          delinquent_units?: number | null;
+          turns_in_progress?: number | null;
+          open_work_orders?: number | null;
+          utility_due?: number | null;
+          source?: "nightly" | "backfill";
+          created_at?: string | null;
+        };
+        Update: {
+          snapshot_date?: string;
+          total_units?: number | null;
+          occupied_units?: number | null;
+          vacant_units?: number | null;
+          occupancy_pct?: number | null;
+          rent_roll?: number | null;
+          lease_rent_total?: number | null;
+          balance_total?: number | null;
+          balance_0_30?: number | null;
+          balance_31_60?: number | null;
+          balance_61_90?: number | null;
+          balance_90_plus?: number | null;
+          delinquent_units?: number | null;
+          turns_in_progress?: number | null;
+          open_work_orders?: number | null;
+          utility_due?: number | null;
+          source?: "nightly" | "backfill";
+          created_at?: string | null;
+        };
+        Relationships: [];
+      };
       mlgw_accounts: {
         Row: {
           id: string;

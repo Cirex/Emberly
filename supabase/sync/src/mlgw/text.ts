@@ -226,8 +226,12 @@ const NEWLINES = /[\n\r\u0085\u2028\u2029]/;
  * flags (`.*?` will not cross a newline).
  */
 export function htmlToText(html: string): string {
-  let text = replacingMatches(html, "<script\\b[^>]*>.*?</script>", " ", "i");
-  text = replacingMatches(text, "<style\\b[^>]*>.*?</style>", " ", "i");
+  // "is" — dotAll is REQUIRED. Without it `.*?` cannot cross a newline, so a
+  // multi-line <script>/<style> block survives and its CSS/JS text is treated
+  // as bill content: it lands in the parser's input and in the captured
+  // transcript PDF.
+  let text = replacingMatches(html, "<script\\b[^>]*>.*?</script>", " ", "is");
+  text = replacingMatches(text, "<style\\b[^>]*>.*?</style>", " ", "is");
   text = replacingMatches(text, "<br\\s*/?>", "\n", "i");
   text = replacingMatches(text, "</(tr|div|p|li|h[1-6]|section|article|table)>", "\n", "i");
   text = replacingMatches(text, "</(td|th)>", "  ", "i");

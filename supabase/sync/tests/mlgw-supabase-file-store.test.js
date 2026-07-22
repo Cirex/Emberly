@@ -29,11 +29,29 @@ test("PDF puts upload to the mlgw-bills bucket and return the path", async () =>
   ]);
 });
 
-test("non-PDF puts persist nothing and return an empty path", async () => {
+test("HTML puts store the self-contained bill-page archive alongside the PDF", async () => {
   const uploads = [];
   const store = new SupabaseStorageBillFileStore(fakeClient(uploads));
   const path = await store.put("20260713-0013-857716956.html", new Uint8Array([1]), "text/html");
-  assert.equal(path, "");
+  assert.equal(path, "20260713-0013-857716956.html");
+  assert.deepEqual(uploads, [
+    { bucket: "mlgw-bills", path: "20260713-0013-857716956.html", size: 1, contentType: "text/html" },
+  ]);
+});
+
+test("content-type parameters are tolerated", async () => {
+  const uploads = [];
+  const store = new SupabaseStorageBillFileStore(fakeClient(uploads));
+  const path = await store.put("bill.html", new Uint8Array([1]), "text/html; charset=utf-8");
+  assert.equal(path, "bill.html");
+  assert.equal(uploads.length, 1);
+});
+
+test("other content types persist nothing and return an empty path", async () => {
+  const uploads = [];
+  const store = new SupabaseStorageBillFileStore(fakeClient(uploads));
+  assert.equal(await store.put("bill.png", new Uint8Array([1]), "image/png"), "");
+  assert.equal(await store.put("bill.txt", new Uint8Array([1]), "text/plain"), "");
   assert.equal(uploads.length, 0);
 });
 

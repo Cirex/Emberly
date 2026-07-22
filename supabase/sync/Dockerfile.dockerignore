@@ -1,0 +1,31 @@
+# BuildKit reads this file (named "<dockerfile>.dockerignore") when the build
+# uses -f supabase/sync/Dockerfile, taking precedence over any root
+# .dockerignore. The build context is the REPOSITORY ROOT (see
+# supabase/sync/Dockerfile), so these patterns are relative to the repo root.
+#
+# Keep out build artifacts, VCS, local env, and editor cruft. Do NOT exclude
+# workspace source or manifests — the multi-stage build needs every workspace
+# package.json (for the frozen-lockfile install) plus packages/core and
+# supabase/sync source.
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/out
+**/build
+**/coverage
+**/.git
+**/.github
+**/.vercel
+**/.expo
+**/ios
+**/android
+**/*.tsbuildinfo
+**/.DS_Store
+**/npm-debug.log*
+**/yarn-error.log*
+
+# Never ship env files into the image (but keep the checked-in example).
+**/.env
+**/.env.*
+!**/.env.example

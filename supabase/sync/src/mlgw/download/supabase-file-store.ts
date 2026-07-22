@@ -3,12 +3,20 @@
  * `mlgw-bills` bucket so the admin portal can serve invoices via signed URLs
  * (GET /api/admin/utilities/invoice/[billId]).
  *
- * Policy: only PDFs are invoices. When MLGW doesn't offer a real PDF, the
- * bill-document endpoint returns the "My Account" SPA shell with no bill
- * content (verified against 2,840 byte-identical HTML captures in XMS's
- * store), so non-PDF puts persist nothing and return "" — the imported bill
- * then carries an empty file_path, which the portal renders as the disabled
- * "No invoice file" state.
+ * Two content types are stored, both under the same stem (see
+ * `billCaptureFilenames`):
+ *   - `application/pdf`  → `<stem>.pdf`  — the invoice the portal serves. Either
+ *     MLGW's own PDF or, when MLGW publishes none, the browser-rendered PDF of
+ *     the captured bill page.
+ *   - `text/html`        → `<stem>.html` — the self-contained archival capture of
+ *     the bill page (all assets inlined, scripts stripped). Stored for EVERY
+ *     HTML bill, including when PDF rendering is unavailable, so the bill's real
+ *     appearance is never lost. It is an archive, not an invoice: it is
+ *     deliberately never used as a bill row's `file_path`.
+ *
+ * Anything else persists nothing and returns "" — the imported bill then carries
+ * an empty file_path, which the portal renders as the disabled "No invoice file"
+ * state.
  *
  * Upload failures also resolve to "" after logging: a missing invoice file
  * must never fail the bill import itself.
@@ -18,6 +26,9 @@ import type { ServiceClient } from "../../db/client";
 import type { BillFileStore } from "./file-store";
 
 export const MLGW_BILLS_BUCKET = "mlgw-bills";
+
+/** Content types the bills bucket accepts. Everything else is dropped. */
+const STORED_CONTENT_TYPES = new Set(["application/pdf", "text/html"]);
 
 export class SupabaseStorageBillFileStore implements BillFileStore {
   /** Paths claimed this run, for the same `-2`…`-200` clash handling as the in-memory store. */
@@ -30,7 +41,8 @@ export class SupabaseStorageBillFileStore implements BillFileStore {
   ) {}
 
   async put(path: string, bytes: Uint8Array, contentType: string): Promise<string> {
-    if (contentType !== "application/pdf") return "";
+    const normalized = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+    if (!STORED_CONTENT_TYPES.has(normalized)) return "";
     const unique = this.uniquePath(path);
     this.claimed.add(unique);
     try {

@@ -370,7 +370,17 @@ export interface DownloadedBill {
   amountDue: string | null;
   dueDate: string | null;
   rowText: string | null;
+  /**
+   * The stored INVOICE path — always a PDF (MLGW's own, or the browser-rendered
+   * capture of the bill page) or "" when neither could be produced. Never an
+   * HTML path: the portal serves this straight to the user as the invoice.
+   */
   filePath: string;
+  /**
+   * The stored self-contained HTML capture of the bill page (same stem as
+   * `filePath`), or "" — the archival copy, kept even when PDF rendering fails.
+   */
+  capturedHtmlPath?: string;
   extractedText: string | null;
   parseSource: string | null;
 }

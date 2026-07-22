@@ -9,6 +9,10 @@
  * Adaptations:
  *   - The Swift wrote PDFs/HTML to `Invoices/`; here bytes go to an injected
  *     `BillFileStore` and `DownloadedBill.filePath` is the returned object path (brief §2).
+ *   - Bill capture (Emberly addition): MLGW publishes a real PDF for only some
+ *     bills. For the rest, the fetched page is turned into a SELF-CONTAINED HTML
+ *     archive (`mlgw/capture`) and rendered to a PDF that actually looks like the
+ *     bill. `filePath` stays PDF-only; `capturedHtmlPath` carries the archive.
  *   - Text extraction (Swift `billText(from:)`) is inlined as `billTextFromResponse`:
  *     HTML via `htmlToText`, PDF via the injected `PdfTextExtractor` (brief §3).
  *   - The `withTaskGroup` seed/drain pool becomes `mapWithConcurrency` (brief §6);
@@ -47,8 +51,30 @@ import {
   looksLikeBillHTML,
   pdfURLFromHTML,
 } from "./document-resolver";
-import { desiredBillFilename, normalizedBillDate } from "./filenames";
+import { billCaptureFilenames, normalizedBillDate } from "./filenames";
 import { logProfileDuration } from "./logging";
+import type { BillPdfRenderer } from "../capture";
+import { buildSelfContainedDocument, describeSkippedAssets, httpAssetFetcher } from "../capture";
+
+/**
+ * How a PDF-less bill page is turned into an archive + a real PDF.
+ *
+ * Optional throughout: with no capture options the bill page is still archived
+ * as self-contained HTML (that is the point of the archive), but no PDF is
+ * rendered and the caller's transcript fallback takes over.
+ */
+export interface BillCaptureOptions {
+  /** One browser for the whole sync run. Returns `null` when unavailable. */
+  renderer?: BillPdfRenderer;
+  log?: (message: string) => void;
+  /** Skip any single asset above this size (default 5 MiB). */
+  maxAssetBytes?: number;
+  /** Stop inlining once this much asset data is embedded (default 24 MiB). */
+  maxDocumentBytes?: number;
+}
+
+/** UTF-8 encoder for the archived HTML bytes. */
+const utf8 = new TextEncoder();
 
 /** `n` with thousands grouping (Swift `Int.formatted()`). */
 function fmt(n: number): string {
@@ -123,6 +149,7 @@ export async function downloadBill(
   pdfExtractor: PdfTextExtractor,
   index: number,
   cancellation?: MLGWScriptCancellation,
+  capture?: BillCaptureOptions,
 ): Promise<DownloadedBill | BillDownloadFailure> {
   cancellation?.check();
   let response: HTTPResponse;
@@ -257,17 +284,49 @@ export async function downloadBill(
     responseText,
     "Account\\s*(?:Number|No\\.?|#)?\\s*[:#]?\\s*([0-9][0-9 \\-]{4,}[0-9])",
   );
-  const fileExtension = resolvedFileResponse.isPdf ? "pdf" : "html";
   const billDateForFilename = normalizedBillDate(responseText, row.dueDate);
   const accountForFilename = contentAccountNumber ?? row.accountNumber ?? "";
-  const filename =
-    desiredBillFilename(billDateForFilename, accountForFilename, documentId, fileExtension) ??
-    `mlgw-bill-${index + 1}.${fileExtension}`;
-  const storeContentType = fileExtension === "pdf" ? "application/pdf" : "text/html";
-  const destination = await fileStore.put(filename, resolvedFileResponse.bytes, storeContentType);
+  const names = billCaptureFilenames(
+    billDateForFilename,
+    accountForFilename,
+    documentId,
+    `mlgw-bill-${index + 1}`,
+  );
+
+  // `filePath` is the INVOICE and is only ever a PDF. MLGW's own PDF wins
+  // outright (unchanged behaviour); otherwise the bill page is captured as
+  // self-contained HTML — archived either way — and rendered to a PDF that
+  // actually looks like the bill. When rendering is unavailable, `filePath`
+  // stays "" and the bills job falls back to the text-transcript PDF.
+  let destination = "";
+  let capturedHtmlPath = "";
+  let captureSource = fileSource;
+  if (resolvedFileResponse.isPdf) {
+    destination = await fileStore.put(names.pdf, resolvedFileResponse.bytes, "application/pdf");
+  } else {
+    const log = capture?.log ?? debugLog;
+    const document = await buildSelfContainedDocument(
+      resolvedFileResponse.text,
+      resolvedFileResponse.url,
+      httpAssetFetcher(client, resolvedFileResponse.url),
+      { maxAssetBytes: capture?.maxAssetBytes, maxDocumentBytes: capture?.maxDocumentBytes },
+    );
+    if (document.skipped.length > 0) {
+      log(
+        `[mlgw-bills] bill ${index + 1}: omitted ${document.skipped.length} asset(s) from the capture — ${describeSkippedAssets(document.skipped)}`,
+      );
+    }
+    capturedHtmlPath = await fileStore.put(names.html, utf8.encode(document.html), "text/html");
+    const rendered = (await capture?.renderer?.render(document.html)) ?? null;
+    if (rendered !== null) {
+      destination = await fileStore.put(names.pdf, rendered, "application/pdf");
+      captureSource = "rendered bill page";
+    }
+  }
+
   const trimmedResponseText = responseText.trim();
   debugLog(
-    `Bill ${index + 1} ${cleanedBillDocumentId(documentId) ?? "unknown document"}: parse source ${parseSource}, saved invoice source ${fileSource}.`,
+    `Bill ${index + 1} ${cleanedBillDocumentId(documentId) ?? "unknown document"}: parse source ${parseSource}, saved invoice source ${captureSource}.`,
   );
 
   return {
@@ -279,6 +338,7 @@ export async function downloadBill(
     dueDate: row.dueDate,
     rowText: target.rowText,
     filePath: destination,
+    capturedHtmlPath,
     extractedText: trimmedResponseText.length === 0 ? null : trimmedResponseText,
     parseSource,
   };
@@ -304,6 +364,7 @@ export async function downloadBillTargets(
   requestedWorkerCount?: number | null,
   cancellation?: MLGWScriptCancellation,
   progress?: (message: string) => void,
+  capture?: BillCaptureOptions,
 ): Promise<DownloadedBill[]> {
   if (targets.length === 0) return [];
 
@@ -326,7 +387,7 @@ export async function downloadBillTargets(
     try {
       cancellation?.check();
       const downloadResult = await withTransientNetworkRetries(
-        () => downloadBill(target, workerClient, fileStore, pdfExtractor, idx, cancellation),
+        () => downloadBill(target, workerClient, fileStore, pdfExtractor, idx, cancellation, capture),
         { cancellation },
       );
       result =
@@ -398,6 +459,16 @@ export async function downloadBillTargets(
   profileLog(
     `${collection.displayName} bill open rate | ${formattedProfileRate(downloaded.length, wallElapsed)}`,
   );
+  // Capture accounting: how many PDF-less bills were archived as self-contained
+  // HTML, and how many of those also produced a rendered PDF. A large gap means
+  // the renderer is unavailable and bills are getting text transcripts.
+  const archived = downloaded.filter((bill) => (bill.capturedHtmlPath ?? "").length > 0);
+  const rendered = archived.filter((bill) => bill.filePath.length > 0).length;
+  if (archived.length > 0) {
+    progress?.(
+      `${collection.displayName}: archived ${fmt(archived.length)} bill page capture${archived.length === 1 ? "" : "s"}, rendered ${fmt(rendered)} to PDF`,
+    );
+  }
   progress?.(
     `${collection.displayName}: downloaded ${fmt(downloaded.length)} bill file${downloaded.length === 1 ? "" : "s"}`,
   );

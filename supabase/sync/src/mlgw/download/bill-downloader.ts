@@ -31,7 +31,10 @@ import { collectPayments, uniquePaymentListTargets } from "../payment";
 import type { BillFileStore, PdfTextExtractor } from "./file-store";
 import { InMemoryBillFileStore, UnimplementedPdfTextExtractor } from "./file-store";
 import { collectBillCollectionDownload, downloadUnsyncedBillTargets } from "./collection-download";
+import type { BillCaptureOptions } from "./target-downloader";
 import { logProfileDuration, logStageDuration } from "./logging";
+import type { BillPdfRenderer } from "../capture";
+import { createBillPdfRenderer } from "../capture";
 
 /** `n` with thousands grouping (Swift `Int.formatted()`). */
 function fmt(n: number): string {
@@ -53,6 +56,13 @@ export interface DownloadBillsOptions {
   client?: MLGWHTTPClient;
   /** Optional sink for scraped list-row metadata, invoked per collection. */
   listMetadataHandler?: (rows: BillListDocumentMetadata[]) => Promise<void>;
+  /**
+   * HTML→PDF renderer for bills MLGW publishes no PDF for. Default: one system
+   * Chromium launched lazily for this run and closed before returning. Pass
+   * `UnavailableBillPdfRenderer` to disable rendering (bills still get their
+   * self-contained HTML archive, and the job falls back to a text transcript).
+   */
+  renderer?: BillPdfRenderer;
   progress?: (message: string) => void;
 }
 
@@ -74,6 +84,23 @@ export interface DownloadPaymentsOptions {
 export async function downloadBillsInBackground(
   options: DownloadBillsOptions,
 ): Promise<MLGWDownloadResult> {
+  // ONE browser for the whole run: launching per bill would add process startup
+  // to each of thousands of bills. It is launched lazily on the first PDF-less
+  // bill and always closed here, even when the download throws.
+  const ownsRenderer = options.renderer === undefined;
+  const renderer =
+    options.renderer ?? createBillPdfRenderer({ log: options.progress ?? ((m: string) => debugLog(m)) });
+  try {
+    return await runBillDownload(options, renderer);
+  } finally {
+    if (ownsRenderer) await renderer.close();
+  }
+}
+
+async function runBillDownload(
+  options: DownloadBillsOptions,
+  renderer: BillPdfRenderer,
+): Promise<MLGWDownloadResult> {
   const { username, password } = options;
   const backgroundSyncWorkerCount =
     options.backgroundSyncWorkerCount ?? BackgroundSyncWorkerConfiguration.defaultWorkerCount;
@@ -84,6 +111,7 @@ export async function downloadBillsInBackground(
   const client = options.client ?? new MLGWHTTPClient();
   const progress = options.progress;
   const listMetadataHandler = options.listMetadataHandler;
+  const capture: BillCaptureOptions = { renderer, log: progress ?? ((m: string) => debugLog(m)) };
 
   const totalStartedAt = Date.now();
   debugStage(
@@ -148,6 +176,7 @@ export async function downloadBillsInBackground(
     "whose document IDs already exist locally.",
     cancellation,
     progress,
+    capture,
   );
   downloaded = downloaded.concat(currentBatch.downloaded);
   skippedKnownDocuments += currentBatch.skippedKnownDocuments;
@@ -176,6 +205,7 @@ export async function downloadBillsInBackground(
     "whose document IDs already exist locally or were downloaded during the current pass.",
     cancellation,
     progress,
+    capture,
   );
   downloaded = downloaded.concat(archivedBatch.downloaded);
   skippedKnownDocuments += archivedBatch.skippedKnownDocuments;

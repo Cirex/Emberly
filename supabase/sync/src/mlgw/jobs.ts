@@ -78,6 +78,45 @@ export function accountIdByNormalizedNumber(
   return idByNumber;
 }
 
+/**
+ * LAST-RESORT invoice for a bill that still has no file.
+ *
+ * The download layer already tries hard: MLGW's own PDF first, then a real
+ * browser render of the captured bill page. This runs only when BOTH failed —
+ * in practice when no Chromium is available to the worker. It reproduces the
+ * historical behaviour (a Courier text transcript of the parsed page text) so a
+ * missing renderer degrades invoice *fidelity* and never loses a bill.
+ *
+ * The self-contained HTML capture of the page is stored regardless, by the
+ * downloader, so the bill's real appearance survives even here.
+ *
+ * Returns true when a transcript was written.
+ */
+export async function writeTranscriptInvoiceFallback(
+  billRow: MlgwBillRow,
+  summary: { billDate: string; accountNumber: string; documentId: string; servicesAt: string; dueDate: string },
+  text: string | undefined,
+  fileStore: BillFileStore,
+): Promise<boolean> {
+  if (billRow.file_path) return false;
+  if (text === undefined || text.trim().length === 0) return false;
+  const name =
+    desiredBillFilename(summary.billDate, summary.accountNumber, summary.documentId, "pdf") ??
+    `mlgw-bill-${billRow.document_id}.pdf`;
+  const bytes = billTextPdf({
+    title: `MLGW Bill - Account ${summary.accountNumber}`,
+    facts: [
+      `Service at ${summary.servicesAt || "(unknown address)"}`,
+      `Bill date ${summary.billDate || "unknown"} - Due ${summary.dueDate || "unknown"} - Document #${billRow.document_id}`,
+    ],
+    text,
+  });
+  const path = await fileStore.put(name, bytes, "application/pdf");
+  if (!path) return false;
+  billRow.file_path = path;
+  return true;
+}
+
 /** Set `mlgw_account_id` on rows whose account number resolves; returns the linked count. */
 export function linkPaymentRowsToAccounts(
   rows: MlgwPaymentRow[],
@@ -167,8 +206,8 @@ export async function syncMlgwBills(params: SyncMlgwBillsParams): Promise<SyncMl
   const parsed = uniqueParsedBills(await parseDownloadedBills(result.downloadedBills));
   const summaries = billSummaries(parsed);
 
-  // Capture text per document, for bills MLGW publishes no PDF for: those get
-  // a generated text-capture PDF below so EVERY bill carries an invoice file.
+  // Capture text per document, for the last-resort transcript below: bills with
+  // neither an MLGW PDF nor a browser-rendered capture still get an invoice file.
   const textByDocId = new Map<string, string>();
   for (const downloaded of result.downloadedBills) {
     const text = downloaded.extractedText?.trim();
@@ -190,31 +229,23 @@ export async function syncMlgwBills(params: SyncMlgwBillsParams): Promise<SyncMl
     accountsById.set(accountRow.id, accountRow);
     const billRow = toBillRow(dto, property);
     if (billRow === null) continue;
-    if (!billRow.file_path) {
-      const text = textByDocId.get(billRow.document_id);
-      if (text) {
-        const name =
-          desiredBillFilename(summary.billDate, summary.accountNumber, summary.documentId, "pdf") ??
-          `mlgw-bill-${billRow.document_id}.pdf`;
-        const bytes = billTextPdf({
-          title: `MLGW Bill - Account ${summary.accountNumber}`,
-          facts: [
-            `Service at ${summary.servicesAt || "(unknown address)"}`,
-            `Bill date ${summary.billDate || "unknown"} - Due ${summary.dueDate || "unknown"} - Document #${billRow.document_id}`,
-          ],
-          text,
-        });
-        const path = await fileStore.put(name, bytes, "application/pdf");
-        if (path) {
-          billRow.file_path = path;
-          generatedInvoices += 1;
-        }
-      }
+    if (
+      await writeTranscriptInvoiceFallback(
+        billRow,
+        summary,
+        textByDocId.get(billRow.document_id),
+        fileStore,
+      )
+    ) {
+      generatedInvoices += 1;
     }
     billRows.push(billRow);
   }
   if (generatedInvoices > 0) {
-    log(`[mlgw-bills] generated ${generatedInvoices} text-capture invoice PDF(s) for bills without an MLGW PDF`);
+    log(
+      `[mlgw-bills] fell back to a text-transcript invoice PDF for ${generatedInvoices} bill(s) — no MLGW PDF and no browser render ` +
+        `(set CHROMIUM_PATH / install Chromium for real bill-page PDFs)`,
+    );
   }
 
   const paymentRows = result.payments

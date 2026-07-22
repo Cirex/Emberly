@@ -30,10 +30,13 @@ import {
   computeUtilityExceptions,
   type ExceptionCopy,
 } from "@/lib/derived/utility-exceptions";
+import { Spark } from "@/components/trends/Spark";
 import { buildWorkData, makeReadySnapshot } from "@/lib/derived/work-boards";
+import { sparkValues } from "@/lib/derived/trends";
 import { activeLocale } from "@/lib/i18n";
 import { useLeases } from "@/lib/stores/leases";
 import { useMlgw } from "@/lib/stores/mlgw";
+import { useSnapshots } from "@/lib/stores/snapshots";
 import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
 import { MUTED, screenHPad } from "@/theme/tokens";
@@ -73,6 +76,7 @@ export default function TodayScreen() {
   const allUnits = useUnits((s) => s.allUnits);
   const workOrders = useWorkOrders((s) => s.workOrders);
   const mlgwData = useMlgw((s) => s.data);
+  const snapshots = useSnapshots((s) => s.snapshots);
 
   // "Now" is state, refreshed whenever the tab regains focus — calendar math
   // stays render-pure and still tracks the day across a long-lived session.
@@ -114,21 +118,34 @@ export default function TodayScreen() {
 
   const metrics: BoardMetric[] = useMemo(() => {
     const raw = buildTodayMetrics({ units: unitFactsList, leases, expirationRows90: expirationRows, nowMs });
+    // Occupancy and balances now open the Trends sheet — they carry history
+    // sparklines, and the trend IS the story those two numbers tell.
     const target: Record<string, Parameters<typeof router.push>[0]> = {
-      occupancy: "/(tabs)/property-map",
-      balances: "/(tabs)/delinquency",
+      occupancy: "/trends",
+      balances: "/trends",
       moveIns30: "/(tabs)/leasing",
       expiring60: "/(tabs)/leasing",
     };
-    return raw.map((m) => ({
-      value: m.value,
-      tint: m.tint,
-      label: t(m.labelKey),
-      caption: m.captionKey ? t(m.captionKey, m.captionParams) : undefined,
-      onPress: () => openCard(`metric:${m.key}`, target[m.key]),
-    }));
+    // Per the approved mockup: sparklines on occupancy + balances, rendered
+    // only once ≥14 daily snapshots exist (Spark self-gates via sparkValues).
+    const sparkPick: Record<string, (s: (typeof snapshots)[number]) => number | null> = {
+      occupancy: (s) => s.occupancyPct,
+      balances: (s) => s.balanceTotal,
+    };
+    return raw.map((m) => {
+      const pick = sparkPick[m.key];
+      const values = pick ? sparkValues(snapshots, pick, nowMs) : null;
+      return {
+        value: m.value,
+        tint: m.tint,
+        label: t(m.labelKey),
+        caption: m.captionKey ? t(m.captionKey, m.captionParams) : undefined,
+        spark: values ? <Spark points={values} tint={m.tint ?? "#33A666"} /> : undefined,
+        onPress: () => openCard(`metric:${m.key}`, target[m.key]),
+      };
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unitFactsList, leases, expirationRows, t]);
+  }, [unitFactsList, leases, expirationRows, snapshots, t]);
 
   const runway: RunwaySummary = useMemo(() => {
     const in60 = expirationRows.filter((r) => r.daysLeft <= 60);

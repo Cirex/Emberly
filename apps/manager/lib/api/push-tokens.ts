@@ -41,7 +41,7 @@ export interface RegisterPushTokenInput {
   token: string;
   platform: PushPlatform;
   /** Kinds this device has switched on; never empty (all-off unregisters). */
-  alertKinds: ReadonlyArray<ManagerAlertKind>;
+  alertKinds: readonly ManagerAlertKind[];
 }
 
 /** POST the Expo push token; true only when the server acknowledged it. */

@@ -6,6 +6,8 @@ import Constants from "expo-constants";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import { capture, resetAnalytics } from "@/lib/analytics";
 import type { AppLanguage } from "@/lib/i18n";
+import { syncManagerPushRegistration, unregisterManagerPush } from "@/lib/push";
+import { MANAGER_ALERT_KINDS, type ManagerAlertKind } from "@/lib/push-routing";
 import { useConfig } from "@/lib/stores/config";
 import { useSettings } from "@/lib/stores/settings";
 import { useUnits } from "@/lib/stores/units";
@@ -23,6 +25,15 @@ const LANGUAGE_OPTIONS: { id: AppLanguage; label: string }[] = [
 ];
 
 const ACCENT_IDS = Object.keys(ACCENT_THEMES) as AccentThemeId[];
+
+/** snake_case alert kind → the settings catalog's camelCase key stem. */
+const ALERT_KIND_I18N: Record<ManagerAlertKind, string> = {
+  application_received: "applicationReceived",
+  lease_signed: "leaseSigned",
+  balance_threshold: "balanceThreshold",
+  eviction_milestone: "evictionMilestone",
+  utility_spike: "utilitySpike",
+};
 
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -94,6 +105,28 @@ function Segments<T extends string>({
   );
 }
 
+/** Pill toggle — same control as the maintenance app's settings. */
+function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <Pressable
+      onPress={() => onChange(!value)}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+      style={{
+        width: 52,
+        height: 30,
+        borderRadius: 16,
+        padding: 3,
+        backgroundColor: value ? "rgba(162,169,33,0.85)" : "rgba(9,27,84,0.14)",
+        alignItems: value ? "flex-end" : "flex-start",
+        justifyContent: "center",
+      }}
+    >
+      <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: "#FFFFFF" }} />
+    </Pressable>
+  );
+}
+
 /** One tappable accent swatch; selected gets the navy ring. */
 function AccentSwatch({ id, selected, onPress }: { id: AccentThemeId; selected: boolean; onPress: () => void }) {
   const rgb = ACCENT_THEMES[id].header;
@@ -155,7 +188,18 @@ export default function Settings() {
     setSyncBusy(false);
   };
 
+  // Persist the toggle locally, then mirror the new kind list to the server —
+  // filtering is server-side (a backgrounded push is presented by the OS
+  // before any app code runs), so the registration row must carry it.
+  const onAlertToggle = (kind: ManagerAlertKind, enabled: boolean) => {
+    settings.setAlertKind(kind, enabled);
+    void syncManagerPushRegistration({ baseUrl, token });
+  };
+
   const onSignOut = async () => {
+    // Delete this device's push token while the staff token still
+    // authenticates the call — after signOut() the DELETE would 401.
+    await unregisterManagerPush({ baseUrl, token });
     // Record the sign-out while still identified, then clear the identity so
     // later events aren't attributed to this staff member.
     capture("signed_out");
@@ -235,6 +279,22 @@ export default function Settings() {
         <Row label={t("settings.language")}>
           <Segments value={settings.language} options={LANGUAGE_OPTIONS} onChange={settings.setLanguage} />
         </Row>
+      </AppCardSurface>
+
+      <SectionLabel>{t("settings.alerts")}</SectionLabel>
+      <AppCardSurface kind="panel" style={{ paddingHorizontal: 18, paddingVertical: 4 }}>
+        {MANAGER_ALERT_KINDS.map((kind) => (
+          <Row
+            key={kind}
+            label={t(`settings.alertKind.${ALERT_KIND_I18N[kind]}`)}
+            sub={t(`settings.alertKind.${ALERT_KIND_I18N[kind]}Sub`)}
+          >
+            <Toggle
+              value={settings.alerts[kind] !== false}
+              onChange={(enabled) => onAlertToggle(kind, enabled)}
+            />
+          </Row>
+        ))}
       </AppCardSurface>
 
       <SectionLabel>{t("settings.data")}</SectionLabel>

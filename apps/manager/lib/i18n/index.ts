@@ -5,6 +5,7 @@ import { delinquency } from "./catalogs/delinquency";
 import { leasing } from "./catalogs/leasing";
 import { map } from "./catalogs/map";
 import { people } from "./catalogs/people";
+import { reports } from "./catalogs/reports";
 import { settings } from "./catalogs/settings";
 import { trends } from "./catalogs/trends";
 import { today } from "./catalogs/today";
@@ -33,7 +34,7 @@ import { work } from "./catalogs/work";
 
 export type AppLanguage = "en" | "es";
 
-const CATALOGS = [common, today, work, leasing, delinquency, utilities, map, people, settings, trends] as const;
+const CATALOGS = [common, today, work, leasing, delinquency, utilities, map, people, reports, settings, trends] as const;
 
 const en = Object.assign({}, ...CATALOGS.map((c) => c.en)) as Record<string, unknown>;
 const es = Object.assign({}, ...CATALOGS.map((c) => c.es)) as Record<string, unknown>;

@@ -30,12 +30,16 @@ import {
   computeUtilityExceptions,
   type ExceptionCopy,
 } from "@/lib/derived/utility-exceptions";
+import { PastReports } from "@/components/reports/PastReports";
+import { ReportCard } from "@/components/reports/ReportCard";
 import { Spark } from "@/components/trends/Spark";
+import { latestReport, pastReports } from "@/lib/derived/reports";
 import { buildWorkData, makeReadySnapshot } from "@/lib/derived/work-boards";
 import { sparkValues } from "@/lib/derived/trends";
 import { activeLocale } from "@/lib/i18n";
 import { useLeases } from "@/lib/stores/leases";
 import { useMlgw } from "@/lib/stores/mlgw";
+import { useReports } from "@/lib/stores/reports";
 import { useSnapshots } from "@/lib/stores/snapshots";
 import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
@@ -77,6 +81,7 @@ export default function TodayScreen() {
   const workOrders = useWorkOrders((s) => s.workOrders);
   const mlgwData = useMlgw((s) => s.data);
   const snapshots = useSnapshots((s) => s.snapshots);
+  const reports = useReports((s) => s.reports);
 
   // "Now" is state, refreshed whenever the tab regains focus — calendar math
   // stays render-pure and still tracks the day across a long-lived session.
@@ -220,6 +225,20 @@ export default function TodayScreen() {
       )}
     />
   );
+  // Owner report: "report ready" card + the past-reports band, both hidden
+  // until the worker has generated at least one report (LinkedFeatureCard).
+  const reportCard = (
+    <LinkedFeatureCard
+      data={latestReport(reports)}
+      render={(report) => <ReportCard report={report} />}
+    />
+  );
+  const pastReportsBand = (
+    <LinkedFeatureCard
+      data={reports.length > 1 ? pastReports(reports) : null}
+      render={(past) => <PastReports reports={past} />}
+    />
+  );
 
   const headerTrailing = wide ? (
     <Text style={{ fontSize: 11, color: MUTED, marginRight: 6 }}>
@@ -260,16 +279,20 @@ export default function TodayScreen() {
             <View style={{ flex: 1, gap: 14 }}>
               {runwayCard}
               {expiringSoonCard}
+              {reportCard}
+              {pastReportsBand}
             </View>
           </View>
         ) : (
           // iPhone: the stacked variant.
           <View style={{ gap: 14 }}>
+            {reportCard}
             {flowCard}
             {makeReadyCard}
             {chartCard}
             {runwayCard}
             {utilitiesCard}
+            {pastReportsBand}
           </View>
         )}
       </ScrollView>

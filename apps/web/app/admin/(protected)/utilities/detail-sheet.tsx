@@ -175,7 +175,9 @@ export function DetailSheet({
                   line={`${carriedForward.billCount} ${carriedForward.billCount === 1 ? "bill" : "bills"} carrying ${money(carriedForward.total)} forward after ${shortDate(carriedForward.since)}`}
                 />
               ) : null}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px,1fr))", gap: "12px 20px", fontSize: 12 }}>
+              {/* XMS lays the facts on a fixed 4-across grid: one row of unit/
+                  status/tenant/move-in, a second row of the remaining dates. */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: "14px 20px", fontSize: 12 }}>
                 <Field k="Matched Unit" v={`Unit ${detail.unit.unit_number}`} />
                 <Field k="Occupancy Status" v={detail.unit.occupancy_status ?? "—"} />
                 <Field k="Tenant" v={detail.unit.tenant_names.join(", ") || "—"} />
@@ -196,15 +198,23 @@ export function DetailSheet({
             ) : null}
           </Panel>
           <Panel icon="📊" title="Current Charge Mix" subtitle="Service totals from the selected bill" padding={14}>
-            {currentSegments.map((s) => (
-              <div key={s.key}>
-                <div style={{ fontSize: 11.5, fontWeight: 600, color: T.muted, margin: "10px 0 4px" }}>{s.label}</div>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                  <span style={{ width: `${Math.max((s.amount / maxSegment) * 82, 4)}%`, height: 26, borderRadius: 6, background: SEGMENT_FILL[s.key], display: "inline-block" }} />
-                  <span style={{ fontSize: 11, fontWeight: 700, marginLeft: 8, whiteSpace: "nowrap", color: T.ink, ...NUM }}>{money(s.amount)}</span>
+            {/* XMS row structure: hairline-separated rows — label above a
+                full-width bar track, amount in a right-aligned column. */}
+            <div style={{ borderBottom: currentSegments.length > 0 ? `1px solid ${T.line}` : "none" }}>
+              {currentSegments.map((s) => (
+                <div key={s.key} style={{ borderTop: `1px solid ${T.line}`, padding: "9px 0 11px" }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, color: T.muted, marginBottom: 5 }}>{s.label}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ width: `${Math.max((s.amount / maxSegment) * 100, 4)}%`, height: 26, borderRadius: 6, background: SEGMENT_FILL[s.key], display: "block" }} />
+                    </span>
+                    <span style={{ width: 64, textAlign: "right", fontSize: 11.5, fontWeight: 700, whiteSpace: "nowrap", color: T.ink, ...NUM }}>
+                      {money(s.amount)}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
             {currentSegments.length === 0 ? (
               <div style={{ padding: 24, textAlign: "center", fontSize: 12, color: T.muted }}>No charge breakdown on this bill.</div>
             ) : null}

@@ -128,6 +128,14 @@ export function SpendChart({ series, goal }: { series: MonthPoint[]; goal: numbe
   );
 }
 
+/** Round a raw interval up to a chart-friendly 1/2/2.5/5 × 10ⁿ step. */
+function niceStep(raw: number): number {
+  const power = 10 ** Math.floor(Math.log10(Math.max(raw, 1e-6)));
+  const unit = raw / power;
+  const nice = unit <= 1 ? 1 : unit <= 2 ? 2 : unit <= 2.5 ? 2.5 : unit <= 5 ? 5 : 10;
+  return nice * power;
+}
+
 /** Catmull-Rom-ish smoothing via midpoint quadratics — visually matches the
  *  artifact's smoothed path without a curve library. */
 function smoothPath(pts: Array<{ x: number; y: number }>): string {
@@ -164,11 +172,15 @@ export function HistoryChart({
   if (dated.length === 0) {
     return <div style={{ padding: 24, textAlign: "center", fontSize: 12, color: T.muted }}>No amount history yet.</div>;
   }
+  // XMS's axis: round-number gridlines from a $0 baseline (400/300/200/100/0),
+  // not raw data values — pick a 1/2/2.5/5×10ⁿ step targeting ~4 bands.
   const max = Math.max(...dated.map((b) => b.amount_due ?? 0), 1);
-  const min = Math.min(...dated.map((b) => b.amount_due ?? 0), 0);
-  const span = Math.max(max - min, 1);
+  const step = niceStep(max / 4);
+  const top = Math.max(Math.ceil(max / step) * step, step);
+  const gridVals: number[] = [];
+  for (let v = top; v >= 0; v -= step) gridVals.push(v);
   const x = (i: number) => left + (dated.length === 1 ? 0 : (i / (dated.length - 1)) * (right - left));
-  const y = (v: number) => floorY - ((v - min) / span) * (floorY - topY);
+  const y = (v: number) => floorY - (v / top) * (floorY - topY);
   const pts = dated.map((b, i) => ({ x: x(i), y: y(b.amount_due ?? 0) }));
   const line = smoothPath(pts);
   const area = `${line} L${pts[pts.length - 1].x} ${floorY + 4} L${pts[0].x} ${floorY + 4} Z`;
@@ -192,10 +204,6 @@ export function HistoryChart({
       if (!ticks.some((t) => t.label === label)) ticks.push({ x: x(i), label });
     }
   }
-  // Dedupe: with a flat history (every bill the same amount) max, mid, and min
-  // collapse to one value — duplicate keys and stacked labels otherwise.
-  const gridVals = [...new Set([max, (max + min) / 2, min > 0 ? min : (max + min) / 4])];
-
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="Bill amount history">
       {gridVals.map((v) => (

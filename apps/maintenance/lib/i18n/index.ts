@@ -463,6 +463,12 @@ const en = {
     toastAdded: "Added to your path as stop {{position}}",
     undo: "Undo",
   },
+  translation: {
+    badge: "Translated",
+    viewOriginal: "View original",
+    hideOriginal: "Hide original",
+    originalLabel: "Original · English",
+  },
 };
 
 /** Spanish catalog — mirrors `en` key-for-key. */
@@ -908,6 +914,12 @@ const es: typeof en = {
     toastClosed_other: "Se cerraron {{count}} órdenes de trabajo · {{unit}}",
     toastAdded: "Agregada a tu ruta como parada {{position}}",
     undo: "Deshacer",
+  },
+  translation: {
+    badge: "Traducido",
+    viewOriginal: "Ver original",
+    hideOriginal: "Ocultar original",
+    originalLabel: "Original · Inglés",
   },
 };
 

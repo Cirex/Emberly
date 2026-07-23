@@ -14,6 +14,7 @@ import { useWorkOrderPhotos } from "@/lib/stores/work-order-photos";
 import { useTags } from "@/lib/stores/tags";
 import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
+import { useWorkOrderTranslationSync } from "@/lib/translation/use-translated";
 
 const REFRESH_MS = 60_000;
 
@@ -105,6 +106,8 @@ function useServerSync() {
 export default function TabsLayout() {
   const { t } = useTranslation();
   useServerSync();
+  // Pre-translate work-order prose on-device as it syncs (no-op in English).
+  useWorkOrderTranslationSync();
 
   return (
     <Tabs

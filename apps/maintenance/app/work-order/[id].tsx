@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { capture } from "@/lib/analytics";
@@ -23,6 +24,7 @@ import { useMapJump } from "@emberly/ui";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { usePendingEdits } from "@/lib/stores/pending-edits";
 import { useWorkOrderPhotos } from "@/lib/stores/work-order-photos";
+import { useTranslated } from "@/lib/translation/use-translated";
 import { CALLBACK_TINT, MUTED, NAVY, OLIVE, OLIVE_TEXT } from "@/theme/tokens";
 
 const SLATE = "#4C556F";
@@ -43,10 +45,14 @@ const OCCUPIED_GREEN = "#33A666";
 export default function WorkOrderDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const dark = useColorScheme().colorScheme === "dark";
   const snapshot = useDerivedSnapshot();
+  const tr = useTranslated();
   const nowMs = Date.now();
+  // Which translated fields have their English original revealed.
+  const [revealed, setRevealed] = useState<{ description?: boolean; notes?: boolean }>({});
 
   const token = useConfig((s) => s.token);
   const baseUrl = useConfig((s) => s.baseUrl);
@@ -135,8 +141,18 @@ export default function WorkOrderDetail() {
   // it (mirroring how pending closes render as closed).
   const overlay = pendingEdits[wo.id]?.patch;
   const technicianShown = technicianDisplayName(overlay?.technician ?? wo.technician);
-  const descriptionShown = overlay?.description ?? wo.raw.notes;
-  const completionNotesShown = overlay?.completionNotes ?? wo.raw.completion_notes;
+  // A pending edit shows the tech's own typed text as-is; only the synced
+  // English source is translated. Title/description/notes flow through `tr`.
+  const titleTr = tr(wo.title || "");
+  const descTr =
+    overlay?.description !== undefined ? { shown: overlay.description, translated: false } : tr(wo.raw.notes);
+  const notesTr =
+    overlay?.completionNotes !== undefined
+      ? { shown: overlay.completionNotes, translated: false }
+      : tr(wo.raw.completion_notes);
+  const descriptionShown = descTr.shown;
+  const completionNotesShown = notesTr.shown;
+  const anyTranslated = titleTr.translated || descTr.translated || notesTr.translated;
 
   const statusColor = workOrderStatusColor(wo.status);
   const facts = snapshot.unitIndex.get(wo.unitNumber);
@@ -221,7 +237,7 @@ export default function WorkOrderDetail() {
               paddingRight: 44,
             }}
           >
-            {wo.title || "Untitled work order"}
+            {titleTr.shown || "Untitled work order"}
           </Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 7 }}>
             <Text
@@ -285,6 +301,9 @@ export default function WorkOrderDetail() {
             ) : null}
             {pendingClose ? (
               <Chip label="Close pending" color={OLIVE_TEXT} icon="progress-check" emphasized />
+            ) : null}
+            {anyTranslated ? (
+              <Chip label={t("translation.badge")} color={OLIVE_TEXT} icon="translate" emphasized />
             ) : null}
           </View>
         </LinearGradient>
@@ -384,6 +403,15 @@ export default function WorkOrderDetail() {
               <Text style={{ fontSize: 12.5, color: MUTED }}>No description. Tap to add one.</Text>
             )}
           </Pressable>
+          {descTr.translated ? (
+            <OriginalReveal
+              original={wo.raw.notes}
+              revealed={revealed.description ?? false}
+              onToggle={() => setRevealed((r) => ({ ...r, description: !r.description }))}
+              hairline={hairline}
+              t={t}
+            />
+          ) : null}
         </Section>
 
         {/* Technician notes — tap to edit. */}
@@ -403,6 +431,15 @@ export default function WorkOrderDetail() {
               </Text>
             )}
           </Pressable>
+          {notesTr.translated ? (
+            <OriginalReveal
+              original={wo.raw.completion_notes}
+              revealed={revealed.notes ?? false}
+              onToggle={() => setRevealed((r) => ({ ...r, notes: !r.notes }))}
+              hairline={hairline}
+              t={t}
+            />
+          ) : null}
         </Section>
 
         {/* Related work orders */}
@@ -732,6 +769,46 @@ function PendingSyncPill() {
     >
       <MaterialCommunityIcons name="progress-check" size={10} color={OLIVE_TEXT} />
       <Text style={{ fontSize: 9, fontWeight: "700", color: OLIVE_TEXT }}>PENDING SYNC</Text>
+    </View>
+  );
+}
+
+/** "View original" toggle under a translated field; expands the English source
+ *  in a hairline-bordered block (mockup: on-device translation, nothing hidden). */
+function OriginalReveal({
+  original,
+  revealed,
+  onToggle,
+  hairline,
+  t,
+}: {
+  original: string;
+  revealed: boolean;
+  onToggle: () => void;
+  hairline: string;
+  t: (key: string) => string;
+}) {
+  return (
+    <View style={{ marginTop: 9 }}>
+      <Pressable
+        onPress={onToggle}
+        accessibilityRole="button"
+        hitSlop={6}
+        style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
+      >
+        <MaterialCommunityIcons name="translate" size={12} color={OLIVE_TEXT} />
+        <Text style={{ fontSize: 11, fontWeight: "800", color: OLIVE_TEXT }}>
+          {revealed ? t("translation.hideOriginal") : t("translation.viewOriginal")}
+        </Text>
+      </Pressable>
+      {revealed ? (
+        <View style={{ marginTop: 7, borderLeftWidth: 2, borderLeftColor: hairline, paddingLeft: 11 }}>
+          <Text style={{ fontSize: 9, fontWeight: "800", letterSpacing: 0.8, color: MUTED }}>
+            {t("translation.originalLabel").toUpperCase()}
+          </Text>
+          <Text style={{ fontSize: 12, color: MUTED, marginTop: 3, lineHeight: 17 }}>{original}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }

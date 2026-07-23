@@ -133,6 +133,23 @@ create table guest_pass_bans (
 create index guest_pass_bans_resident_id_idx on guest_pass_bans (resident_id);
 
 -- ------------------------------------------------------------
+-- Admin: units suspended from guest visits (no enrollment needed)
+-- ------------------------------------------------------------
+-- Keys the suspension to the ResMan unit so households that never registered
+-- a resident login can still have guest visits disabled. unit_number is the
+-- bridge to the first-party side (residents.unit_id / entry_logs), which is
+-- where creation and verify-pass enforce it.
+create table guest_pass_unit_bans (
+  resman_unit_id text primary key,
+  unit_number text not null,
+  reason text,
+  banned_by text not null,
+  banned_at timestamptz not null default now()
+);
+
+create index guest_pass_unit_bans_unit_number_idx on guest_pass_unit_bans (unit_number);
+
+-- ------------------------------------------------------------
 -- Row-Level Security (RLS)
 -- ------------------------------------------------------------
 -- Enable RLS on all tables; service role bypasses RLS
@@ -141,6 +158,7 @@ alter table guest_passes enable row level security;
 alter table entry_logs enable row level security;
 alter table entry_log_photos enable row level security;
 alter table guest_pass_bans enable row level security;
+alter table guest_pass_unit_bans enable row level security;
 
 -- Allow service role full access (used by API routes)
 -- Public/anon access is denied by default with RLS enabled and no policies

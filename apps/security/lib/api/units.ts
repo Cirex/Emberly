@@ -70,6 +70,54 @@ export type OccupancyFilter = "Occupied" | "Vacant" | "Notice";
  */
 export type LeaseStatusFilter = "Notice to Vacate" | "Under Eviction";
 
+const GuestBansSchema = z.object({
+  data: z.object({ unitNumbers: z.array(z.string()) }),
+});
+
+const MetricsSchema = z.object({
+  data: z.object({
+    entriesToday: z.number(),
+    entriesGuestsToday: z.number(),
+    vehicleCount: z.number(),
+  }),
+});
+export type PropertyMetrics = z.infer<typeof MetricsSchema>["data"];
+
+/** Property-wide headline counts for the tenant dashboard cards (one request). */
+export async function getPropertyMetrics(config: ResmanConfig): Promise<PropertyMetrics> {
+  const res = await fetch(`${config.baseUrl}/api/resman/metrics`, {
+    headers: {
+      Authorization: `Bearer ${config.scannerKey}`,
+      [SCANNER_KEY_HEADER]: config.scannerKey,
+    },
+  });
+  if (res.status === 401 || res.status === 403) {
+    if (res.status === 401) handleUnauthorizedScannerKey();
+    throw new Error("Scanner not authorized for the ResMan API");
+  }
+  if (!res.ok) throw new Error(`Failed to load metrics (${res.status})`);
+  return MetricsSchema.parse(await res.json()).data;
+}
+
+/**
+ * Unit numbers where guest visits are disabled — unit-level suspensions plus
+ * resident-level bans, unioned server-side. Backs the "No Guests" filter chip.
+ */
+export async function listGuestBannedUnits(config: ResmanConfig): Promise<string[]> {
+  const res = await fetch(`${config.baseUrl}/api/resman/units/guest-bans`, {
+    headers: {
+      Authorization: `Bearer ${config.scannerKey}`,
+      [SCANNER_KEY_HEADER]: config.scannerKey,
+    },
+  });
+  if (res.status === 401 || res.status === 403) {
+    if (res.status === 401) handleUnauthorizedScannerKey();
+    throw new Error("Scanner not authorized for the ResMan API");
+  }
+  if (!res.ok) throw new Error(`Failed to load guest bans (${res.status})`);
+  return GuestBansSchema.parse(await res.json()).data.unitNumbers;
+}
+
 export async function listUnits(
   params: {
     limit?: number;

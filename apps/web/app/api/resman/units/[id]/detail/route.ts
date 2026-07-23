@@ -50,7 +50,7 @@ export async function GET(request: Request, context: DetailContext): Promise<Nex
       loadVehicles(supabase, unit.current_lease_id as string | null),
       loadLastEntry(supabase, unit.number as string),
       loadActiveGuestPasses(supabase, residents),
-      loadGuestAccess(supabase, residents),
+      loadGuestAccess(supabase, unit.resman_unit_id as string, residents),
     ]);
 
     return NextResponse.json({ data: { vehicles, lastEntry, guestPasses, guestAccess } });
@@ -130,11 +130,20 @@ async function loadResidents(supabase: UntypedSupabase, unitNumber: string): Pro
  * Whether this unit's residents may have guests at all.
  *
  * The counts are the raw facts; the guard app collapses them to Yes/No (see
- * `guestsAllowedLabel`), where guests are allowed unless an admin has
- * explicitly banned someone at this unit from issuing passes (`guest_pass_bans`).
+ * `guestsAllowedLabel`), where guests are allowed unless an admin has banned
+ * someone at this unit from issuing passes (`guest_pass_bans`) or suspended
+ * the unit itself (`guest_pass_unit_bans` — which needs no enrollment at all).
  */
-async function loadGuestAccess(supabase: UntypedSupabase, residents: Resident[]) {
-  if (residents.length === 0) return { residents: 0, allowed: 0, banned: 0 };
+async function loadGuestAccess(supabase: UntypedSupabase, unitId: string, residents: Resident[]) {
+  const { data: unitBan, error: unitBanError } = await supabase
+    .from("guest_pass_unit_bans")
+    .select("resman_unit_id")
+    .eq("resman_unit_id", unitId)
+    .maybeSingle();
+  if (unitBanError) throw unitBanError;
+  const unitBanned = Boolean(unitBan);
+
+  if (residents.length === 0) return { residents: 0, allowed: 0, banned: 0, unitBanned };
 
   const { data, error } = await supabase
     .from("guest_pass_bans")
@@ -149,8 +158,9 @@ async function loadGuestAccess(supabase: UntypedSupabase, residents: Resident[])
   const banned = new Set((data ?? []).map((b: Record<string, unknown>) => b.resident_id as string));
   return {
     residents: residents.length,
-    allowed: residents.filter((r) => r.accessAllowed && !banned.has(r.id)).length,
+    allowed: unitBanned ? 0 : residents.filter((r) => r.accessAllowed && !banned.has(r.id)).length,
     banned: banned.size,
+    unitBanned,
   };
 }
 

@@ -177,9 +177,10 @@ function PlateChip({ plate, state }: { plate: string; state: string }) {
  * "Guests Allowed" — Yes or No, nothing else. This is read with someone waiting
  * at the gate, so it answers the question rather than reporting the inputs to it.
  *
- * Guests are allowed by default. The only thing that flips it to No is an
- * explicit ban (`guest_pass_bans`) against someone at this unit — enrollment
- * status and access standing don't factor in.
+ * Guests are allowed by default. It flips to No on an explicit ban against
+ * someone at this unit (`guest_pass_bans`) or a suspension of the unit itself
+ * (`guest_pass_unit_bans`, which covers households that never enrolled) —
+ * enrollment status and access standing don't factor in.
  */
 export function guestsAllowedLabel(access: TenantDetail["guestAccess"] | undefined): {
   value: string;
@@ -187,7 +188,7 @@ export function guestsAllowedLabel(access: TenantDetail["guestAccess"] | undefin
 } {
   // Only before the detail fetch lands: unknown is not the same claim as No.
   if (!access) return { value: "—", muted: true };
-  return { value: access.banned > 0 ? "No" : "Yes", muted: false };
+  return { value: access.banned > 0 || access.unitBanned ? "No" : "Yes", muted: false };
 }
 
 /** "Expires in 6h" / "Expires in 24m" — a guard cares how long it has left. */

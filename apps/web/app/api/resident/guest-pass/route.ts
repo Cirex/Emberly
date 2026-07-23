@@ -79,6 +79,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Unit-level suspension: keyed to the ResMan unit (by number, the only
+    // bridge residents.unit_id has), so it applies whether or not anyone at
+    // the unit ever registered a login.
+    const unitNumber = (resident.unit_id ?? "").trim();
+    if (unitNumber) {
+      const { data: unitBan } = await supabase
+        .from("guest_pass_unit_bans")
+        .select("reason")
+        .eq("unit_number", unitNumber)
+        .limit(1)
+        .maybeSingle();
+
+      if (unitBan) {
+        return NextResponse.json(
+          {
+            error: "Guest pass creation is suspended for your unit",
+            reason: unitBan.reason ?? "Contact your property manager for details",
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     const normalizedGuestEmail = parsed.data.email.toLowerCase();
     const nowIso = new Date().toISOString();
     const { data: existingActivePass, error: existingPassError } = await supabase

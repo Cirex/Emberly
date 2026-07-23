@@ -12,6 +12,8 @@ export type AdminAuditAction =
   | "resident.suspend_access"
   | "resident.ban_guest_pass"
   | "resident.unban_guest_pass"
+  | "unit.ban_guest_pass"
+  | "unit.unban_guest_pass"
   | "guest_pass.update"
   | "alert.resolve"
   | "scanner.create"
@@ -20,7 +22,7 @@ export type AdminAuditAction =
 
 export type AdminAuditInput = {
   action: AdminAuditAction;
-  targetType: "resident" | "guest_pass" | "alert" | "scanner";
+  targetType: "resident" | "guest_pass" | "alert" | "scanner" | "resman_unit";
   targetId: string;
   metadata?: Record<string, unknown>;
 };

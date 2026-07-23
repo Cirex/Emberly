@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import type {
   ResmanLeaseSummary,
   ResmanResidentSummary,
@@ -11,6 +12,8 @@ import type {
   ResmanVehicle,
 } from "@/lib/admin-resman-units";
 import type { ResmanWorkOrderRow } from "@/lib/admin-resman-work-orders";
+import { AdminButton } from "../../../_components/admin-ui";
+import { fetchAdminJson } from "../../_components/admin-fetch";
 
 import { UnitTagsSection } from "./unit-tags-section";
 
@@ -444,16 +447,98 @@ function FinancialsRail({ unit }: { unit: ResmanUnitFull }) {
   );
 }
 
+/**
+ * Suspend / re-enable guest visits for the whole unit. Unlike the per-resident
+ * ban this needs no enrolled login, so it works for households that never
+ * registered — the gap that made never-logged-in tenants unbannable.
+ */
+function GuestSuspendControl({ unit, unitBan }: { unit: ResmanUnitFull; unitBan: ResmanUnitDetail["unitBan"] }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function mutate(method: "POST" | "DELETE") {
+    setLoading(true);
+    setError("");
+    try {
+      await fetchAdminJson(`/api/admin/resman-units/${unit.resman_unit_id}/ban-guest-pass`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        ...(method === "POST" ? { body: JSON.stringify({ reason }) } : {}),
+      });
+      setOpen(false);
+      setReason("");
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "An error occurred");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (unitBan) {
+    return (
+      <div className="mt-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2">
+        <p className="text-[11px] leading-snug text-red-700">
+          Guest visits suspended by <span className="font-semibold">{unitBan.banned_by}</span> on {date(unitBan.banned_at)}
+          {unitBan.reason ? <> — {unitBan.reason}</> : null}. Passes can’t be created and existing ones are denied at the gate.
+        </p>
+        {error ? <p className="mt-1 text-[11px] font-semibold text-red-700">{error}</p> : null}
+        <AdminButton variant="ghost" className="mt-1.5" disabled={loading} onClick={() => void mutate("DELETE")}>
+          {loading ? "Re-enabling…" : "Re-enable guest visits"}
+        </AdminButton>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1.5">
+      {open ? (
+        <div className="rounded-lg border border-line bg-primary/[0.03] px-2.5 py-2">
+          <p className="mb-1.5 text-[11px] leading-snug text-primary/70">
+            Blocks new guest passes for everyone at this unit — enrolled or not — and denies existing passes at the gate.
+          </p>
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reason (optional, shown to the resident)"
+            maxLength={500}
+            className="mb-1.5 w-full rounded-md border border-line bg-white px-2 py-1.5 text-[12px] text-textNavy outline-none focus:border-primary/40"
+          />
+          {error ? <p className="mb-1.5 text-[11px] font-semibold text-red-700">{error}</p> : null}
+          <div className="flex gap-2">
+            <AdminButton variant="danger" disabled={loading} onClick={() => void mutate("POST")}>
+              {loading ? "Suspending…" : "Suspend"}
+            </AdminButton>
+            <AdminButton variant="ghost" disabled={loading} onClick={() => setOpen(false)}>
+              Cancel
+            </AdminButton>
+          </div>
+        </div>
+      ) : (
+        <AdminButton variant="ghost" onClick={() => setOpen(true)}>
+          Suspend guest visits…
+        </AdminButton>
+      )}
+    </div>
+  );
+}
+
 function UnitFactsRail({
   unit,
   vehicles,
   guestsAllowed,
   guestBans,
+  unitBan,
 }: {
   unit: ResmanUnitFull;
   vehicles: ResmanVehicle[];
   guestsAllowed: boolean;
   guestBans: number;
+  unitBan: ResmanUnitDetail["unitBan"];
 }) {
   const accessible = [
     unit.hearing_accessible ? "Hearing" : null,
@@ -471,10 +556,15 @@ function UnitFactsRail({
         k="Guests allowed"
         v={
           <span style={{ color: guestsAllowed ? "var(--color-ok)" : "var(--color-crit)" }}>
-            {guestsAllowed ? "Yes" : `No · ${guestBans} ban${guestBans === 1 ? "" : "s"}`}
+            {guestsAllowed
+              ? "Yes"
+              : unitBan
+                ? "No · unit suspended"
+                : `No · ${guestBans} ban${guestBans === 1 ? "" : "s"}`}
           </span>
         }
       />
+      <GuestSuspendControl unit={unit} unitBan={unitBan} />
       {unit.pets_permitted != null ? <KV k="Pets permitted" v={unit.pets_permitted ? "Yes" : "No"} /> : null}
       {accessible.length > 0 ? <KV k="Accessible" v={accessible.join(", ")} /> : null}
       {unit.affordable_unit ? <KV k="Affordable unit" v="Yes" /> : null}
@@ -631,7 +721,7 @@ export function UnitDetailView({ detail }: { detail: ResmanUnitDetail }) {
         <div className="grid gap-3">
           <LeaseRail unit={unit} />
           <FinancialsRail unit={unit} />
-          <UnitFactsRail unit={unit} vehicles={vehicles} guestsAllowed={guestsAllowed} guestBans={guestBans} />
+          <UnitFactsRail unit={unit} vehicles={vehicles} guestsAllowed={guestsAllowed} guestBans={guestBans} unitBan={detail.unitBan} />
           <RailCard title="Data freshness" soft>
             <KV k="Unit synced" v={unit.synced_at ? new Date(unit.synced_at).toLocaleString() : "never"} />
             <KV k="Deep scrape" v={unit.scraped_at ? new Date(unit.scraped_at).toLocaleString() : "—"} />

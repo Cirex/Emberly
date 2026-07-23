@@ -260,6 +260,30 @@ export interface Database {
           },
         ];
       };
+      guest_pass_unit_bans: {
+        Row: {
+          resman_unit_id: string;
+          unit_number: string;
+          reason: string | null;
+          banned_by: string;
+          banned_at: string;
+        };
+        Insert: {
+          resman_unit_id: string;
+          unit_number: string;
+          reason?: string | null;
+          banned_by: string;
+          banned_at?: string;
+        };
+        Update: {
+          resman_unit_id?: string;
+          unit_number?: string;
+          reason?: string | null;
+          banned_by?: string;
+          banned_at?: string;
+        };
+        Relationships: [];
+      };
       scanner_devices: {
         Row: {
           id: string;

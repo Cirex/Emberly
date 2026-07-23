@@ -220,10 +220,13 @@ export type ResmanUnitDetail = {
   vehicles: ResmanVehicle[];
   /**
    * Guests are allowed unless an admin has banned someone at this unit from
-   * issuing passes — the same guest_pass_bans rule the scanner app applies.
+   * issuing passes (guest_pass_bans) or suspended the unit itself
+   * (guest_pass_unit_bans) — the same rules the scanner app applies.
    */
   guestsAllowed: boolean;
   guestBans: number;
+  /** The unit-level suspension, when one is in force. */
+  unitBan: { reason: string | null; banned_by: string; banned_at: string } | null;
 };
 
 const UNIT_FULL_SELECT =
@@ -314,7 +317,7 @@ export async function getResmanUnitDetail(unitId: string): Promise<ResmanUnitDet
   }
 
   const personLeaseIds = residents.map((r) => r.resman_person_lease_id);
-  const [vehicleRes, banRes] = await Promise.all([
+  const [vehicleRes, banRes, unitBanRes] = await Promise.all([
     personLeaseIds.length > 0
       ? supabase
           .from("resman_lease_vehicles")
@@ -326,11 +329,27 @@ export async function getResmanUnitDetail(unitId: string): Promise<ResmanUnitDet
     fpResidentIds.length > 0
       ? supabase.from("guest_pass_bans").select("resident_id").in("resident_id", fpResidentIds)
       : Promise.resolve({ data: [] }),
+    supabase
+      .from("guest_pass_unit_bans")
+      .select("reason, banned_by, banned_at")
+      .eq("resman_unit_id", unitId)
+      .maybeSingle(),
   ]);
   const vehicles = (vehicleRes.data ?? []) as unknown as ResmanVehicle[];
   const guestBans = (banRes.data ?? []).length;
+  const unitBan = (unitBanRes.data ?? null) as ResmanUnitDetail["unitBan"];
 
-  return { unit, leases, residents, transactions, workOrders, vehicles, guestsAllowed: guestBans === 0, guestBans };
+  return {
+    unit,
+    leases,
+    residents,
+    transactions,
+    workOrders,
+    vehicles,
+    guestsAllowed: guestBans === 0 && !unitBan,
+    guestBans,
+    unitBan,
+  };
 }
 
 // MARK: - Lease detail (lease + residents-with-tabs + ledger)

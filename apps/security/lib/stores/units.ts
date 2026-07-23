@@ -5,16 +5,19 @@ import {
   type LeaseStatusFilter,
   type ResmanConfig,
   type ResmanUnit,
+  listGuestBannedUnits,
   listUnits,
 } from "@/lib/api/units";
 import { unitMatchesSearch } from "@emberly/core";
 
 /**
- * What the chips select. "Occupied"/"Vacant" are occupancy statuses; the other
+ * What the chips select. "Occupied"/"Vacant" are occupancy statuses; the next
  * two are lease statuses, because ResMan files both under the one occupancy
  * value "Notice" and only the lease status tells an eviction from a notice.
+ * "No Guests" is first-party: units whose guest visits an admin disabled
+ * (unit-level or resident-level ban), filtered against `bannedUnits`.
  */
-export type UnitFilter = "all" | "Occupied" | "Vacant" | LeaseStatusFilter;
+export type UnitFilter = "all" | "Occupied" | "Vacant" | LeaseStatusFilter | "No Guests";
 
 const LEASE_STATUS_FILTERS: readonly UnitFilter[] = ["Notice to Vacate", "Under Eviction"];
 
@@ -28,6 +31,8 @@ interface UnitsState {
   /** Full unfiltered set for the Property Map (paginated past the 200 cap). */
   allUnits: ResmanUnit[];
   loadingAll: boolean;
+  /** Unit numbers with guest visits disabled — backs the "No Guests" chip. */
+  bannedUnits: string[];
   setFilter: (f: UnitFilter) => void;
   setSearch: (q: string) => void;
   load: (config: ResmanConfig) => Promise<void>;
@@ -58,6 +63,58 @@ async function fetchAll(config: ResmanConfig): Promise<ResmanUnit[]> {
   return acc;
 }
 
+/** The chips' meaning, applied client-side: same columns the server params filter on. */
+function matchesFilter(u: ResmanUnit, filter: UnitFilter, banned: ReadonlySet<string>): boolean {
+  if (filter === "all") return true;
+  if (filter === "Occupied" || filter === "Vacant") return u.occupancy_status === filter;
+  if (filter === "No Guests") return banned.has(u.number.trim());
+  return u.lease_status === filter;
+}
+
+/** Guest-ban fetch is additive: on failure the last known set stands, and the
+ *  chip degrades to stale rather than the whole list erroring. */
+async function fetchBannedUnits(config: ResmanConfig, fallback: string[]): Promise<string[]> {
+  try {
+    return await listGuestBannedUnits(config);
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * The rows a given view resolves to — pure, so the screen can `useMemo` it and
+ * recompute only when its inputs actually change rather than on every render.
+ * `store.visible()` delegates here for callers that want the current snapshot.
+ */
+export function computeVisibleUnits(input: {
+  units: ResmanUnit[];
+  allUnits: ResmanUnit[];
+  search: string;
+  filter: UnitFilter;
+  bannedUnits: string[];
+}): ResmanUnit[] {
+  const { units, allUnits, search, filter, bannedUnits } = input;
+  const banned = new Set(bannedUnits);
+  // The FULL cached set is the source whenever it's loaded. The ResMan API pages
+  // at 200 rows, so the server-paged `units` silently truncates any view past
+  // the first page — "All" showed 200 of 878. The chip filters re-apply
+  // client-side on the columns the rows already carry; the paged fetch remains
+  // only as a first-paint fallback before loadAll lands.
+  if (!search.trim()) {
+    // "No Guests" only exists client-side, so it filters whichever set is
+    // loaded rather than ever showing the unfiltered fallback page.
+    if (allUnits.length === 0) {
+      return filter === "No Guests" ? units.filter((u) => matchesFilter(u, filter, banned)) : units;
+    }
+    return allUnits.filter((u) => matchesFilter(u, filter, banned));
+  }
+  // Search scans the whole property regardless of the active chip — the ResMan
+  // API has no text search, so "king" must not miss the Kingsgate block just
+  // because it's on a later page or another chip.
+  const source = allUnits.length > 0 ? allUnits : units;
+  return source.filter((u) => unitMatchesSearch(u, search));
+}
+
 function filterParams(filter: UnitFilter) {
   return {
     limit: PAGE,
@@ -79,6 +136,7 @@ export const useUnits = create<UnitsState>()(
       loading: false,
       allUnits: [],
       loadingAll: false,
+      bannedUnits: [],
 
       setFilter: (filter) => set({ filter }),
       setSearch: (search) => set({ search }),
@@ -89,8 +147,11 @@ export const useUnits = create<UnitsState>()(
         // existing rows stay up while the refresh happens behind them.
         set({ loadingAll: get().allUnits.length === 0, error: undefined });
         try {
-          const acc = await fetchAll(config);
-          set({ allUnits: acc, loadingAll: false });
+          const [acc, banned] = await Promise.all([
+            fetchAll(config),
+            fetchBannedUnits(config, get().bannedUnits),
+          ]);
+          set({ allUnits: acc, bannedUnits: banned, loadingAll: false });
         } catch (err) {
           set({ loadingAll: false, error: err instanceof Error ? err.message : "Failed to load units" });
         }
@@ -111,11 +172,16 @@ export const useUnits = create<UnitsState>()(
         refreshing = true;
         try {
           const { filter } = get();
-          const [all, page] = await Promise.all([fetchAll(config), listUnits(filterParams(filter), config)]);
+          const [all, page, banned] = await Promise.all([
+            fetchAll(config),
+            listUnits(filterParams(filter), config),
+            fetchBannedUnits(config, get().bannedUnits),
+          ]);
           // The state only moves when the data did — a quiet 60s poll must not
           // re-render four screens just to confirm nothing happened.
           const prev = get();
           if (JSON.stringify(all) !== JSON.stringify(prev.allUnits)) set({ allUnits: all });
+          if (JSON.stringify(banned) !== JSON.stringify(prev.bannedUnits)) set({ bannedUnits: banned });
           if (
             prev.filter === filter &&
             (JSON.stringify(page.data) !== JSON.stringify(prev.units) || page.pagination.count !== prev.total)
@@ -130,22 +196,20 @@ export const useUnits = create<UnitsState>()(
         }
       },
 
-      visible: () => {
-        const { units, allUnits, search } = get();
-        if (!search.trim()) return units;
-        // Search the FULL cached set, not just the current page. The ResMan API
-        // has no text search, so a paged `units` (200 rows) would silently hide
-        // every unit past the first page — "king" would miss the Kingsgate block.
-        const source = allUnits.length > 0 ? allUnits : units;
-        return source.filter((u) => unitMatchesSearch(u, search));
-      },
+      visible: () => computeVisibleUnits(get()),
     }),
     {
       name: "emberly-security-units",
       storage: createJSONStorage(() => AsyncStorage),
       // Only the data survives restarts. Flags are per-session, and search is
       // a momentary input, not a preference.
-      partialize: (s) => ({ units: s.units, total: s.total, filter: s.filter, allUnits: s.allUnits }),
+      partialize: (s) => ({
+        units: s.units,
+        total: s.total,
+        filter: s.filter,
+        allUnits: s.allUnits,
+        bannedUnits: s.bannedUnits,
+      }),
     },
   ),
 );

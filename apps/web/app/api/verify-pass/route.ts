@@ -296,6 +296,35 @@ async function verifyGuestPassRecord(
     });
   }
 
+  // Unit-level suspension applies at the gate too: a pass issued before the
+  // unit's guest visits were disabled must not still open the door.
+  const passUnitNumber = (resident.unit_id ?? "").trim();
+  if (passUnitNumber) {
+    const { data: unitBan } = await supabase
+      .from("guest_pass_unit_bans")
+      .select("resman_unit_id")
+      .eq("unit_number", passUnitNumber)
+      .limit(1)
+      .maybeSingle();
+
+    if (unitBan) {
+      await recordAdminAlert(supabase, {
+        alert_type: "guest_pass_denied",
+        severity: "critical",
+        subject_type: "guest_pass",
+        subject_id: pass.id,
+        title: "Guest pass scanned for a suspended unit",
+        detail: `${pass.guest_name}'s guest pass was scanned, but guest visits are suspended for unit ${passUnitNumber}.`,
+        metadata: { scannerId: scannerId ?? null, guestName: pass.guest_name, unitNumber: passUnitNumber },
+      });
+      return NextResponse.json<VerifyResponse>({
+        valid: false,
+        reason: "Guest visits are suspended for this unit",
+        reasonCode: "unit_guests_suspended",
+      });
+    }
+  }
+
   const { data: updatedPass, error: updateError } = await supabase
     .from("guest_passes")
     .update({ used_at: usedAt, status: "used" })

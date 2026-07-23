@@ -63,6 +63,7 @@ function targetHref(log: AdminAuditLog): string | null {
   if (log.target_type === "resident") return `/admin/residents/${log.target_id}`;
   if (log.target_type === "scanner") return "/admin/scanners";
   if (log.target_type === "guest_pass") return "/admin/guest-passes";
+  if (log.target_type === "resman_unit") return `/admin/units/${log.target_id}`;
   return null;
 }
 
@@ -73,6 +74,10 @@ function targetName(log: AdminAuditLog): string {
   if (log.target_type === "scanner") return `scanner ${log.target_id}`;
   if (log.target_type === "resident") return "a resident";
   if (log.target_type === "guest_pass") return "a guest pass";
+  if (log.target_type === "resman_unit") {
+    const unitNumber = auditMetadata(log).unitNumber;
+    return typeof unitNumber === "string" && unitNumber.trim() ? `unit ${unitNumber}` : "a unit";
+  }
   return log.target_id;
 }
 
@@ -83,6 +88,10 @@ function phrase(action: string): { before: string; after: string } {
       return { before: "blocked guest passes for", after: "" };
     case "resident.unban_guest_pass":
       return { before: "re-enabled guest passes for", after: "" };
+    case "unit.ban_guest_pass":
+      return { before: "suspended guest visits for", after: "" };
+    case "unit.unban_guest_pass":
+      return { before: "re-enabled guest visits for", after: "" };
     case "resident.suspend_access":
       return { before: "suspended all access for", after: "" };
     case "resident.require_reauth":

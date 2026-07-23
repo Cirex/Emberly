@@ -12,6 +12,7 @@ import { WorkspaceBackdrop } from "@/components/ui/WorkspaceBackdrop";
 import { posthog } from "@/lib/analytics";
 import { initSentry, Sentry, sentryEnabled } from "@/lib/sentry";
 import { isScannerConfigured, useConfig } from "@/lib/stores/config";
+import { warmPlanShaders } from "@/lib/warm-plan";
 import { useSettings } from "@/lib/stores/settings";
 import { accentVars } from "@/theme/tokens";
 
@@ -59,6 +60,12 @@ function RootLayout() {
   useEffect(() => {
     if (!hydrated) void hydrate();
   }, [hydrated, hydrate]);
+
+  // Compile the property map's Metal shaders behind the Tenants screen so the
+  // map tab's first open never hangs on GrCompileMtlShaderLibrary.
+  useEffect(() => {
+    warmPlanShaders();
+  }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

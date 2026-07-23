@@ -18,6 +18,7 @@ import {
   useFont,
   type SkFont,
   type SkImage,
+  type SkPath,
 } from "@shopify/react-native-skia";
 import { useColorScheme } from "nativewind";
 import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
@@ -356,6 +357,26 @@ export function SkiaMapCanvas({
   const plan = useMemo(() => buildPlanPicture(dark), [dark]);
   const baseScale = width / PAGE_WIDTH;
 
+  // Cone geometry and label metrics are pure functions of the camera row, but
+  // they were rebuilt inline for every camera on every render: a 19-segment
+  // Skia path plus two text-shaping passes each. This component re-renders
+  // whenever a store ticks, so that was the bulk of its render cost.
+  const camGeometry = useMemo(() => {
+    const font = camLabelFont();
+    const out = new Map<string, { cone: SkPath; label: string; labelW: number }>();
+    for (const cam of cameras) {
+      const label = cam.label || "Camera";
+      out.set(cam.id, {
+        cone: makeConePath(cam),
+        label,
+        // Glyph bounds, not just advances — italic-ish faces overhang the
+        // advance width, which is what was clipping the last character.
+        labelW: Math.max(font.getTextWidth(label), font.measureText(label).width),
+      });
+    }
+    return out;
+  }, [cameras]);
+
   const scale = useSharedValue(1);
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
@@ -372,12 +393,13 @@ export function SkiaMapCanvas({
     (x: number, y: number, eff: number) => {
       const w = PAGE_WIDTH * eff;
       const h = PAGE_HEIGHT * eff;
-      // Half a viewport of vertical slack: the map's top edge can be pulled
-      // down to the screen center (and the bottom edge up to it), so edge
-      // units are reachable under the floating chrome. Still hard-bounded.
+      // Half a viewport of slack on both axes: any map edge can be pulled to
+      // the screen center, so edge units are reachable under the floating
+      // chrome and never pinned against the bezel. Still hard-bounded.
+      const slackX = width / 2;
       const slackY = height / 2;
       return {
-        x: Math.min(Math.max(x, Math.min(0, width - w)), Math.max(0, width - w)),
+        x: Math.min(Math.max(x, Math.min(0, width - w) - slackX), Math.max(0, width - w) + slackX),
         y: Math.min(Math.max(y, Math.min(0, height - h) - slackY), Math.max(0, height - h) + slackY),
       };
     },
@@ -419,19 +441,20 @@ export function SkiaMapCanvas({
   ]);
 
   /**
-   * Keep the page on screen: when the map is larger than the viewport the
-   * translation stays within [viewport - map, 0]; when smaller, within
-   * [0, gap] — either way it can never be flung out of view.
+   * Keep the page on screen: the translation stays within the fitted bounds
+   * plus half a viewport of slack per axis — edges can reach the screen
+   * center, but the map can never be flung fully out of view.
    */
   function clampPan(x: number, y: number, eff: number): { x: number; y: number } {
     "worklet";
     const w = PAGE_WIDTH * eff;
     const h = PAGE_HEIGHT * eff;
-    // Same vertical slack as clampPanJS: top/bottom edges may reach the
-    // screen center so edge units clear the floating chrome.
+    // Same slack as clampPanJS: any edge may reach the screen center so edge
+    // units clear the floating chrome and the bezel.
+    const slackX = width / 2;
     const slackY = height / 2;
-    const loX = Math.min(0, width - w);
-    const hiX = Math.max(0, width - w);
+    const loX = Math.min(0, width - w) - slackX;
+    const hiX = Math.max(0, width - w) + slackX;
     const loY = Math.min(0, height - h) - slackY;
     const hiY = Math.max(0, height - h) + slackY;
     return {
@@ -592,10 +615,13 @@ export function SkiaMapCanvas({
     );
   }, [selected, baseScale, width, height]);
 
+  // Translated, not laid out. `left`/`top` are layout props, so animating them
+  // pushed the callout (and the blurred surface inside it) through a full layout
+  // pass on every frame of a pan; a transform stays on the compositor.
   const tooltipStyle = useAnimatedStyle(() => {
     const p = placement.value;
     if (!p) return { opacity: 0 };
-    return { opacity: 1, left: p.left, top: p.top };
+    return { opacity: 1, transform: [{ translateX: p.left }, { translateY: p.top }] };
   }, [placement]);
 
   const connectorPath = useDerivedValue(() => {
@@ -633,29 +659,23 @@ export function SkiaMapCanvas({
             const cx = cam.x * PAGE_WIDTH;
             const cy = cam.y * PAGE_HEIGHT;
             const thumb = cameraThumbs?.[cam.id];
+            const geo = camGeometry.get(cam.id);
             if (!thumb) {
               return (
                 <Group key={cam.id}>
-                  {cam.active ? <Path path={makeConePath(cam)} color={coneColor(night, cam.active)} /> : null}
+                  {cam.active && geo ? <Path path={geo.cone} color={coneColor(night, cam.active)} /> : null}
                   <Circle cx={cx} cy={cy} r={CAM_R} color={cam.active ? "#091B54" : "#70788F"} />
                 </Group>
               );
             }
             const tx0 = cx - THUMB_W / 2;
             const ty0 = cy - THUMB_H / 2;
-            const label = cam.label || "Camera";
-            // Measure the actual glyph bounds, not just advances — italic-ish
-            // faces and trailing glyphs overhang the advance width slightly,
-            // which is what was clipping the last character.
-            const labelW = Math.max(
-              camLabelFont().getTextWidth(label),
-              camLabelFont().measureText(label).width,
-            );
-            const pillW = labelW + CAM_PILL_PAD * 2;
+            const label = geo?.label ?? "Camera";
+            const pillW = (geo?.labelW ?? 0) + CAM_PILL_PAD * 2;
             const pillY = ty0 - THUMB_F - CAM_PILL_GAP - CAM_PILL_H;
             return (
               <Group key={cam.id}>
-                {cam.active ? <Path path={makeConePath(cam)} color={coneColor(night, cam.active)} /> : null}
+                {cam.active && geo ? <Path path={geo.cone} color={coneColor(night, cam.active)} /> : null}
                 {/* White card frame, then the frame clipped to its inset. */}
                 <RoundedRect
                   x={tx0 - THUMB_F}
@@ -678,7 +698,7 @@ export function SkiaMapCanvas({
                   color={night ? "rgba(16,19,24,0.88)" : "rgba(9,27,84,0.88)"}
                 />
                 <SkiaText
-                  x={cx - labelW / 2}
+                  x={cx - (geo?.labelW ?? 0) / 2}
                   y={pillY + CAM_PILL_H / 2 + CAM_LABEL_SIZE * 0.36}
                   text={label}
                   font={camLabelFont()}
@@ -875,7 +895,9 @@ export function SkiaMapCanvas({
       {/* Outside the GestureDetector so its own controls receive touches
           instead of the canvas tap hit-testing units underneath the card. */}
       {selected && tooltip ? (
-        <Animated.View style={[{ position: "absolute", width: TIP_W }, tooltipStyle]}>{tooltip}</Animated.View>
+        <Animated.View style={[{ position: "absolute", left: 0, top: 0, width: TIP_W }, tooltipStyle]}>
+          {tooltip}
+        </Animated.View>
       ) : null}
     </View>
   );

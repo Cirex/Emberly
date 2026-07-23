@@ -294,7 +294,27 @@ function alphaPaint(color: string, opacity: number): SkPaint {
   return p;
 }
 
+/**
+ * Recorded pictures, kept per theme for the life of the process.
+ *
+ * Recording parses ~1,180 SVG path strings and shapes ~1,836 text ops — a
+ * multi-hundred-millisecond block on the JS thread. It was being paid on every
+ * mount of the map and again on each light/dark switch, and the shader warm-up
+ * threw away a second copy. There are exactly two possible pictures, so build
+ * each at most once.
+ */
+const PICTURE_CACHE: { day?: SkPicture; night?: SkPicture } = {};
+
 export function buildPlanPicture(night = false): SkPicture {
+  const cached = night ? PICTURE_CACHE.night : PICTURE_CACHE.day;
+  if (cached) return cached;
+  const picture = recordPlanPicture(night);
+  if (night) PICTURE_CACHE.night = picture;
+  else PICTURE_CACHE.day = picture;
+  return picture;
+}
+
+function recordPlanPicture(night: boolean): SkPicture {
   NIGHT = night;
   const rec = Skia.PictureRecorder();
   const canvas = rec.beginRecording(Skia.XYWHRect(0, 0, PLAN_WIDTH, PLAN_HEIGHT));

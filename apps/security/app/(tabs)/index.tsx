@@ -2,8 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
-import { useCallback, useEffect, useState, useRef } from "react";
-import { Modal, Pressable, RefreshControl, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState, useRef } from "react";
+import { FlatList, Modal, Pressable, RefreshControl, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { capture } from "@/lib/analytics";
 import { TenantDetailCard, TenantDetailEmptyCard } from "@/components/tenants/TenantDetailCard";
@@ -13,11 +13,13 @@ import { AppMetricCard } from "@/components/ui/AppMetricCard";
 import { AppScreenHeader } from "@/components/ui/AppScreenHeader";
 import { AppSearchField } from "@/components/ui/AppSearchField";
 import { AppStatusBadge } from "@emberly/ui";
-import { getTenantDetail, type TenantDetail } from "@/lib/api/tenant-detail";
+import type { ResmanUnit } from "@/lib/api/units";
+import { useTenantDetails } from "@/lib/stores/tenant-details";
 import { useConfig } from "@/lib/stores/config";
 import { useMapJump } from "@emberly/ui";
+import { useMetrics } from "@/lib/stores/metrics";
 import { useTags, type UnitTag } from "@/lib/stores/tags";
-import { type UnitFilter, useUnits } from "@/lib/stores/units";
+import { computeVisibleUnits, type UnitFilter, useUnits } from "@/lib/stores/units";
 import {
   lastSyncedLabel,
   unitClassification,
@@ -27,16 +29,22 @@ import {
   unitStatus,
 } from "@/lib/unit-display";
 
+const EMPTY_TAGS: UnitTag[] = [];
+/** Spacing between rows in the virtualized list — was the list's `gap: 9`. */
+const ROW_GAP = 9;
+
 // `key` must stay as ResMan spells the status it filters on; only the label is
-// ours. The last two select on lease_status rather than occupancy — ResMan files
-// both under the single occupancy "Notice", so that column can't tell a tenant
-// who gave notice from one being evicted, and these are 4 units versus 56.
+// ours. Notice/Eviction select on lease_status rather than occupancy — ResMan
+// files both under the single occupancy "Notice", so that column can't tell a
+// tenant who gave notice from one being evicted, and these are 4 units versus
+// 56. "No Guests" is first-party: units where an admin disabled guest visits.
 const FILTERS: { key: UnitFilter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "Occupied", label: "Occupied" },
   { key: "Vacant", label: "Vacant" },
   { key: "Notice to Vacate", label: "Notice to Vacate" },
   { key: "Under Eviction", label: "Eviction" },
+  { key: "No Guests", label: "No Guests" },
 ];
 
 /**
@@ -94,17 +102,114 @@ function RowTagChips({
   );
 }
 
+/**
+ * One tenant row. Memoized so a selection change (or a background unit refresh)
+ * only re-renders the rows whose props actually changed — not all 878. The
+ * callbacks it takes are stable, so `memo` can do its job.
+ */
+const TenantRow = memo(function TenantRow({
+  unit,
+  isSelected,
+  onSelect,
+  tags,
+  expanded,
+  onExpand,
+}: {
+  unit: ResmanUnit;
+  isSelected: boolean;
+  onSelect: (id: string) => void;
+  tags: UnitTag[];
+  expanded: boolean;
+  onExpand: (unitNumber: string) => void;
+}) {
+  const status = unitStatus(unit);
+  return (
+    <Pressable
+      onPress={() => onSelect(unit.resman_unit_id)}
+      accessibilityRole="button"
+      accessibilityState={isSelected ? { selected: true } : {}}
+    >
+      <AppCardSurface kind="row">
+        <View
+          className="flex-row items-center"
+          style={{
+            padding: 14,
+            gap: 14,
+            // Selection reads as a ring rather than a fill, so the status badge
+            // keeps its meaning.
+            borderRadius: 18,
+            borderWidth: isSelected ? 2 : 0,
+            borderColor: isSelected ? "#A2A921" : "transparent",
+          }}
+        >
+          <View
+            className="items-center justify-center rounded-full"
+            style={{ width: 58, height: 58, backgroundColor: "#E9E6D1" }}
+          >
+            <Text style={{ color: "#848F0D", fontSize: 20, fontWeight: "700" }}>{unitInitials(unit)}</Text>
+          </View>
+          <View className="flex-1">
+            <Text className="text-navy dark:text-white" style={{ fontSize: 17, fontWeight: "700" }} numberOfLines={1}>
+              {unitPrimaryName(unit)}
+            </Text>
+            <Text
+              className="text-slate dark:text-white/70"
+              style={{ fontSize: 14, fontWeight: "500" }}
+              numberOfLines={1}
+            >
+              {unitLine(unit)}
+            </Text>
+            {unitClassification(unit) ? (
+              <Text className="text-muted" style={{ fontSize: 13, fontWeight: "500" }}>
+                {unitClassification(unit)}
+              </Text>
+            ) : null}
+            <RowTagChips tags={tags} expanded={expanded} onExpand={() => onExpand(unit.number)} />
+          </View>
+          <AppStatusBadge label={status.label} tint={status.tint} />
+        </View>
+      </AppCardSurface>
+    </Pressable>
+  );
+});
+
 export default function TenantsScreen() {
   const router = useRouter();
   const config = useConfig();
-  const units = useUnits();
+  // Narrow slices, not the whole store: the units store re-writes on every 60s
+  // sync tick, and subscribing to the whole thing re-rendered the screen (and
+  // re-filtered 878 units) each time. Each selector re-renders only on its own
+  // change.
+  const filter = useUnits((s) => s.filter);
+  const search = useUnits((s) => s.search);
+  const setFilter = useUnits((s) => s.setFilter);
+  const setSearch = useUnits((s) => s.setSearch);
+  const allUnits = useUnits((s) => s.allUnits);
+  const pageUnits = useUnits((s) => s.units);
+  const bannedUnits = useUnits((s) => s.bannedUnits);
+  const loadingAll = useUnits((s) => s.loadingAll);
+  const unitsError = useUnits((s) => s.error);
+  const loadUnits = useUnits((s) => s.load);
+  const loadAllUnits = useUnits((s) => s.loadAll);
+  // The whole property's detail panes, cached on disk and refreshed on sync.
+  const detailsByUnit = useTenantDetails((s) => s.byUnit);
+  const detailsLoading = useTenantDetails((s) => s.loading);
+  const detailsError = useTenantDetails((s) => s.error);
+  const loadAllDetails = useTenantDetails((s) => s.loadAll);
+  const refreshUnitDetail = useTenantDetails((s) => s.refreshUnit);
+
+  // Property-wide headline counts for the metric cards (cached + 60s refresh).
+  const entriesToday = useMetrics((s) => s.entriesToday);
+  const entriesGuestsToday = useMetrics((s) => s.entriesGuestsToday);
+  const vehicleCount = useMetrics((s) => s.vehicleCount);
+
   // One event per search session: fires when the box goes empty → non-empty.
   const hadQuery = useRef(false);
   useEffect(() => {
-    const has = units.search.trim().length > 0;
+    const has = search.trim().length > 0;
     if (has && !hadQuery.current) capture("unit_lookup_performed");
     hadQuery.current = has;
-  }, [units.search]);
+  }, [search]);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const hPad = width >= 1040 ? 34 : 24;
@@ -114,7 +219,10 @@ export default function TenantsScreen() {
   const isCompact = contentWidth < COMPACT_MAX_CONTENT_WIDTH;
   const detailWidth = Math.min(Math.max(contentWidth * 0.36, 390), 430);
 
-  const tagStore = useTags();
+  const tagsByUnit = useTags((s) => s.byUnit);
+  const tagsHydrated = useTags((s) => s.hydrated);
+  const hydrateTags = useTags((s) => s.hydrate);
+  const tagsFor = useCallback((unitNumber: string) => tagsByUnit[unitNumber] ?? EMPTY_TAGS, [tagsByUnit]);
   // Rows show at most two tag chips; tapping "+N" expands that row's chips.
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set());
   const expandTags = useCallback(
@@ -122,10 +230,31 @@ export default function TenantsScreen() {
     [],
   );
 
+  // The visible rows, memoized: recompute only when a real input moves, not on
+  // every render. Filter switches are now pure client-side work over the cached
+  // set — no network round-trip, so the list turns over instantly.
+  const rows = useMemo(
+    () => computeVisibleUnits({ units: pageUnits, allUnits, search, filter, bannedUnits }),
+    [pageUnits, allUnits, search, filter, bannedUnits],
+  );
+  // The list is the expensive part of a chip switch (a 5-row view turning into
+  // 878). Deferring only the FlatList's data lets the chip and the count repaint
+  // on the tap, with the row turnover landing in the next, interruptible pass —
+  // so the press feels immediate instead of blocking on the list.
+  const listRows = useDeferredValue(rows);
+  const syncedLabel = useMemo(
+    () => lastSyncedLabel(allUnits.length > 0 ? allUnits : pageUnits),
+    [allUnits, pageUnits],
+  );
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<TenantDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState("");
+  // The pane reads straight from the cached bulk snapshot, so a tap paints the
+  // vehicles with it instead of behind a spinner. `loading` is true only before
+  // the very first bulk load lands — after that there is always something to
+  // show, and refreshes fold in silently.
+  const detail = selectedId ? (detailsByUnit[selectedId] ?? null) : null;
+  const detailLoading = detail === null && detailsLoading;
+  const detailError = detail === null ? detailsError : "";
   // Measured rather than assumed: the header chrome and the metrics both float
   // over the list, so the list needs to know exactly how much room to leave
   // before its first row.
@@ -135,59 +264,84 @@ export default function TenantsScreen() {
 
   useEffect(() => {
     if (!config.hydrated) return;
-    void units.load(config);
-    // The search box scans the full property (see units store `visible`), so the
-    // whole set must be cached — not just the current page.
-    if (units.allUnits.length === 0) void units.loadAll(config);
-    if (!tagStore.hydrated) void tagStore.hydrate();
+    // Filtering is entirely client-side over the cached full set, so a filter
+    // switch no longer refetches — this runs once per session. The fast first
+    // page paints immediately; loadAll fills in the rest for real filtering and
+    // search. Both are skipped when the persisted cache already has the data.
+    if (allUnits.length === 0) {
+      void loadUnits(config);
+      void loadAllUnits(config);
+    }
+    // Every unit's detail pane in one request, so tapping down the list never
+    // waits on a per-unit round trip. Cached to disk, so this is a no-op
+    // refresh on a warm start.
+    void loadAllDetails(config);
+    if (!tagsHydrated) void hydrateTags();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.hydrated, units.filter]);
+  }, [config.hydrated]);
 
-  const rows = units.visible();
-  const selected = rows.find((u) => u.resman_unit_id === selectedId) ?? null;
-
-  // Drop a selection the current filter/search no longer shows, so the pane
-  // never describes a tenant that isn't in the list.
-  useEffect(() => {
-    if (selectedId && !rows.some((u) => u.resman_unit_id === selectedId)) setSelectedId(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows.length, selectedId]);
-
-  const loadDetail = useCallback(
-    async (unitId: string) => {
-      setDetailLoading(true);
-      setDetailError("");
-      setDetail(null);
-      try {
-        setDetail(await getTenantDetail(unitId, config));
-      } catch (err) {
-        setDetailError(err instanceof Error ? err.message : "Couldn't load tenant details");
-      } finally {
-        setDetailLoading(false);
-      }
-    },
-    [config],
+  const selected = useMemo(
+    () => rows.find((u) => u.resman_unit_id === selectedId) ?? null,
+    [rows, selectedId],
   );
 
   const select = useCallback(
     (unitId: string) => {
       setSelectedId(unitId);
-      void loadDetail(unitId);
+      // No fetch on the tap itself: the pane reads the cache below. Only a unit
+      // the bulk load hasn't reached still needs one, and either way we
+      // re-read that unit in the background so the pane self-corrects.
+      void refreshUnitDetail(unitId, config);
     },
-    [loadDetail],
+    [refreshUnitDetail, config],
   );
 
-  // Open on the top unit rather than an empty pane. Only when the detail is a
-  // column: in the compact layout it's a sheet, and auto-selecting would throw it
-  // over the list before the guard has asked for anything. This also refills the
-  // pane when a filter change drops the previous selection.
+  // One pass, not two. This used to be a pair of effects — clear a selection the
+  // filter dropped, re-render, then auto-select the new first row — so every chip
+  // tap re-rendered the whole list twice mid-turnover. Resolving both in a single
+  // effect keeps a chip switch to one render.
   useEffect(() => {
-    if (isCompact || selectedId || rows.length === 0) return;
+    if (rows.length === 0) {
+      if (selectedId) setSelectedId(null);
+      return;
+    }
+    if (selectedId && rows.some((u) => u.resman_unit_id === selectedId)) return;
+    // In the compact layout the detail is a sheet, so auto-selecting would throw
+    // it over the list before the guard asked for anything — just drop it.
+    if (isCompact) {
+      if (selectedId) setSelectedId(null);
+      return;
+    }
     select(rows[0].resman_unit_id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCompact, selectedId, rows.length, select]);
+  }, [rows, selectedId, isCompact, select]);
+
+  const renderItem = useCallback(
+    ({ item }: { item: ResmanUnit }) => (
+      <TenantRow
+        unit={item}
+        isSelected={item.resman_unit_id === selectedId}
+        onSelect={select}
+        tags={tagsFor(item.number)}
+        expanded={expandedTags.has(item.number)}
+        onExpand={expandTags}
+      />
+    ),
+    [selectedId, select, tagsFor, expandedTags, expandTags],
+  );
+  const keyExtractor = useCallback((u: ResmanUnit) => u.resman_unit_id, []);
+  const ItemSeparator = useCallback(() => <View style={{ height: ROW_GAP }} />, []);
 
   const openSettings = () => router.push("/settings");
+
+  // "Showing" reflects the active view and updates instantly with the filter —
+  // no more divergence from a lagging server count. The caption names what's
+  // narrowing it; on the unfiltered view it carries the sync time instead.
+  const showingCaption = search.trim()
+    ? `matching “${search.trim()}”`
+    : filter !== "all"
+      ? (FILTERS.find((f) => f.key === filter)?.label ?? "filtered")
+      : syncedLabel;
 
   const detailCard = selected ? (
     <TenantDetailCard
@@ -213,105 +367,58 @@ export default function TenantsScreen() {
             Full height: rows run up under the floating header chrome and fade
             out in the scrim, the same treatment as the property map. */}
         <View style={{ flex: 1 }}>
-          <ScrollView
+          <FlatList
             style={{ flex: 1 }}
+            data={listRows}
+            renderItem={renderItem}
+            keyExtractor={keyExtractor}
+            ItemSeparatorComponent={ItemSeparator}
             contentContainerStyle={{
               // Clear the floating chrome + metrics, then keep the list's rhythm.
               paddingTop: chromeHeight + metricsHeight + 13,
               paddingBottom: insets.bottom + 96,
-              gap: 13,
             }}
             showsVerticalScrollIndicator={false}
+            // Virtualization: only the visible window mounts, so switching from a
+            // 5-unit view to the 878-unit "All" no longer builds hundreds of card
+            // surfaces on the JS thread.
+            initialNumToRender={12}
+            maxToRenderPerBatch={12}
+            windowSize={11}
+            removeClippedSubviews
+            keyboardShouldPersistTaps="handled"
             refreshControl={
               <RefreshControl
-                refreshing={units.loading}
-                onRefresh={() => units.load(config)}
+                refreshing={loadingAll}
+                onRefresh={() => {
+                  void loadAllUnits(config);
+                  void useMetrics.getState().refresh(config);
+                }}
                 tintColor="#70788F"
                 progressViewOffset={chromeHeight + metricsHeight}
               />
             }
-          >
-            {units.error ? (
-              <AppCardSurface kind="row">
-                <View style={{ padding: 16, gap: 6 }}>
-                  <Text className="text-status-blocked" style={{ fontSize: 15, fontWeight: "700" }}>
-                    Couldn&apos;t load units
-                  </Text>
-                  <Text className="text-muted" style={{ fontSize: 14 }}>
-                    {units.error}
-                  </Text>
-                </View>
-              </AppCardSurface>
-            ) : rows.length === 0 && !units.loading ? (
-              <Text className="text-muted" style={{ fontSize: 14, paddingHorizontal: 4, paddingTop: 8 }}>
-                {units.total === 0 ? "No units synced yet." : "No units match this view."}
-              </Text>
-            ) : (
-              <View style={{ gap: 9 }}>
-                {rows.map((u) => {
-                  const status = unitStatus(u);
-                  const isSelected = u.resman_unit_id === selectedId;
-                  return (
-                    <Pressable
-                      key={u.resman_unit_id}
-                      onPress={() => select(u.resman_unit_id)}
-                      accessibilityRole="button"
-                      accessibilityState={isSelected ? { selected: true } : {}}
-                    >
-                      <AppCardSurface kind="row">
-                        <View
-                          className="flex-row items-center"
-                          style={{
-                            padding: 14,
-                            gap: 14,
-                            // Selection reads as a ring rather than a fill, so the
-                            // status badge keeps its meaning.
-                            borderRadius: 18,
-                            borderWidth: isSelected ? 2 : 0,
-                            borderColor: isSelected ? "#A2A921" : "transparent",
-                          }}
-                        >
-                          <View
-                            className="items-center justify-center rounded-full"
-                            style={{ width: 58, height: 58, backgroundColor: "#E9E6D1" }}
-                          >
-                            <Text style={{ color: "#848F0D", fontSize: 20, fontWeight: "700" }}>{unitInitials(u)}</Text>
-                          </View>
-                          <View className="flex-1">
-                            <Text
-                              className="text-navy dark:text-white"
-                              style={{ fontSize: 17, fontWeight: "700" }}
-                              numberOfLines={1}
-                            >
-                              {unitPrimaryName(u)}
-                            </Text>
-                            <Text
-                              className="text-slate dark:text-white/70"
-                              style={{ fontSize: 14, fontWeight: "500" }}
-                              numberOfLines={1}
-                            >
-                              {unitLine(u)}
-                            </Text>
-                            {unitClassification(u) ? (
-                              <Text className="text-muted" style={{ fontSize: 13, fontWeight: "500" }}>
-                                {unitClassification(u)}
-                              </Text>
-                            ) : null}
-                            <RowTagChips
-                              tags={tagStore.tagsFor(u.number)}
-                              expanded={expandedTags.has(u.number)}
-                              onExpand={() => expandTags(u.number)}
-                            />
-                          </View>
-                          <AppStatusBadge label={status.label} tint={status.tint} />
-                        </View>
-                      </AppCardSurface>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            )}
-          </ScrollView>
+            ListEmptyComponent={
+              unitsError ? (
+                <AppCardSurface kind="row">
+                  <View style={{ padding: 16, gap: 6 }}>
+                    <Text className="text-status-blocked" style={{ fontSize: 15, fontWeight: "700" }}>
+                      Couldn&apos;t load units
+                    </Text>
+                    <Text className="text-muted" style={{ fontSize: 14 }}>
+                      {unitsError}
+                    </Text>
+                  </View>
+                </AppCardSurface>
+              ) : loadingAll ? null : (
+                <Text className="text-muted" style={{ fontSize: 14, paddingHorizontal: 4, paddingTop: 8 }}>
+                  {allUnits.length === 0 && pageUnits.length === 0
+                    ? "No units synced yet."
+                    : "No units match this view."}
+                </Text>
+              )
+            }
+          />
 
           {/* Floats over the list — glass, so rows blur through as they pass
               beneath rather than vanishing behind an opaque slab. box-none so
@@ -325,18 +432,30 @@ export default function TenantsScreen() {
             <View className="flex-row" style={{ gap: 12 }}>
               <View className="flex-1">
                 <AppMetricCard
-                  icon="people"
-                  title="Total Units"
-                  value={String(units.total)}
-                  caption={lastSyncedLabel(units.units)}
+                  icon="funnel"
+                  title="Showing"
+                  value={rows.length.toLocaleString()}
+                  caption={showingCaption}
                 />
               </View>
               <View className="flex-1">
                 <AppMetricCard
-                  icon="funnel"
-                  title="Showing"
-                  value={String(rows.length)}
-                  caption={units.search ? `matching “${units.search}”` : "all in view"}
+                  icon="log-in-outline"
+                  title="Entries Today"
+                  value={entriesToday.toLocaleString()}
+                  caption={
+                    entriesToday === 0
+                      ? "none yet today"
+                      : `${entriesGuestsToday.toLocaleString()} guest${entriesGuestsToday === 1 ? "" : "s"}`
+                  }
+                />
+              </View>
+              <View className="flex-1">
+                <AppMetricCard
+                  icon="car-outline"
+                  title="Vehicles"
+                  value={vehicleCount.toLocaleString()}
+                  caption="on file"
                 />
               </View>
             </View>
@@ -383,7 +502,7 @@ export default function TenantsScreen() {
           subtitle="View and manage residents with secure building access."
           trailing={
             <>
-              <AppSearchField value={units.search} onChangeText={units.setSearch} placeholder="Search tenants" width={240} />
+              <AppSearchField value={search} onChangeText={setSearch} placeholder="Search tenants" width={240} />
               <Pressable
                 onPress={openSettings}
                 accessibilityLabel="Device setup"
@@ -406,8 +525,8 @@ export default function TenantsScreen() {
             <AppFilterChip
               key={f.key}
               label={f.label}
-              selected={units.filter === f.key}
-              onPress={() => units.setFilter(f.key)}
+              selected={filter === f.key}
+              onPress={() => setFilter(f.key)}
             />
           ))}
         </View>

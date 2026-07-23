@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { SCANNER_KEY_HEADER } from "@emberly/core";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Modal, Pressable, Text, View } from "react-native";
 import type { ScannerConfig } from "@/lib/api/scanner";
 import type { MapCamera } from "@/lib/stores/cameras";
@@ -23,12 +23,10 @@ export function CameraViewerDialog({
   config: ScannerConfig;
   onClose: () => void;
 }) {
-  const frameUri = (t: number) =>
-    `${config.baseUrl}/api/admin/map-cameras/${camera.id}/snapshot?w=${FRAME_W}&t=${t}`;
-  const headers = {
-    Authorization: `Bearer ${config.scannerKey}`,
-    [SCANNER_KEY_HEADER]: config.scannerKey,
-  };
+  const frameUri = useCallback(
+    (t: number) => `${config.baseUrl}/api/admin/map-cameras/${camera.id}/snapshot?w=${FRAME_W}&t=${t}`,
+    [config.baseUrl, camera.id],
+  );
 
   // Double buffer: the shown frame only advances when its replacement has
   // fully loaded, so refreshes never flash white. `stale` marks a refresh
@@ -40,8 +38,25 @@ export function CameraViewerDialog({
   useEffect(() => {
     const interval = setInterval(() => setLoadingUri(frameUri(Date.now())), REFRESH_MS);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera.id]);
+  }, [frameUri]);
+
+  // A frame is cached until the next refresh replaces it. <Image> diffs its
+  // `source` by identity, so a fresh object literal each render would make it
+  // drop and re-request the frame already on screen — every parent re-render
+  // (a store tick, a sibling's state) re-fetching what we're already showing.
+  // Memoising both sources pins each frame until its URI actually changes.
+  const headers = useMemo(
+    () => ({
+      Authorization: `Bearer ${config.scannerKey}`,
+      [SCANNER_KEY_HEADER]: config.scannerKey,
+    }),
+    [config.scannerKey],
+  );
+  const shownSource = useMemo(
+    () => (shownUri ? { uri: shownUri, headers } : null),
+    [shownUri, headers],
+  );
+  const loadingSource = useMemo(() => ({ uri: loadingUri, headers }), [loadingUri, headers]);
 
   return (
     <Modal transparent animationType="fade" visible onRequestClose={onClose}>
@@ -95,9 +110,9 @@ export function CameraViewerDialog({
             ) : (
               <>
                 {/* The last good frame stays put underneath… */}
-                {shownUri ? (
+                {shownSource ? (
                   <Image
-                    source={{ uri: shownUri, headers }}
+                    source={shownSource}
                     style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
                     resizeMode="cover"
                     fadeDuration={0}
@@ -106,7 +121,7 @@ export function CameraViewerDialog({
                 {/* …while the next one loads invisibly on top and swaps in
                     only once decoded — no white flash between frames. */}
                 <Image
-                  source={{ uri: loadingUri, headers }}
+                  source={loadingSource}
                   style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
                   resizeMode="cover"
                   fadeDuration={0}

@@ -7,6 +7,8 @@ import { useAnnotations } from "@/lib/stores/annotations";
 import { useCameras } from "@/lib/stores/cameras";
 import { useTags } from "@/lib/stores/tags";
 import { isScannerConfigured, useConfig } from "@/lib/stores/config";
+import { useMetrics } from "@/lib/stores/metrics";
+import { useTenantDetails } from "@/lib/stores/tenant-details";
 import { useUnits } from "@/lib/stores/units";
 
 const REFRESH_MS = 60_000;
@@ -29,6 +31,10 @@ function useServerSync() {
     const config = { baseUrl, scannerKey };
     const tick = () => {
       void useUnits.getState().refresh(config);
+      void useMetrics.getState().refresh(config);
+      // Every unit's detail pane in one request, so tapping a tenant reads the
+      // cache instead of waiting on a per-unit round trip.
+      void useTenantDetails.getState().loadAll(config);
       // Photos ride behind the pins: a fresh pin must reach the server (and
       // trade up to its server id) before its photos can attach to it.
       void useAnnotations

@@ -41,6 +41,9 @@ export const TenantGuestAccessSchema = z.object({
   allowed: z.number(),
   /** Of those, how many an admin has blocked from issuing passes. */
   banned: z.number(),
+  /** The unit itself is suspended from guest visits (needs no enrollment).
+      Optional so the app keeps working against a server that predates it. */
+  unitBanned: z.boolean().optional().default(false),
 });
 export type TenantGuestAccess = z.infer<typeof TenantGuestAccessSchema>;
 
@@ -54,6 +57,31 @@ export const TenantDetailSchema = z.object({
   }),
 });
 export type TenantDetail = z.infer<typeof TenantDetailSchema>["data"];
+
+export const TenantDetailsBulkSchema = z.object({
+  data: z.record(z.string(), TenantDetailSchema.shape.data),
+});
+export type TenantDetailsByUnit = Record<string, TenantDetail>;
+
+/**
+ * Every unit's detail in one request, so the tenant list can be tapped through
+ * without a spinner per unit. Same per-unit shape as `getTenantDetail`, keyed by
+ * resman_unit_id — a cached entry and a fresh fetch are interchangeable.
+ */
+export async function listTenantDetails(config: ScannerConfig): Promise<TenantDetailsByUnit> {
+  const res = await fetch(`${config.baseUrl}/api/resman/units/details`, {
+    headers: {
+      Authorization: `Bearer ${config.scannerKey}`,
+      [SCANNER_KEY_HEADER]: config.scannerKey,
+    },
+  });
+  if (res.status === 401 || res.status === 403) {
+    if (res.status === 401) handleUnauthorizedScannerKey();
+    throw new Error("Scanner not authorized for the ResMan API");
+  }
+  if (!res.ok) throw new Error(`Failed to load tenant details (${res.status})`);
+  return TenantDetailsBulkSchema.parse(await res.json()).data;
+}
 
 /**
  * The per-unit facts the list endpoint doesn't carry: vehicles (two joins off

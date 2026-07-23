@@ -22,7 +22,7 @@ import { isNight } from "@/lib/map-daynight";
 import { PLACED_UNITS, UNIT_COUNT } from "@/lib/map-data";
 import { useAnnotationPhotos } from "@/lib/stores/annotation-photos";
 import { useAnnotations } from "@/lib/stores/annotations";
-import { useCameras } from "@/lib/stores/cameras";
+import { useCameras, type MapCamera } from "@/lib/stores/cameras";
 import { useConfig } from "@/lib/stores/config";
 import { useMapJump } from "@emberly/ui";
 import { useSettings } from "@/lib/stores/settings";
@@ -39,14 +39,22 @@ const OCC_TINT: Record<string, string> = {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
+/** Stable empties, so a unit with no tags/cameras keeps a constant prop identity. */
+const EMPTY_TAGS: UnitTag[] = [];
+const NO_CAMERAS: MapCamera[] = [];
+
 export default function PropertyMapScreen() {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const darkScheme = useColorScheme().colorScheme === "dark";
-  const config = useConfig();
-  // Select only what the map reads — the units store writes on every 60s poll
-  // (paged `units`, `total`, `search`, `filter`), none of which the map uses, so
-  // a whole-store subscription re-rendered the map + Skia canvas every tick.
+  // Every store here is read through a narrow selector for the same reason: a
+  // whole-store subscription re-renders this screen — and with it the Skia
+  // canvas, every camera cone and pin label — on writes the map doesn't care
+  // about. The sync tick alone writes to annotations (once per queued pin),
+  // tags (syncing on/off) and cameras every minute.
+  const config = useConfig(
+    useShallow((s) => ({ hydrated: s.hydrated, baseUrl: s.baseUrl, scannerKey: s.scannerKey })),
+  );
   const units = useUnits(
     useShallow((s) => ({
       allUnits: s.allUnits,
@@ -54,9 +62,21 @@ export default function PropertyMapScreen() {
       loadAll: s.loadAll,
     })),
   );
-  const ann = useAnnotations();
-  const cam = useCameras();
-  const tagStore = useTags();
+  const annotations = useAnnotations((s) => s.annotations);
+  const annHydrated = useAnnotations((s) => s.hydrated);
+  const hydrateAnnotations = useAnnotations((s) => s.hydrate);
+  const addAnnotation = useAnnotations((s) => s.add);
+  const cameras = useCameras((s) => s.cameras);
+  const camHydrated = useCameras((s) => s.hydrated);
+  const hydrateCameras = useCameras((s) => s.hydrate);
+  // byUnit rather than the store's `tagsFor`: the selector has to be the data,
+  // or a tag added elsewhere never re-renders the callout.
+  const tagsByUnit = useTags((s) => s.byUnit);
+  const tagsFor = useCallback((unitNumber: string) => tagsByUnit[unitNumber] ?? EMPTY_TAGS, [tagsByUnit]);
+  const tagsHydrated = useTags((s) => s.hydrated);
+  const hydrateTags = useTags((s) => s.hydrate);
+  const photosHydrated = useAnnotationPhotos((s) => s.hydrated);
+  const hydratePhotos = useAnnotationPhotos((s) => s.hydrate);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | undefined>();
   // One toggle instead of the old mode chips: occupancy tint on or off.
@@ -78,13 +98,21 @@ export default function PropertyMapScreen() {
   const hasData = units.allUnits.length > 0;
   const night = isNight();
 
-  const photos = useAnnotationPhotos();
   useEffect(() => {
-    if (!ann.hydrated) void ann.hydrate();
-    if (!cam.hydrated) void cam.hydrate();
-    if (!photos.hydrated) void photos.hydrate();
-    if (!tagStore.hydrated) void tagStore.hydrate();
-  }, [config, ann, cam, photos, tagStore]);
+    if (!annHydrated) void hydrateAnnotations();
+    if (!camHydrated) void hydrateCameras();
+    if (!photosHydrated) void hydratePhotos();
+    if (!tagsHydrated) void hydrateTags();
+  }, [
+    annHydrated,
+    hydrateAnnotations,
+    camHydrated,
+    hydrateCameras,
+    photosHydrated,
+    hydratePhotos,
+    tagsHydrated,
+    hydrateTags,
+  ]);
 
   useEffect(() => {
     if (config.hydrated && units.allUnits.length === 0 && !units.loadingAll) {
@@ -102,7 +130,7 @@ export default function PropertyMapScreen() {
 
   // Queued deletions stay in the store until the server confirms them — the
   // map should not show a pin the guard already deleted.
-  const visibleAnnotations = useMemo(() => ann.annotations.filter((a) => !a.removed), [ann.annotations]);
+  const visibleAnnotations = useMemo(() => annotations.filter((a) => !a.removed), [annotations]);
 
   const colorMap = useMemo(
     () => (occupancyTint ? buildColorMap("occupancy", units.allUnits) : new Map()),
@@ -115,18 +143,28 @@ export default function PropertyMapScreen() {
   // Search the synced ResMan record (unit number + street + tenant names), not
   // just the map's bare number — so "kingsgate" or a resident's name finds the
   // right units, falling back to number-only for any unit without synced data.
+  // Matching is a fuzzy scan of all 878 units (normalize + edit distance per
+  // unit), so running it per keystroke blocked the JS thread on every character
+  // and restarted the canvas fly-to mid-word. The field stays live; the scan
+  // trails it.
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQuery(query), 150);
+    return () => clearTimeout(id);
+  }, [query]);
+
   const matched = useMemo(() => {
-    if (!query.trim()) return new Set<string>();
-    const bare = query.trim().toLowerCase();
+    if (!debouncedQuery.trim()) return new Set<string>();
+    const bare = debouncedQuery.trim().toLowerCase();
     const out = new Set<string>();
     for (const u of PLACED_UNITS) {
       const data = unitByNumber.get(u.number);
-      const hit = data ? unitMatchesSearch(data, query) : u.number.toLowerCase().includes(bare);
+      const hit = data ? unitMatchesSearch(data, debouncedQuery) : u.number.toLowerCase().includes(bare);
       if (hit) out.add(u.number);
     }
     return out;
-  }, [query, unitByNumber]);
-  const hasQuery = query.trim().length > 0;
+  }, [debouncedQuery, unitByNumber]);
+  const hasQuery = debouncedQuery.trim().length > 0;
 
   const selectedUnit = useMemo(
     () => (selected ? PLACED_UNITS.find((u) => u.number === selected) : undefined),
@@ -186,11 +224,11 @@ export default function PropertyMapScreen() {
   const selectedData = selected ? unitByNumber.get(selected) : undefined;
   const selectedGroup = selectedData ? occupancyGroup(selectedData) : undefined;
   const selectedTint = (selectedGroup && OCC_TINT[selectedGroup]) || "#70788F";
-  const editing = editingId ? ann.annotations.find((a) => a.id === editingId) : undefined;
-  const viewingCamera = viewingCameraId ? cam.cameras.find((c) => c.id === viewingCameraId) : undefined;
+  const editing = editingId ? annotations.find((a) => a.id === editingId) : undefined;
+  const viewingCamera = viewingCameraId ? cameras.find((c) => c.id === viewingCameraId) : undefined;
   // Hidden cameras also stop the live thumbnail polling — no wasted fetches.
   const { thumbs: cameraThumbs, online: cameraOnline } = useCameraThumbs(
-    showCameras ? cam.cameras : [],
+    showCameras ? cameras : NO_CAMERAS,
     config,
   );
 
@@ -209,7 +247,7 @@ export default function PropertyMapScreen() {
   };
   const onPlacePin = (nx: number, ny: number) => {
     capture("map_annotation_created");
-    const c = ann.add(nx, ny);
+    const c = addAnnotation(nx, ny);
     setPlaceMode("none");
     clearOverlays();
     setEditingId(c.id);
@@ -267,7 +305,7 @@ export default function PropertyMapScreen() {
           hasQuery={hasQuery}
           selected={selectedUnit}
           annotations={visibleAnnotations}
-          cameras={showCameras ? cam.cameras : []}
+          cameras={showCameras ? cameras : NO_CAMERAS}
           cameraThumbs={cameraThumbs}
           cameraOnline={cameraOnline}
           night={night}
@@ -282,7 +320,7 @@ export default function PropertyMapScreen() {
                 unit={selectedUnit}
                 data={selectedData}
                 tint={selectedTint}
-                tags={tagStore.tagsFor(selectedUnit.number)}
+                tags={tagsFor(selectedUnit.number)}
                 onEditTags={() => setTagEditUnit(selectedUnit.number)}
               />
             ) : null

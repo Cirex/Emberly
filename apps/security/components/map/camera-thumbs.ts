@@ -37,31 +37,57 @@ export function useCameraThumbs(
       if (busy.current) return; // a slow round shouldn't stack another
       busy.current = true;
       try {
-        for (const id of ids.split(",")) {
-          try {
-            const res = await fetch(
-              `${config.baseUrl}/api/admin/map-cameras/${id}/snapshot?w=${THUMB_W}&t=${Date.now()}`,
-              {
-                headers: {
-                  Authorization: `Bearer ${config.scannerKey}`,
-                  [SCANNER_KEY_HEADER]: config.scannerKey,
+        // Fetched in parallel and committed once. Per-camera setState meant a
+        // round of N cameras re-rendered the whole Skia canvas up to 2N times
+        // every 8 seconds, rebuilding every cone path and label on each pass.
+        const round = await Promise.all(
+          ids.split(",").map(async (id) => {
+            try {
+              const res = await fetch(
+                `${config.baseUrl}/api/admin/map-cameras/${id}/snapshot?w=${THUMB_W}&t=${Date.now()}`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${config.scannerKey}`,
+                    [SCANNER_KEY_HEADER]: config.scannerKey,
+                  },
                 },
-              },
-            );
-            if (!res.ok) throw new Error(`snapshot ${res.status}`);
-            const bytes = new Uint8Array(await res.arrayBuffer());
-            const image = Skia.Image.MakeImageFromEncoded(Skia.Data.fromBytes(bytes));
-            if (!image) throw new Error("decode failed");
-            if (cancelled) return;
-            setThumbs((prev) => ({ ...prev, [id]: image }));
-            setOnline((prev) => ({ ...prev, [id]: true }));
-          } catch {
-            if (cancelled) return;
-            // Keep the stale frame — a dead thumbnail reads worse than an old
-            // one — but flip the indicator so the guard knows.
-            setOnline((prev) => ({ ...prev, [id]: false }));
+              );
+              if (!res.ok) throw new Error(`snapshot ${res.status}`);
+              const bytes = new Uint8Array(await res.arrayBuffer());
+              const image = Skia.Image.MakeImageFromEncoded(Skia.Data.fromBytes(bytes));
+              if (!image) throw new Error("decode failed");
+              return { id, image };
+            } catch {
+              // Keep the stale frame — a dead thumbnail reads worse than an old
+              // one — but flip the indicator so the guard knows.
+              return { id, image: null };
+            }
+          }),
+        );
+        if (cancelled) return;
+        setThumbs((prev) => {
+          const next = { ...prev };
+          let moved = false;
+          for (const { id, image } of round) {
+            if (image) {
+              next[id] = image;
+              moved = true;
+            }
           }
-        }
+          return moved ? next : prev; // an all-failed round re-renders nothing
+        });
+        setOnline((prev) => {
+          const next = { ...prev };
+          let moved = false;
+          for (const { id, image } of round) {
+            const up = image !== null;
+            if (next[id] !== up) {
+              next[id] = up;
+              moved = true;
+            }
+          }
+          return moved ? next : prev;
+        });
       } finally {
         busy.current = false;
       }

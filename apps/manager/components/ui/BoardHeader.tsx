@@ -73,6 +73,9 @@ export function BoardHeader({
 }) {
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
+  // On tablet the sidebar rail carries the account at its foot, so the header's
+  // top-right chip is redundant there and would double the identity.
+  const wide = screenW >= 1040;
   const field = useFieldMode();
   const [menuOpen, setMenuOpen] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
@@ -183,7 +186,7 @@ export function BoardHeader({
           </Pressable>
           <View style={{ flex: 1 }} />
           {trailing}
-          <AccountMenu />
+          {wide ? null : <AccountMenu />}
         </View>
 
         {/* Row 2: score-metric strip — big tinted tabular number, small

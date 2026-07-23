@@ -5,10 +5,14 @@ import "@/lib/sync-participants";
 import { Tabs } from "expo-router";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { AppState } from "react-native";
+import { AppState, useWindowDimensions } from "react-native";
 import { FloatingTabBar } from "@/components/ui/FloatingTabBar";
+import { RAIL_WIDTH, SidebarRail } from "@/components/ui/SidebarRail";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
 import { runSyncTick } from "@/lib/sync-registry";
+
+/** iPad threshold — the same breakpoint every screen switches its layout on. */
+const WIDE_MIN_WIDTH = 1040;
 
 const REFRESH_MS = 60_000;
 
@@ -48,14 +52,19 @@ function useServerSync() {
 
 export default function TabsLayout() {
   const { t } = useTranslation();
+  const { width } = useWindowDimensions();
+  const wide = width >= WIDE_MIN_WIDTH;
   useServerSync();
 
   return (
     <Tabs
-      tabBar={(props) => <FloatingTabBar {...props} />}
+      // The rail replaces the bottom bar on tablet; the phone keeps the
+      // floating capsule. The rail overlays the left edge, so the scene is
+      // cleared of it by padding the scene container the same width.
+      tabBar={(props) => (wide ? <SidebarRail {...props} /> : <FloatingTabBar {...props} />)}
       screenOptions={{
         headerShown: false,
-        sceneStyle: { backgroundColor: "transparent" },
+        sceneStyle: { backgroundColor: "transparent", paddingLeft: wide ? RAIL_WIDTH : 0 },
       }}
     >
       <Tabs.Screen name="index" options={{ title: t("tabs.today") }} />

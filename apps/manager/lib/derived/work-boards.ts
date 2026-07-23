@@ -128,6 +128,99 @@ export function buildOpenBoard(data: WorkData, nowMs: number): OpenBoard {
   };
 }
 
+// ── Open board, grouped by unit (mockup frame 03) ───────────────────────────
+
+/** A dot on a unit's timeline rail — its tone is the order's priority, or
+ *  "closed" for a resolved past order. */
+export type TimelineTone = "emergency" | "high" | "normal" | "low" | "closed";
+export interface UnitTimelineDot {
+  atMs: number;
+  tone: TimelineTone;
+}
+
+/**
+ * One unit's card on the Open board: its open orders compacted together, the
+ * lifetime count, and — for units with a history — the timeline rail.
+ */
+export interface OpenUnitGroup {
+  unitNumber: string;
+  classification: string;
+  openCount: number;
+  /** All orders ever filed on this unit (open + closed) in the mirror. */
+  totalCount: number;
+  closedCount: number;
+  lastClosedAt: number | null;
+  anyCallback: boolean;
+  /** Open orders, most urgent (then oldest) first. */
+  lines: OpenRow[];
+  /** Present only when the unit has ≥2 dated orders to plot. */
+  timeline: { startMs: number; endMs: number; dots: UnitTimelineDot[] } | null;
+}
+
+function timelineTone(wo: ParsedWorkOrder): TimelineTone {
+  if (isClosedWorkOrder(wo)) return "closed";
+  const p = wo.priority.toLowerCase();
+  if (p === "emergency") return "emergency";
+  if (p === "high") return "high";
+  if (p === "low") return "low";
+  return "normal";
+}
+
+/**
+ * The Open board as unit cards rather than priority bands: orders compact under
+ * their unit number, carrying the lifetime count, classification, callback
+ * flag, and a timeline rail of the unit's whole order history. Units are led by
+ * their most urgent open order (emergencies first), then by how many are open.
+ */
+export function buildOpenUnitGroups(data: WorkData, nowMs: number): OpenUnitGroup[] {
+  const open = data.parsed.filter(isOpenWorkOrder);
+  const byUnit = new Map<string, ParsedWorkOrder[]>();
+  for (const wo of open) {
+    const arr = byUnit.get(wo.unitNumber);
+    if (arr) arr.push(wo);
+    else byUnit.set(wo.unitNumber, [wo]);
+  }
+
+  const groups: OpenUnitGroup[] = [...byUnit.entries()].map(([unitNumber, openOrders]) => {
+    const allForUnit =
+      unitNumber === "" ? openOrders : data.parsed.filter((wo) => wo.unitNumber === unitNumber);
+    const closed = allForUnit.filter(isClosedWorkOrder);
+    const lastClosed = closed
+      .filter((wo) => wo.completedAt !== null)
+      .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))[0];
+    const dots: UnitTimelineDot[] = allForUnit
+      .filter((wo) => wo.reportedAt !== null)
+      .sort((a, b) => (a.reportedAt ?? 0) - (b.reportedAt ?? 0))
+      .map((wo) => ({ atMs: wo.reportedAt as number, tone: timelineTone(wo) }));
+    const lines = openOrders
+      .slice()
+      .sort(
+        (a, b) =>
+          priorityRank(a.priority) - priorityRank(b.priority) ||
+          workOrderAgeDays(b, nowMs) - workOrderAgeDays(a, nowMs),
+      )
+      .map((wo) => openRow(wo, nowMs));
+    return {
+      unitNumber,
+      classification: data.unitIndex.get(unitNumber)?.classification ?? "",
+      openCount: openOrders.length,
+      totalCount: allForUnit.length,
+      closedCount: closed.length,
+      lastClosedAt: lastClosed?.completedAt ?? null,
+      anyCallback: openOrders.some(isCallbackSignal),
+      lines,
+      timeline:
+        allForUnit.length >= 2 && dots.length >= 2 ? { startMs: dots[0].atMs, endMs: nowMs, dots } : null,
+    };
+  });
+
+  const topRank = (g: OpenUnitGroup) =>
+    g.lines.length === 0 ? 99 : Math.min(...g.lines.map((l) => priorityRank(l.priority)));
+  return groups.sort(
+    (a, b) => topRank(a) - topRank(b) || b.openCount - a.openCount || a.unitNumber.localeCompare(b.unitNumber),
+  );
+}
+
 // ── Make-ready board ────────────────────────────────────────────────────────
 
 /**

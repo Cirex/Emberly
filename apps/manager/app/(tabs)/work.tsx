@@ -13,15 +13,18 @@ import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import { BoardHeader, type BoardMetric, type BoardMode } from "@/components/ui/BoardHeader";
 import { ClosedBoard } from "@/components/work/ClosedBoard";
 import { MakeReadyBoard } from "@/components/work/MakeReadyBoard";
+import { InsightsBoard } from "@/components/work/InsightsBoard";
 import { OpenBoard } from "@/components/work/OpenBoard";
-import { WorkOrderSheet } from "@/components/work/WorkOrderSheet";
+import { WorkOrderDetail } from "@/components/work/WorkOrderDetail";
 import { capture } from "@/lib/analytics";
 import {
   buildClosedBoard,
   buildMakeReadyBoard,
   buildOpenBoard,
+  buildOpenUnitGroups,
   buildWorkData,
 } from "@/lib/derived/work-boards";
+import { buildWorkInsights } from "@/lib/derived/work-insights";
 import { useConfig } from "@/lib/stores/config";
 import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
@@ -35,8 +38,8 @@ import { MUTED, screenHPad } from "@/theme/tokens";
  * maintenance app keeps the writes.
  */
 
-type WorkModeKey = "open" | "makeReady" | "closed";
-const WORK_MODES: readonly WorkModeKey[] = ["open", "makeReady", "closed"];
+type WorkModeKey = "open" | "makeReady" | "closed" | "insights";
+const WORK_MODES: readonly WorkModeKey[] = ["open", "makeReady", "closed", "insights"];
 
 function isWorkMode(value: string | undefined): value is WorkModeKey {
   return value !== undefined && (WORK_MODES as readonly string[]).includes(value);
@@ -89,13 +92,22 @@ export default function WorkScreen() {
 
   const data = useMemo(() => buildWorkData(workOrders, allUnits), [workOrders, allUnits]);
   const openBoard = useMemo(() => buildOpenBoard(data, nowMs), [data, nowMs]);
+  const openGroups = useMemo(() => buildOpenUnitGroups(data, nowMs), [data, nowMs]);
   const makeReadyBoard = useMemo(() => buildMakeReadyBoard(data, nowMs), [data, nowMs]);
   const closedBoard = useMemo(() => buildClosedBoard(data, nowMs), [data, nowMs]);
+  const insights = useMemo(() => buildWorkInsights(data, nowMs), [data, nowMs]);
 
   const selected = useMemo(
     () => (selectedId === null ? null : (data.parsed.find((wo) => wo.id === selectedId) ?? null)),
     [data, selectedId],
   );
+  // The unit's other orders (newest first) — the detail page's history rail.
+  const unitHistory = useMemo(() => {
+    if (selected === null) return [];
+    return data.parsed
+      .filter((wo) => wo.id !== selected.id && wo.unitNumber !== "" && wo.unitNumber === selected.unitNumber)
+      .sort((a, b) => (b.reportedAt ?? 0) - (a.reportedAt ?? 0));
+  }, [data, selected]);
 
   const onMode = (key: string) => {
     if (!isWorkMode(key)) return;
@@ -126,6 +138,11 @@ export default function WorkScreen() {
       label: t("work.modes.closed"),
       icon: "checkmark-done-outline",
       count: closedBoard.rows.length,
+    },
+    {
+      key: "insights",
+      label: t("work.modes.insights"),
+      icon: "stats-chart-outline",
     },
   ];
 
@@ -193,12 +210,62 @@ export default function WorkScreen() {
         caption: t("work.metrics.avgDaysToCloseCaption"),
       },
     ],
+    insights: [
+      {
+        value: String(insights.openNow),
+        tint: "#2563B4",
+        label: t("work.insights.scoreOpen"),
+        caption: t("work.insights.scoreOpenCaption", {
+          overdue: insights.overdue,
+          emergency: insights.emergencies,
+        }),
+      },
+      {
+        value: String(insights.closed30),
+        tint: "#33A666",
+        label: t("work.insights.scoreClosed"),
+        caption: t("work.insights.scoreClosedCaption", { prior: insights.closedPrior30 }),
+      },
+      {
+        value: insights.medianCloseDays === null ? "—" : `${insights.medianCloseDays.toFixed(1)}d`,
+        tint: "#B05E14",
+        label: t("work.insights.scoreMedian"),
+        caption: t("work.insights.scoreMedianCaption", { target: insights.targetDays }),
+      },
+      {
+        value: `${insights.callbackRatePct.toFixed(1)}%`,
+        tint: "#5B4BA8",
+        label: t("work.insights.scoreCallback"),
+        caption: t("work.insights.scoreCallbackCaption", { pairs: insights.callbackPairs }),
+      },
+      {
+        value: insights.perTech.toFixed(1),
+        tint: "#4C556F",
+        label: t("work.insights.scorePerTech"),
+        caption: t("work.insights.scorePerTechCaption"),
+      },
+    ],
   };
 
   // Cold cache only: with rows (or one successful sync) the boards render and
   // carry their own empty states.
   const cold = workOrders.length === 0 && refreshedAt === 0;
   const coldLoading = cold && (loading || !error);
+
+  // Two-page flow: a selected order takes over the tab as a full page (the rail
+  // stays put), and Back returns to the board. This replaces the old sheet.
+  if (selected !== null) {
+    return (
+      <View style={{ flex: 1, paddingHorizontal: screenHPad(width) }}>
+        <WorkOrderDetail
+          order={selected}
+          unitHistory={unitHistory}
+          onBack={() => setSelectedId(null)}
+          onOpenOrder={(id) => setSelectedId(id)}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>
@@ -246,14 +313,20 @@ export default function WorkScreen() {
             </AppCardSurface>
           )
         ) : mode === "open" ? (
-          <OpenBoard board={openBoard} onOpenRow={onOpenRow} />
+          <OpenBoard groups={openGroups} onOpenRow={onOpenRow} />
         ) : mode === "makeReady" ? (
-          <MakeReadyBoard board={makeReadyBoard} nowMs={nowMs} />
+          <MakeReadyBoard
+            board={makeReadyBoard}
+            nowMs={nowMs}
+            openGroups={openGroups}
+            onOpenOrder={onOpenRow}
+          />
+        ) : mode === "insights" ? (
+          <InsightsBoard insights={insights} />
         ) : (
           <ClosedBoard board={closedBoard} onOpenRow={onOpenRow} />
         )}
       </ScrollView>
-      <WorkOrderSheet order={selected} onClose={() => setSelectedId(null)} />
     </View>
   );
 }

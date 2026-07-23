@@ -264,9 +264,11 @@ export default function PropertyMapScreen() {
         pointerEvents="box-none"
         style={{ position: "absolute", top: insets.top + HEADER_TOP_PAD, left: hPad, right: hPad, gap: 10 }}
       >
-        <View pointerEvents="box-none" className="flex-row" style={{ justifyContent: "flex-end" }}>
-          <AccountMenu />
-        </View>
+        {width >= 1040 ? null : (
+          <View pointerEvents="box-none" className="flex-row" style={{ justifyContent: "flex-end" }}>
+            <AccountMenu />
+          </View>
+        )}
         {hasData && !hasQuery && lens !== "none" ? (
           <View pointerEvents="box-none" className="flex-row" style={{ justifyContent: "flex-end" }}>
             {lens === "heat" ? (

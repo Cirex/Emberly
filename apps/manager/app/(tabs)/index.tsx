@@ -10,6 +10,7 @@ import {
   LinkedFeatureCard,
   MakeReadyCard,
   RunwayCard,
+  TopBalancesCard,
   UtilitiesCard,
   type RunwaySummary,
   type UtilitiesDueSummary,
@@ -34,7 +35,7 @@ import { PastReports } from "@/components/reports/PastReports";
 import { ReportCard } from "@/components/reports/ReportCard";
 import { Spark } from "@/components/trends/Spark";
 import { latestReport, pastReports } from "@/lib/derived/reports";
-import { buildWorkData, makeReadySnapshot } from "@/lib/derived/work-boards";
+import { buildOpenBoard, buildWorkData, makeReadySnapshot } from "@/lib/derived/work-boards";
 import { sparkValues } from "@/lib/derived/trends";
 import { activeLocale } from "@/lib/i18n";
 import { useLeases } from "@/lib/stores/leases";
@@ -121,21 +122,59 @@ export default function TodayScreen() {
     if (path) router.push(path);
   };
 
+  // Shared work + utility derivations — the KPI band, the make-ready card, and
+  // the utilities card all read these, so they're computed once here.
+  const workData = useMemo(() => buildWorkData(workOrders, allUnits), [workOrders, allUnits]);
+  const makeReady = useMemo(
+    () => (workOrders.length === 0 ? null : makeReadySnapshot(workData, nowMs)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workData, workOrders.length],
+  );
+  const openBoard = useMemo(
+    () => (workOrders.length === 0 ? null : buildOpenBoard(workData, nowMs)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workData, workOrders.length],
+  );
+  const utilityExceptions = useMemo(() => {
+    if (mlgwData === null) return null;
+    return computeUtilityExceptions(
+      {
+        ...mlgwData,
+        units: allUnits.map((u) => ({ unitNumber: u.number, moveInDate: u.move_in_date })),
+        nowIso: TODAY_ISO,
+      },
+      COUNT_ONLY_COPY,
+    );
+  }, [mlgwData, allUnits]);
+  const utilitySummary = useMemo(() => {
+    if (mlgwData === null || utilityExceptions === null) return null;
+    return buildUtilitySummary(mlgwData.accounts, mlgwData.currentBills, utilityExceptions, TODAY_ISO);
+  }, [mlgwData, utilityExceptions]);
+
   const metrics: BoardMetric[] = useMemo(() => {
-    const raw = buildTodayMetrics({ units: unitFactsList, leases, expirationRows90: expirationRows, nowMs });
-    // Occupancy and balances now open the Trends sheet — they carry history
-    // sparklines, and the trend IS the story those two numbers tell.
+    const raw = buildTodayMetrics({
+      units: unitFactsList,
+      makeReady: makeReady ? { turnsInProgress: makeReady.turnsInProgress, readyUnits: makeReady.readyUnits } : null,
+      openWork: openBoard ? { openCount: openBoard.openCount, emergencyCount: openBoard.emergencyCount } : null,
+      utilities:
+        utilitySummary && utilityExceptions
+          ? { ownerDue: utilitySummary.currentDue, exceptions: utilityExceptions.length }
+          : null,
+    });
+    // Each KPI deep-links to its tab; occupancy and utilities also open Trends
+    // via their sparklines, so they point there.
     const target: Record<string, Parameters<typeof router.push>[0]> = {
       occupancy: "/trends",
-      balances: "/trends",
-      moveIns30: "/(tabs)/leasing",
-      expiring60: "/(tabs)/leasing",
+      available: "/(tabs)/leasing",
+      delinquent: "/(tabs)/delinquency",
+      openWork: "/(tabs)/work",
+      utilities: "/(tabs)/utilities",
     };
-    // Per the approved mockup: sparklines on occupancy + balances, rendered
-    // only once ≥14 daily snapshots exist (Spark self-gates via sparkValues).
+    // Sparklines only where a trend tells the story (occupancy, utilities),
+    // rendered once ≥14 daily snapshots exist (Spark self-gates via sparkValues).
     const sparkPick: Record<string, (s: (typeof snapshots)[number]) => number | null> = {
       occupancy: (s) => s.occupancyPct,
-      balances: (s) => s.balanceTotal,
+      utilities: (s) => s.utilityDue,
     };
     return raw.map((m) => {
       const pick = sparkPick[m.key];
@@ -150,7 +189,7 @@ export default function TodayScreen() {
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unitFactsList, leases, expirationRows, snapshots, t]);
+  }, [unitFactsList, makeReady, openBoard, utilitySummary, utilityExceptions, snapshots, t]);
 
   const runway: RunwaySummary = useMemo(() => {
     const in60 = expirationRows.filter((r) => r.daysLeft <= 60);
@@ -180,29 +219,48 @@ export default function TodayScreen() {
   const runwayCard = <RunwayCard summary={runway} onGo={() => openCard("runway", "/(tabs)/leasing")} />;
   const expiringSoonCard = <ExpiringSoonCard rows={expirationRows.filter((r) => r.daysLeft <= 45)} />;
 
+  // Top open balances — the Money headline surfaced on Today. Severity dot by
+  // months owed (≥2× market rent → red).
+  const topBalances = useMemo(() => {
+    const owing = unitFactsList.filter((u) => (u.balance ?? 0) > 0);
+    const sorted = [...owing].sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0));
+    return {
+      owed: owing.reduce((sum, u) => sum + (u.balance ?? 0), 0),
+      count: owing.length,
+      rows: sorted.slice(0, 4).map((u) => ({
+        unitNumber: u.unitNumber,
+        tenant: u.tenantNames[0] ?? "",
+        balance: u.balance ?? 0,
+        tone: (u.marketRent && (u.balance ?? 0) >= u.marketRent * 2 ? "red" : "amber") as "red" | "amber",
+      })),
+    };
+  }, [unitFactsList]);
+  const topBalancesCard =
+    topBalances.count > 0 ? (
+      <TopBalancesCard
+        rows={topBalances.rows}
+        owed={topBalances.owed}
+        count={topBalances.count}
+        onGo={() => openCard("topBalances", "/(tabs)/delinquency")}
+      />
+    ) : null;
+
   // Cross-feature cards, read-only: the make-ready line from the shared
   // work-order engine and the utilities-due line from the MLGW mirror. Both
   // keep LinkedFeatureCard's hide-when-no-data behavior — a cold cache (or a
-  // property with no turns) renders nothing rather than a row of zeros.
-  const makeReady = useMemo(
+  // property with no turns) renders nothing rather than a row of zeros. The
+  // make-ready snapshot and utility summary are the shared memos above.
+  const utilities: UtilitiesDueSummary | null = useMemo(
     () =>
-      workOrders.length === 0 ? null : makeReadySnapshot(buildWorkData(workOrders, allUnits), nowMs),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [workOrders, allUnits],
+      utilitySummary === null
+        ? null
+        : {
+            due: utilitySummary.currentDue,
+            billCount: utilitySummary.currentBillCount,
+            spikeCount: utilitySummary.spikeCount,
+          },
+    [utilitySummary],
   );
-  const utilities: UtilitiesDueSummary | null = useMemo(() => {
-    if (mlgwData === null) return null;
-    const exceptions = computeUtilityExceptions(
-      {
-        ...mlgwData,
-        units: allUnits.map((u) => ({ unitNumber: u.number, moveInDate: u.move_in_date })),
-        nowIso: TODAY_ISO,
-      },
-      COUNT_ONLY_COPY,
-    );
-    const s = buildUtilitySummary(mlgwData.accounts, mlgwData.currentBills, exceptions, TODAY_ISO);
-    return { due: s.currentDue, billCount: s.currentBillCount, spikeCount: s.spikeCount };
-  }, [mlgwData, allUnits]);
 
   const makeReadyCard = (
     <LinkedFeatureCard
@@ -268,17 +326,23 @@ export default function TodayScreen() {
         }}
       >
         {wide ? (
-          // iPad: the three-column workspace (flow · trends · runway).
+          // iPad (mockup frame 02): a 3-column dashboard grid. Left — leasing
+          // flow + top balances + renewal runway; middle — make-ready + utilities
+          // pulse + expirations; right rail — the activity ticker with the owner
+          // report pinned beneath it.
           <View style={{ flexDirection: "row", gap: 18, alignItems: "flex-start" }}>
-            <View style={{ flex: 1, gap: 14 }}>{flowCard}</View>
             <View style={{ flex: 1, gap: 14 }}>
               {chartCard}
-              {makeReadyCard}
-              {utilitiesCard}
+              {topBalancesCard}
+              {runwayCard}
             </View>
             <View style={{ flex: 1, gap: 14 }}>
-              {runwayCard}
+              {makeReadyCard}
+              {utilitiesCard}
               {expiringSoonCard}
+            </View>
+            <View style={{ flex: 1, gap: 14 }}>
+              {flowCard}
               {reportCard}
               {pastReportsBand}
             </View>
@@ -287,11 +351,13 @@ export default function TodayScreen() {
           // iPhone: the stacked variant.
           <View style={{ gap: 14 }}>
             {reportCard}
-            {flowCard}
-            {makeReadyCard}
             {chartCard}
-            {runwayCard}
+            {topBalancesCard}
+            {makeReadyCard}
             {utilitiesCard}
+            {flowCard}
+            {runwayCard}
+            {expiringSoonCard}
             {pastReportsBand}
           </View>
         )}

@@ -22,6 +22,8 @@ import {
   LapsedRowView,
   NeverFiledRowView,
 } from "@/components/leasing/insurance-rows";
+import { AgentsBoard } from "@/components/leasing/AgentsBoard";
+import { RunwayBoard } from "@/components/leasing/RunwayBoard";
 import { InsuranceDetailSheet } from "@/components/leasing/InsuranceDetailSheet";
 import { RenewalOfferSheet, type RenewalOfferDraft } from "@/components/leasing/RenewalOfferSheet";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
@@ -44,6 +46,9 @@ import {
   type PipelineStage,
   type ScoreMetric,
 } from "@/lib/derived/leasing";
+import { buildLeasingAgentBoard, buildLeasingAgentMetrics } from "@/lib/derived/leasing-agents";
+import { buildMakeReadyBoard, buildWorkData } from "@/lib/derived/work-boards";
+import { useWorkOrders } from "@/lib/stores/work-orders";
 import {
   actionsByLease,
   buildInsuranceBoard,
@@ -79,8 +84,8 @@ import { screenHPad } from "@/theme/tokens";
 /** Chips filter within a mode; "all" is every mode's default. */
 type ChipKey = string;
 
-/** The board modes: the leasing engine's four plus Renewals and Compliance. */
-type ScreenMode = LeasingMode | "renewals" | "compliance";
+/** The board modes: the leasing engine's four plus Runway, Renewals, Compliance, Agents. */
+type ScreenMode = LeasingMode | "runway" | "renewals" | "compliance" | "agents";
 
 export default function LeasingScreen() {
   const { t } = useTranslation();
@@ -107,6 +112,7 @@ export default function LeasingScreen() {
   const loading = useLeases((s) => s.loading);
   const error = useLeases((s) => s.error);
   const allUnits = useUnits((s) => s.allUnits);
+  const workOrders = useWorkOrders((s) => s.workOrders);
   const offers = useRenewals((s) => s.offers);
   const sendOffer = useRenewals((s) => s.sendOffer);
   const resolveOffer = useRenewals((s) => s.resolveOffer);
@@ -142,6 +148,28 @@ export default function LeasingScreen() {
     [leases, unitFactsList],
   );
   const vacancyRows = useMemo(() => buildVacancyRows(unitFactsList), [unitFactsList]);
+
+  // Runway kanban columns (frame 08): the make-ready engine feeds "In turn",
+  // the vacancy book feeds "Leasable now", and the pipeline feeds the rest.
+  const makeReadyRows = useMemo(
+    () => buildMakeReadyBoard(buildWorkData(workOrders, allUnits), nowMs).rows,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workOrders, allUnits],
+  );
+  const runway = useMemo(() => {
+    const inStage = (stages: PipelineStage[]) => pipelineRows.filter((r) => stages.includes(r.stage));
+    return {
+      inTurn: makeReadyRows.filter((r) => !r.isReady && !r.isComplete),
+      leasable: vacancyRows.filter((r) => r.ready),
+      applied: inStage(["application", "screening"]),
+      approved: inStage(["approved", "leaseSent"]),
+      signed: inStage(["signed", "movedIn"]),
+    };
+  }, [makeReadyRows, vacancyRows, pipelineRows]);
+  const rentFor = useCallback(
+    (unitNumber: string) => unitsIdx.get(unitNumber)?.marketRent ?? null,
+    [unitsIdx],
+  );
   const monthBuckets = useMemo(
     () => expiringByMonth(leases, nowMs, 12),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -157,6 +185,11 @@ export default function LeasingScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [policies, insuranceActions],
   );
+  const agentBoard = useMemo(
+    () => buildLeasingAgentBoard(leases, nowMs),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [leases],
+  );
 
   const metrics: BoardMetric[] = useMemo(() => {
     const raw: ScoreMetric[] =
@@ -164,9 +197,13 @@ export default function LeasingScreen() {
         ? buildRenewalMetrics(renewalsBoard)
         : mode === "compliance"
           ? buildInsuranceMetrics(insuranceBoard)
-          : buildLeasingMetrics({
-              mode, pipelineRows, expirationRows90: expirationRows, forecastRows, vacancyRows, leases, nowMs,
-            });
+          : mode === "agents"
+            ? buildLeasingAgentMetrics(agentBoard)
+            : mode === "runway"
+              ? [] // Runway carries its own flow strip, not the metric band.
+              : buildLeasingMetrics({
+                  mode, pipelineRows, expirationRows90: expirationRows, forecastRows, vacancyRows, leases, nowMs,
+                });
     return raw.map((m: ScoreMetric) => ({
       value: m.value,
       tint: m.tint,
@@ -181,8 +218,10 @@ export default function LeasingScreen() {
     expirations: expirationRows.length,
     forecast: forecastRows.length,
     vacancy: vacancyRows.length,
+    runway: runway.leasable.length,
     renewals: renewalsBoard.total,
     compliance: insuranceBoard.needsAction,
+    agents: agentBoard.rows.filter((r) => !r.isOffice).length,
   };
 
   const onMode = (key: string) => {
@@ -635,11 +674,13 @@ export default function LeasingScreen() {
       <BoardHeader
         modes={[
           { key: "pipeline", label: t("leasing.modes.pipeline"), icon: "key-outline", count: modeCounts.pipeline },
+          { key: "runway", label: t("leasing.modes.runway"), icon: "git-branch-outline", count: modeCounts.runway },
           { key: "expirations", label: t("leasing.modes.expirations"), icon: "calendar-outline", count: modeCounts.expirations },
           { key: "forecast", label: t("leasing.modes.forecast"), icon: "trending-up-outline" },
           { key: "vacancy", label: t("leasing.modes.vacancy"), icon: "home-outline", count: modeCounts.vacancy },
           { key: "renewals", label: t("leasing.modes.renewals"), icon: "refresh-outline", count: modeCounts.renewals },
           { key: "compliance", label: t("leasing.modes.compliance"), icon: "shield-checkmark-outline", count: modeCounts.compliance },
+          { key: "agents", label: t("leasing.modes.agents"), icon: "people-outline", count: modeCounts.agents },
         ]}
         activeMode={mode}
         onMode={onMode}
@@ -658,18 +699,37 @@ export default function LeasingScreen() {
             <QuickChips chips={chips} active={chip} onChip={setChip} pad={pad} />
           </View>
         ) : null}
-        <View style={{ paddingHorizontal: pad, maxWidth: wide && mode !== "expirations" ? 860 : undefined }}>
+        <View
+          style={{
+            paddingHorizontal: pad,
+            maxWidth:
+              wide && mode !== "expirations" && mode !== "agents" && mode !== "runway" ? 860 : undefined,
+          }}
+        >
           {mode === "pipeline"
             ? pipelineBody()
-            : mode === "expirations"
-              ? expirationsBody()
-              : mode === "forecast"
-                ? forecastBody()
-                : mode === "renewals"
-                  ? renewalsBody()
-                  : mode === "compliance"
-                    ? complianceBody()
-                    : vacancyBody()}
+            : mode === "runway"
+              ? (
+                  <RunwayBoard
+                    inTurn={runway.inTurn}
+                    leasable={runway.leasable}
+                    applied={runway.applied}
+                    approved={runway.approved}
+                    signed={runway.signed}
+                    rentFor={rentFor}
+                  />
+                )
+              : mode === "expirations"
+                ? expirationsBody()
+                : mode === "forecast"
+                  ? forecastBody()
+                  : mode === "renewals"
+                    ? renewalsBody()
+                    : mode === "compliance"
+                      ? complianceBody()
+                      : mode === "agents"
+                        ? <AgentsBoard board={agentBoard} />
+                        : vacancyBody()}
         </View>
       </ScrollView>
 

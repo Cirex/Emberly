@@ -1,6 +1,8 @@
 PODS:
   - boost (1.84.0)
   - DoubleConversion (1.1.6)
+  - EXApplication (57.0.2):
+    - ExpoModulesCore
   - EXConstants (57.0.6):
     - ExpoModulesCore
   - Expo (57.0.4):
@@ -98,6 +100,8 @@ PODS:
     - ExpoModulesJSI
     - ExpoModulesWorklets
     - RNWorklets
+  - ExpoNotifications (57.0.6):
+    - ExpoModulesCore
   - ExpoRouter (57.0.4):
     - ExpoModulesCore
     - RNScreens
@@ -3176,6 +3180,7 @@ PODS:
 DEPENDENCIES:
   - "boost (from `../../../node_modules/.bun/react-native@0.86.0+9da80eb6df22ec8a/node_modules/react-native/third-party-podspecs/boost.podspec`)"
   - "DoubleConversion (from `../../../node_modules/.bun/react-native@0.86.0+9da80eb6df22ec8a/node_modules/react-native/third-party-podspecs/DoubleConversion.podspec`)"
+  - "EXApplication (from `../../../node_modules/.bun/expo-application@57.0.2+a74eebb1bd530098/node_modules/expo-application/ios`)"
   - "EXConstants (from `../../../node_modules/.bun/expo-constants@57.0.6+a74eebb1bd530098/node_modules/expo-constants/ios`)"
   - "Expo (from `../../../node_modules/.bun/expo@57.0.4+a74eebb1bd530098/node_modules/expo`)"
   - "ExpoAsset (from `../../../node_modules/.bun/expo-asset@57.0.3+dd6afe80986dc3eb/node_modules/expo-asset/ios`)"
@@ -3193,6 +3198,7 @@ DEPENDENCIES:
   - "ExpoModulesJSI (from `../../../node_modules/.bun/expo-modules-jsi@57.0.1+9da80eb6df22ec8a/node_modules/expo-modules-jsi/apple`)"
   - "ExpoModulesWorklets (from `../../../node_modules/.bun/expo-modules-core@57.0.3+afa49333d9aab122/node_modules/expo-modules-core`)"
   - "ExpoModulesWorkletsAdapter (from `../../../node_modules/.bun/expo-modules-core@57.0.3+afa49333d9aab122/node_modules/expo-modules-core`)"
+  - "ExpoNotifications (from `../../../node_modules/.bun/expo-notifications@57.0.6+a74eebb1bd530098/node_modules/expo-notifications/ios`)"
   - "ExpoRouter (from `../../../node_modules/.bun/expo-router@57.0.4+338753f24f414bd0/node_modules/expo-router/ios`)"
   - "ExpoSecureStore (from `../../../node_modules/.bun/expo-secure-store@57.0.0+a74eebb1bd530098/node_modules/expo-secure-store/ios`)"
   - "ExpoSymbols (from `../../../node_modules/.bun/expo-symbols@57.0.0+a0d88b9f054a132f/node_modules/expo-symbols/ios`)"
@@ -3296,6 +3302,8 @@ EXTERNAL SOURCES:
     :podspec: "../../../node_modules/.bun/react-native@0.86.0+9da80eb6df22ec8a/node_modules/react-native/third-party-podspecs/boost.podspec"
   DoubleConversion:
     :podspec: "../../../node_modules/.bun/react-native@0.86.0+9da80eb6df22ec8a/node_modules/react-native/third-party-podspecs/DoubleConversion.podspec"
+  EXApplication:
+    :path: "../../../node_modules/.bun/expo-application@57.0.2+a74eebb1bd530098/node_modules/expo-application/ios"
   EXConstants:
     :path: "../../../node_modules/.bun/expo-constants@57.0.6+a74eebb1bd530098/node_modules/expo-constants/ios"
   Expo:
@@ -3330,6 +3338,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.bun/expo-modules-core@57.0.3+afa49333d9aab122/node_modules/expo-modules-core"
   ExpoModulesWorkletsAdapter:
     :path: "../../../node_modules/.bun/expo-modules-core@57.0.3+afa49333d9aab122/node_modules/expo-modules-core"
+  ExpoNotifications:
+    :path: "../../../node_modules/.bun/expo-notifications@57.0.6+a74eebb1bd530098/node_modules/expo-notifications/ios"
   ExpoRouter:
     :path: "../../../node_modules/.bun/expo-router@57.0.4+338753f24f414bd0/node_modules/expo-router/ios"
   ExpoSecureStore:
@@ -3517,6 +3527,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   boost: 7e761d76ca2ce687f7cc98e698152abd03a18f90
   DoubleConversion: cb417026b2400c8f53ae97020b2be961b59470cb
+  EXApplication: bbd517d50878ca1d121fb3843392beb210181e28
   EXConstants: 942dba86cfc48a1120bbef01a42e071885739401
   Expo: c771b2dfbd0a9f8702b3eaf2534b4c7dfb091cfd
   ExpoAsset: 586e89aeaab2e23bfa90b9dce4d7d5e36815c039
@@ -3534,6 +3545,7 @@ SPEC CHECKSUMS:
   ExpoModulesJSI: 0fad44a0464a4469b83a06e34e529c13043f2f69
   ExpoModulesWorklets: f6b71b8ddeb8dceb2ce3504544ecfbd708ba79a2
   ExpoModulesWorkletsAdapter: 3de6334c032cfd7da05093a974d6758014f009ba
+  ExpoNotifications: e74bcf44796a7a4d4c585e94ded7cd81dacad145
   ExpoRouter: a322bf2e409071b05ae9d4d86d5f283902364d65
   ExpoSecureStore: be2276d312c1f213605c0864772510239605ec37
   ExpoSymbols: db28b9ea52c96fe67ff9c362f5dbc6bee240ca2d

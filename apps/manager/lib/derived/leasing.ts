@@ -733,20 +733,26 @@ export function buildLeasingMetrics(input: {
 }
 
 /** The Today header strip: occupancy · balances owed · move-ins 30d · expiring 60d. */
+/**
+ * The five KPIs the manager checks first (approved mockup frame 02's band):
+ * occupancy · available · delinquent · open work · utilities. Each derives from
+ * data already on device; the work and utility summaries are optional so a cold
+ * cache shows a dash rather than a fabricated zero. Occupancy and utilities
+ * carry sparklines at the call site (they're the two whose trend tells a story).
+ */
 export function buildTodayMetrics(input: {
   units: UnitFacts[];
-  leases: ManagerLease[];
-  expirationRows90: ExpirationRow[];
-  nowMs: number;
+  /** From the work make-ready engine: units in turn and units ready to lease. */
+  makeReady: { turnsInProgress: number; readyUnits: number } | null;
+  /** From the open work-order board. */
+  openWork: { openCount: number; emergencyCount: number } | null;
+  /** Owner-paid current due and the open-exception count from the MLGW mirror. */
+  utilities: { ownerDue: number; exceptions: number } | null;
 }): ScoreMetric[] {
   const snap = occupancySnapshot(input.units);
+  const vacant = Math.max(0, snap.total - snap.occupied);
   const owing = input.units.filter((u) => (u.balance ?? 0) > 0);
   const owed = owing.reduce((sum, u) => sum + (u.balance ?? 0), 0);
-  const moveIns30 = scheduledMoveIns(input.leases, input.nowMs, 30);
-  const expiring60 = input.expirationRows90.filter((r) => r.daysLeft <= 60);
-  const atRisk60 = expiring60
-    .filter((r) => r.state !== "renewed")
-    .reduce((sum, r) => sum + (r.lease.residentRent ?? 0), 0);
   return [
     {
       key: "occupancy", value: shortPct(snap.pct), tint: TINT.green,
@@ -754,22 +760,44 @@ export function buildTodayMetrics(input: {
       captionKey: "today.metrics.occupancyCaption",
       captionParams: { occupied: snap.occupied, total: snap.total },
     },
+    input.makeReady
+      ? {
+          key: "available", value: String(vacant), tint: TINT.blue,
+          labelKey: "today.metrics.available",
+          captionKey: "today.metrics.availableCaption",
+          captionParams: { ready: input.makeReady.readyUnits, makeReady: input.makeReady.turnsInProgress },
+        }
+      : {
+          key: "available", value: String(vacant), tint: TINT.blue,
+          labelKey: "today.metrics.available",
+          captionKey: "today.metrics.availableCaptionPlain",
+          captionParams: { vacant },
+        },
     {
-      key: "balances", value: shortMoney(owed), tint: TINT.red,
-      labelKey: "today.metrics.balances",
-      captionKey: "today.metrics.balancesCaption",
+      key: "delinquent", value: shortMoney(owed), tint: TINT.red,
+      labelKey: "today.metrics.delinquent",
+      captionKey: "today.metrics.delinquentCaption",
       captionParams: { count: owing.length },
     },
-    {
-      key: "moveIns30", value: String(moveIns30), tint: TINT.blue,
-      labelKey: "today.metrics.moveIns30",
-    },
-    {
-      key: "expiring60", value: String(expiring60.length), tint: TINT.amber,
-      labelKey: "today.metrics.expiring60",
-      captionKey: "today.metrics.expiring60Caption",
-      captionParams: { amount: shortMoney(atRisk60) },
-    },
+    input.openWork
+      ? {
+          key: "openWork", value: String(input.openWork.openCount), tint: TINT.amber,
+          labelKey: "today.metrics.openWork",
+          captionKey: "today.metrics.openWorkCaption",
+          captionParams: {
+            emergency: input.openWork.emergencyCount,
+            makeReady: input.makeReady?.turnsInProgress ?? 0,
+          },
+        }
+      : { key: "openWork", value: "—", tint: TINT.amber, labelKey: "today.metrics.openWork" },
+    input.utilities
+      ? {
+          key: "utilities", value: shortMoney(input.utilities.ownerDue), tint: TINT.blue,
+          labelKey: "today.metrics.utilities",
+          captionKey: "today.metrics.utilitiesCaption",
+          captionParams: { exceptions: input.utilities.exceptions },
+        }
+      : { key: "utilities", value: "—", tint: TINT.blue, labelKey: "today.metrics.utilities" },
   ];
 }
 

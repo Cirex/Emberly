@@ -453,14 +453,29 @@ describe("score metrics", () => {
     expect(days3160.value).toBe("1");
   });
 
-  test("today metrics: occupancy, positive balances only, expirations at risk", () => {
-    const [occ, balances, moveIns30, expiring60] = buildTodayMetrics({
-      units, leases, expirationRows90, nowMs: NOW,
+  test("today metrics: 5-KPI band — occupancy, available, delinquent, open work, utilities", () => {
+    const [occ, available, delinquent, openWork, utilities] = buildTodayMetrics({
+      units,
+      makeReady: { turnsInProgress: 3, readyUnits: 5 },
+      openWork: { openCount: 12, emergencyCount: 2 },
+      utilities: { ownerDue: 4200, exceptions: 7 },
     });
     expect(occ.value).toBe("66.7%");
-    expect(balances.value).toBe("$2.2k");
-    expect(balances.captionParams?.count).toBe(1);
-    expect(moveIns30.value).toBe("2");
-    expect(expiring60.value).toBe("2");
+    expect(available.captionParams).toEqual({ ready: 5, makeReady: 3 });
+    expect(delinquent.value).toBe("$2.2k"); // positive balances only, one unit owing
+    expect(delinquent.captionParams?.count).toBe(1);
+    expect(openWork.value).toBe("12");
+    expect(openWork.captionParams).toEqual({ emergency: 2, makeReady: 3 });
+    expect(utilities.value).toBe("$4.2k");
+    expect(utilities.captionParams?.exceptions).toBe(7);
+  });
+
+  test("today metrics: cold work/utility summaries degrade to a dash, not a fake zero", () => {
+    const [, available, , openWork, utilities] = buildTodayMetrics({
+      units, makeReady: null, openWork: null, utilities: null,
+    });
+    expect(available.captionKey).toBe("today.metrics.availableCaptionPlain");
+    expect(openWork.value).toBe("—");
+    expect(utilities.value).toBe("—");
   });
 });

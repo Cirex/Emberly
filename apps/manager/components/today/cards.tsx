@@ -395,6 +395,76 @@ export function UtilitiesCard({
   );
 }
 
+// ── Top balances (Money summary) ────────────────────────────────────────────
+
+const BALANCE_DOT: Record<"red" | "amber", string> = { red: "#D1382E", amber: "#E38736" };
+
+export interface BalanceRow {
+  unitNumber: string;
+  tenant: string;
+  balance: number;
+  /** Severity by months owed (≥2 months → red), driving the row dot. */
+  tone: "red" | "amber";
+}
+
+/**
+ * The property's largest open balances — the Money tab's headline, surfaced on
+ * Today (mockup frame 02's "Top Balances" card). A colored dot flags severity,
+ * the tenant rides the meta line, and the amount is right-aligned.
+ */
+export function TopBalancesCard({
+  rows,
+  owed,
+  count,
+  onGo,
+}: {
+  rows: BalanceRow[];
+  owed: number;
+  count: number;
+  onGo: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <TodayCard
+      title={t("today.balances.title")}
+      caption={t("today.balances.caption", { count, amount: `$${Math.round(owed).toLocaleString()}` })}
+      goLabel={t("today.balances.go")}
+      onGo={onGo}
+    >
+      {rows.map((r, i) => (
+        <View
+          key={r.unitNumber}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 9,
+            paddingVertical: 8,
+            borderBottomWidth: i === rows.length - 1 ? 0 : 1,
+            borderBottomColor: HAIRLINE,
+          }}
+        >
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: BALANCE_DOT[r.tone] }} />
+          <Text
+            className="text-navy dark:text-white"
+            style={{ fontSize: 12.5, fontWeight: "800", fontVariant: ["tabular-nums"] }}
+          >
+            {r.unitNumber}
+          </Text>
+          <Text className="text-muted dark:text-white/50" numberOfLines={1} style={{ flex: 1, fontSize: 11 }}>
+            {r.tenant}
+          </Text>
+          <Text
+            className="text-navy dark:text-white"
+            style={{ fontSize: 12.5, fontWeight: "800", fontVariant: ["tabular-nums"] }}
+          >
+            ${Math.round(r.balance).toLocaleString()}
+          </Text>
+        </View>
+      ))}
+    </TodayCard>
+  );
+}
+
 // ── Cross-feature placeholder ───────────────────────────────────────────────
 
 /**

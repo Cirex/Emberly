@@ -25,11 +25,6 @@ export function isTranslating(): boolean {
   return running;
 }
 
-/** Force the guard down. Only for diagnostics recovering from a wedged pass. */
-export function resetTranslating(): void {
-  running = false;
-}
-
 export type { BatchTranslate } from "@/lib/translation/cache";
 
 /**

@@ -181,7 +181,13 @@ export function PhotoMarkupSheet({
     if (saving) return;
     setSaving(true);
     try {
-      const snapshot = await canvasRef.current?.makeImageSnapshotAsync();
+      // Snapshot ONLY the fitted image rect. The canvas is full-screen and the
+      // photo is letterboxed inside it (fit="contain"); the surrounding canvas
+      // is transparent, and JPEG has no alpha, so a full-canvas snapshot bakes
+      // those margins in as black bars. Cropping to `fitted` gives back exactly
+      // the photo plus its markup.
+      const crop = fitted ? Skia.XYWHRect(fitted.x, fitted.y, fitted.w, fitted.h) : undefined;
+      const snapshot = await canvasRef.current?.makeImageSnapshotAsync(crop);
       if (!snapshot) {
         onCancel();
         return;

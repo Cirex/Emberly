@@ -27,7 +27,7 @@ const WRITE_CONCURRENCY = 4;
 const KEY_PAGE = 1000;
 
 /** Run `fn` over `items` with at most `limit` concurrent invocations. */
-async function inParallel<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+export async function inParallel<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
   let next = 0;
   const worker = async (): Promise<void> => {
     for (;;) {

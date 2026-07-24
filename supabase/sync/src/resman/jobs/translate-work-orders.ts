@@ -14,7 +14,7 @@
  * re-run; a changed one re-translates exactly because its hash moved.
  */
 import { textHash } from "@emberly/core";
-import type { ServiceClient } from "../../db/client";
+import { inParallel, type ServiceClient } from "../../db/client";
 import type { Translator } from "../../shared/langbly";
 import { otherLang } from "../derive/translation-routing";
 
@@ -35,6 +35,8 @@ export interface TranslateWorkOrdersDeps {
    * NLLanguageRecognizer does work.
    */
   sourceLang?: "en" | "es";
+  /** Batches translated in parallel. Defaults to TRANSLATE_CONCURRENCY. */
+  concurrency?: number;
   log?: (message: string) => void;
 }
 
@@ -52,6 +54,8 @@ const DELETE_CHUNK = 200;
 /** Sources per translate request — the client batches internally too, but this
  *  bounds a single failure's blast radius and gives progress logging. */
 const TRANSLATE_BATCH = 100;
+/** Batches in flight at once. Bounded well under what the API tolerated. */
+const TRANSLATE_CONCURRENCY = 5;
 
 function chunked<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -145,8 +149,15 @@ export async function translateWorkOrders(
     // throws away everything already translated and paid for. Per-batch upserts
     // make progress durable, and because the cache is content-addressed a
     // re-run simply resumes with whatever is still missing.
-    for (const group of chunked(missing, TRANSLATE_BATCH)) {
-      const outputs = await deps.translator.translateBatch(group, from, to);
+    const batches = chunked(missing, TRANSLATE_BATCH);
+    const translator = deps.translator;
+    // Langbly translates each segment serially inside a batch (~1.5s each), so
+    // the wall clock is dominated by segment count, not round trips. Running a
+    // few batches at once cuts a multi-hour backfill to minutes. The service
+    // publishes no RPM limit and returns no rate-limit headers; six concurrent
+    // requests were accepted cleanly, so this stays well under that.
+    await inParallel(batches, deps.concurrency ?? TRANSLATE_CONCURRENCY, async (group) => {
+      const outputs = await translator.translateBatch(group, from, to);
       const rows = group.map((source, i) => ({
         source_hash: textHash(source),
         target_lang: to,
@@ -160,7 +171,7 @@ export async function translateWorkOrders(
       if (error) throw new Error(`upsert translations: ${error.message}`);
       translated += rows.length;
       log(`[translate-work-orders] ${translated}/${missing.length} translated`);
-    }
+    });
   }
 
   const reaped = await reapStale(deps.supabase, liveHashes);

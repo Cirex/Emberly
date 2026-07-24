@@ -4,8 +4,17 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
 import { useTranslation } from "react-i18next";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, Image, Pressable, Text, View, useWindowDimensions } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FlatList,
+  Image,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -13,8 +22,10 @@ import Reanimated, { type SharedValue, useAnimatedStyle } from "react-native-rea
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AccountMenu } from "@/components/ui/AccountMenu";
 import { MiniPathMap } from "@/components/my-day/MiniPathMap";
+import { MyWeekPanel } from "@/components/my-day/MyWeekPanel";
 import { matchesDisplayMode } from "@/lib/derived/filtering";
 import { greetingKeyFor, techMatches, urgentTrade } from "@/lib/derived/my-path";
+import { buildMyWeek } from "@/lib/derived/my-week";
 import { parseAll } from "@/lib/derived/parse";
 import { TRADE_TINT, tagIconName, tagTint } from "@/lib/derived/tags";
 import { workOrderStatusColor } from "@/lib/derived/status";
@@ -147,6 +158,39 @@ export default function MyDayScreen() {
 
   const openInMap = () => router.push({ pathname: "/(tabs)/property-map", params: { path: "1" } });
 
+  // ── My Day ⇄ My Week pager
+  const pagerRef = useRef<ScrollView>(null);
+  const showWeek = useCallback(() => pagerRef.current?.scrollTo({ x: width, animated: true }), [width]);
+  const showDay = useCallback(() => pagerRef.current?.scrollTo({ x: 0, animated: true }), []);
+  // A width change (rotation, split view) would leave the pager parked mid-page.
+  useEffect(() => {
+    pagerRef.current?.scrollTo({ x: 0, animated: false });
+  }, [width]);
+
+  // Rebuilding is instant — the spinner is held briefly so the gesture reads as
+  // having done something rather than snapping back with no acknowledgement.
+  const [rebuilding, setRebuilding] = useState(false);
+  const rebuildPath = useCallback(() => {
+    setRebuilding(true);
+    day.rebuild({ openWorkOrders: openAll, staffName, pendingClosedIds: pendingIds, nowMs: Date.now() });
+    setTimeout(() => setRebuilding(false), 450);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openAll, staffName, pendingIds]);
+
+  const myWeek = useMemo(
+    () =>
+      buildMyWeek({
+        workOrders: parsed,
+        staffName,
+        nowMs,
+        onRouteToday: pendingStops.length,
+        urgentToday: urgentCount,
+      }),
+    // nowMs is a render-time clock; keying on the data is what actually matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [parsed, staffName, pendingStops.length, urgentCount],
+  );
+
   const header = (
     <View>
       {/* Large-title greeting — two lines, the screen's identity, with the
@@ -204,12 +248,13 @@ export default function MyDayScreen() {
             </Text>
           </GlassPill>
           <View style={{ position: "absolute", right: pad - 6, bottom: 12, flexDirection: "row", gap: 8 }}>
-            <GlassPill
-              dark={dark}
-              onPress={() => day.rebuild({ openWorkOrders: openAll, staffName, pendingClosedIds: pendingIds, nowMs: Date.now() })}
-            >
-              <Ionicons name="refresh" size={12} color={OLIVE_TEXT} />
-              <Text style={{ fontSize: 12, fontWeight: "700", color: OLIVE_TEXT }}>{t("myDay.rebuild")}</Text>
+            {/* Rebuild used to sit here as a button. It is now the pull-to-
+                refresh on the list below — the gesture a tech already reaches
+                for — which frees the spot for the way into My Week. */}
+            <GlassPill dark={dark} onPress={showWeek}>
+              <Ionicons name="stats-chart" size={12} color={OLIVE_TEXT} />
+              <Text style={{ fontSize: 12, fontWeight: "700", color: OLIVE_TEXT }}>{t("myWeek.open")}</Text>
+              <Ionicons name="chevron-forward" size={11} color={OLIVE_TEXT} />
             </GlassPill>
             <Pressable
               onPress={openInMap}
@@ -326,30 +371,65 @@ export default function MyDayScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      <FlatList
-        data={queue}
-        keyExtractor={(wo) => wo.id}
-        contentContainerStyle={{
-          paddingTop: insets.top + 10,
-          paddingBottom: insets.bottom + 110,
-        }}
-        ListHeaderComponent={header}
-        windowSize={7}
-        ListEmptyComponent={
-          <Text className="text-muted dark:text-white/50" style={{ fontSize: 12.5, textAlign: "center", padding: 16 }}>
-            {t("myDay.queueEmpty")}
-          </Text>
-        }
-        renderItem={({ item }) => (
-          <QueueRow
-            wo={item}
-            pad={pad}
-            nowMs={nowMs}
-            onOpen={() => router.push(`/work-order/${item.id}`)}
-            onAdd={() => addToPath(item)}
+      {/*
+        My Day and My Week are two pages of one horizontal pager, driven only by
+        the pills — swipe is deliberately off. The stop and queue rows are
+        themselves horizontally swipeable (close a stop, add to path), and a
+        swipeable pager would fight them for every drag; losing "swipe to close"
+        to gain "swipe to My Week" would be a bad trade.
+      */}
+      <ScrollView
+        ref={pagerRef}
+        horizontal
+        pagingEnabled
+        scrollEnabled={false}
+        showsHorizontalScrollIndicator={false}
+        style={{ flex: 1 }}
+      >
+        <View style={{ width }}>
+          <FlatList
+            data={queue}
+            keyExtractor={(wo) => wo.id}
+            contentContainerStyle={{
+              paddingTop: insets.top + 10,
+              paddingBottom: insets.bottom + 110,
+            }}
+            ListHeaderComponent={header}
+            windowSize={7}
+            refreshControl={
+              <RefreshControl
+                refreshing={rebuilding}
+                onRefresh={rebuildPath}
+                tintColor={MUTED}
+                progressViewOffset={insets.top}
+              />
+            }
+            ListEmptyComponent={
+              <Text className="text-muted dark:text-white/50" style={{ fontSize: 12.5, textAlign: "center", padding: 16 }}>
+                {t("myDay.queueEmpty")}
+              </Text>
+            }
+            renderItem={({ item }) => (
+              <QueueRow
+                wo={item}
+                pad={pad}
+                nowMs={nowMs}
+                onOpen={() => router.push(`/work-order/${item.id}`)}
+                onAdd={() => addToPath(item)}
+              />
+            )}
           />
-        )}
-      />
+        </View>
+        <View style={{ width }}>
+          <MyWeekPanel
+            week={myWeek}
+            pad={pad}
+            topInset={insets.top}
+            bottomInset={insets.bottom}
+            onBack={showDay}
+          />
+        </View>
+      </ScrollView>
 
       {toast ? (
         <View

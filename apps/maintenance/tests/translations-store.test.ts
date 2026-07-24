@@ -96,3 +96,48 @@ describe("incremental commits", () => {
     expect(Object.keys(out)).toHaveLength(3);
   });
 });
+
+describe("server pre-cache merge", () => {
+  const { textHash } = require("@/lib/translation/hash");
+
+  test("server entries are keyed identically to on-device ones", () => {
+    // The whole scheme rests on this: the server hashes the SOURCE and the app
+    // looks up `${lang}:${hash(source)}`. If these ever diverge, a
+    // server-computed translation is invisible to the phone.
+    const source = "Water heater leaking";
+    const serverKeyed: TranslationEntries = { [`es:${textHash(source)}`]: "Calentador con fugas" };
+    expect(lookupTranslation(serverKeyed, "es", source)).toBe("Calentador con fugas");
+  });
+
+  test("a merged source is no longer pending, so it never re-translates", async () => {
+    const source = "Doors";
+    const merged: TranslationEntries = { [`es:${textHash(source)}`]: "Puertas" };
+    // pendingSources is what drives the on-device pass; a server-merged source
+    // must drop out of it entirely.
+    expect(pendingSources("es", [source], merged)).toEqual([]);
+
+    let calls = 0;
+    const counting: BatchTranslate = async (texts) => {
+      calls += 1;
+      return texts.map((t) => `es:${t}`);
+    };
+    const out = await computeTranslations("es", [source], merged, counting);
+    expect(calls).toBe(0);
+    expect(Object.keys(out)).toHaveLength(0);
+  });
+
+  test("only field-authored residue reaches the device translator", async () => {
+    // Server covered the ResMan prose; the tech's own note did not exist there.
+    const fromServer = "Replace the T&P valve";
+    const techNote = "Cambié la válvula y probé la línea";
+    const merged: TranslationEntries = { [`es:${textHash(fromServer)}`]: "Reemplazar la válvula T&P" };
+
+    const seen: string[][] = [];
+    const spy: BatchTranslate = async (texts) => {
+      seen.push(texts);
+      return texts.map((t) => `es:${t}`);
+    };
+    await computeTranslations("es", [fromServer, techNote], merged, spy);
+    expect(seen).toEqual([[techNote]]);
+  });
+});

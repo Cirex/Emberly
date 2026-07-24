@@ -46,7 +46,16 @@ const defaultDetector = async (texts: string[]): Promise<string[]> => {
 
 interface TranslationsState {
   entries: TranslationEntries;
+  /** Per-language watermark from the server pull; `since` for the next one. */
+  serverSyncedAt: Record<string, string>;
   lookup: (lang: AppLanguage, source: string) => string | null;
+  /**
+   * Merge server-computed translations, keyed by source hash for `lang`.
+   * The server is authoritative for ResMan prose, so its text wins over
+   * anything translated on-device for the same source. Writes nothing (and so
+   * re-renders nothing) when the pull is empty — the steady state.
+   */
+  mergeServer: (lang: AppLanguage, entries: Record<string, string>, syncedAt: string) => void;
   /** Translate every not-yet-cached source into `lang` and store the results.
    *  Safe to call every sync; deduped, batched, and never throws. */
   translate: (lang: AppLanguage, sources: string[], translator?: BatchTranslate) => Promise<void>;
@@ -60,7 +69,24 @@ export const useTranslations = create<TranslationsState>()(
   persist(
     (set, get) => ({
       entries: {},
+      serverSyncedAt: {},
       lookup: (lang, source) => lookupTranslation(get().entries, lang, source),
+
+      mergeServer: (lang, entries, syncedAt) => {
+        const hashes = Object.keys(entries);
+        if (hashes.length === 0) {
+          // Nothing changed server-side. Still advance the watermark so the
+          // next pull stays incremental, but leave `entries` identical so no
+          // consumer re-renders.
+          set((s) => ({ serverSyncedAt: { ...s.serverSyncedAt, [lang]: syncedAt } }));
+          return;
+        }
+        set((s) => {
+          const next = { ...s.entries };
+          for (const hash of hashes) next[`${lang}:${hash}`] = entries[hash];
+          return { entries: next, serverSyncedAt: { ...s.serverSyncedAt, [lang]: syncedAt } };
+        });
+      },
       translate: async (lang, sources, translator = defaultTranslator) => {
         // One pass at a time. A sync tick and a language switch can both fire,
         // and a second pass computed against the same snapshot would re-request
@@ -111,7 +137,7 @@ export const useTranslations = create<TranslationsState>()(
     {
       name: "emberly-maintenance-translations",
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (s) => ({ entries: s.entries }),
+      partialize: (s) => ({ entries: s.entries, serverSyncedAt: s.serverSyncedAt }),
     },
   ),
 );

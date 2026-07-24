@@ -1,4 +1,6 @@
 import { useCallback, useEffect } from "react";
+import { fetchWorkOrderTranslations } from "@/lib/api/work-order-translations";
+import { useConfig } from "@/lib/stores/config";
 import { useMyDay } from "@/lib/stores/my-day";
 import { useSettings } from "@/lib/stores/settings";
 import { useTranslations } from "@/lib/stores/translations";
@@ -36,31 +38,70 @@ export function useTranslated(): (source: string) => Translated {
 }
 
 /**
- * Pre-translates every work order's prose (title, description, tech notes) into
- * the active language as it syncs — mounted once (the tabs layout). English is a
- * no-op; the cache dedupes and skips anything unchanged, so it's safe to run on
- * every data refresh and language switch.
+ * Keeps work-order prose translated, server-first.
+ *
+ * The sync worker pre-translates every ResMan work order once (Langbly) into
+ * work_order_translations, keyed by the same content hash this app uses. So the
+ * phone's job is to MERGE that, not to reproduce it — the bulk on-device
+ * backfill that used to grind through thousands of strings is gone.
+ *
+ * What stays on-device is the prose the server has never seen: notes a tech
+ * types in the field, including a Spanish speaker writing Spanish into
+ * technician notes. After the merge, whatever is still uncached is exactly that
+ * residue, and only it goes to Apple's translator.
+ *
+ * Nothing is re-translated without cause. The server pull is incremental (a
+ * watermark, so an unchanged corpus returns an empty map and writes nothing),
+ * and the on-device pass is content-addressed — a source whose hash is already
+ * cached is skipped, and a source whose text changed hashes differently and is
+ * the only thing that re-translates.
  */
 export function useWorkOrderTranslationSync(): void {
   const language = useSettings((s) => s.language);
   const dataVersion = useWorkOrders((s) => s.dataVersion);
+  const token = useConfig((s) => s.token);
+  const baseUrl = useConfig((s) => s.baseUrl);
   // Today's stops are what the tech is actually looking at, so their prose goes
-  // to the front of the queue; the rest of the property backfills behind it.
+  // to the front of whatever residue still needs local translation.
   const stops = useMyDay((s) => s.stops);
+
   useEffect(() => {
-    // Runs in both languages now: an English reader needs the Spanish notes
-    // translated just as a Spanish reader needs the English work orders.
-    const orders = useWorkOrders.getState().workOrders;
-    const priorityIds = useMyDay.getState().stops.flatMap((s) => s.workOrderIds);
-    const sources = orderedTranslationSources(orders, priorityIds);
-    if (sources.length > 0) {
-      // Evict translations of prose no longer present before backfilling the
-      // new set, so edited/closed work orders don't accumulate dead entries.
+    let cancelled = false;
+    void (async () => {
+      const orders = useWorkOrders.getState().workOrders;
+      const priorityIds = useMyDay.getState().stops.flatMap((s) => s.workOrderIds);
+      const sources = orderedTranslationSources(orders, priorityIds);
+      if (sources.length === 0) return;
+
+      // Evict translations of prose no longer present, so edited or closed work
+      // orders don't accumulate dead entries.
       useTranslations.getState().reap(sources);
-      void useTranslations.getState().translate(language, sources);
-    }
+
+      // 1. Server first — one small request, and nothing to translate locally
+      //    for anything it covers.
+      if (token && baseUrl) {
+        try {
+          const since = useTranslations.getState().serverSyncedAt[language] ?? null;
+          const pulled = await fetchWorkOrderTranslations(language, since, { baseUrl, token });
+          if (cancelled) return;
+          useTranslations.getState().mergeServer(language, pulled.entries, pulled.syncedAt);
+        } catch {
+          // Offline or the endpoint is unreachable: keep what's cached and let
+          // the on-device pass below cover whatever it can. Never a hard error.
+        }
+      }
+      if (cancelled) return;
+
+      // 2. Whatever the server didn't cover — field-authored notes — is
+      //    translated on-device. `translate` skips everything already cached,
+      //    so in the steady state this is a no-op.
+      await useTranslations.getState().translate(language, sources);
+    })();
+    return () => {
+      cancelled = true;
+    };
     // dataVersion changes only when rows actually change, so this fires on real
     // syncs and language switches — not on every render. `stops` is read for its
-    // identity: a rebuilt day reorders the queue toward the new visible work.
-  }, [language, dataVersion, stops]);
+    // identity: a rebuilt day reorders the residue toward the new visible work.
+  }, [language, dataVersion, stops, token, baseUrl]);
 }

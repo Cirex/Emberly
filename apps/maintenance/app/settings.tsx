@@ -7,6 +7,10 @@ import {
   shouldCheckTranslation,
   translateNotice,
 } from "@/lib/translation/availability-notice";
+import { lookupTranslation, pendingSources } from "@/lib/translation/cache";
+import { orderedTranslationSources } from "@/lib/translation/sources";
+import { useMyDay } from "@/lib/stores/my-day";
+import { useTranslations } from "@/lib/stores/translations";
 import {
   isTranslateModuleLinked,
   translateAvailability,
@@ -161,6 +165,54 @@ export default function Settings() {
   // Switching to Spanish is the moment work-order prose is supposed to start
   // translating. When it can't, the sync path fails quietly by design and the
   // tech is left staring at English — so say why, here, once.
+  /**
+   * Report every stage of the translation pipeline in one place.
+   *
+   * Each stage has failed independently at least once — the native session,
+   * the cache, the sync pass, the render path — and each failure looked
+   * identical from the outside: English prose. This says which link is broken
+   * instead of leaving it to be guessed at one rebuild per hypothesis.
+   */
+  const onTranslationDiagnostics = async () => {
+    const lang = useSettings.getState().language;
+    const orders = useWorkOrders.getState().workOrders;
+    const entries = useTranslations.getState().entries;
+    const priorityIds = useMyDay.getState().stops.flatMap((s) => s.workOrderIds);
+    const sources = orderedTranslationSources(orders, priorityIds);
+    const pending = pendingSources(lang, sources, entries);
+
+    const sample = sources[0] ?? "";
+    const cachedSample = sample ? lookupTranslation(entries, lang, sample) : null;
+
+    const availability = lang === "en" ? "n/a (English)" : await translateAvailability("en", lang);
+
+    let live = "not attempted";
+    if (lang !== "en") {
+      try {
+        const out = await translateBatchOrTimeout(["Water heater leaking"], "en", lang);
+        live = out[0] ?? "(empty)";
+      } catch (err) {
+        live = `FAILED — ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    Alert.alert(
+      "Translation diagnostics",
+      [
+        `language: ${lang}`,
+        `moduleLinked: ${isTranslateModuleLinked()}`,
+        `availability: ${availability}`,
+        `workOrders: ${orders.length}`,
+        `sources: ${sources.length}`,
+        `cached entries: ${Object.keys(entries).length}`,
+        `still pending: ${pending.length}`,
+        `first source: ${sample.slice(0, 40) || "(none)"}`,
+        `its cached value: ${cachedSample ?? "(none)"}`,
+        `live test: ${live}`,
+      ].join("\n"),
+    );
+  };
+
   const onPickLanguage = (language: AppLanguage) => {
     settings.setLanguage(language);
     if (!shouldCheckTranslation(language, Platform.OS)) return;
@@ -354,6 +406,11 @@ export default function Settings() {
           label={t("settings.pendingChanges")}
           sub={pendingCount > 0 ? t("settings.pendingCloses", { count: pendingCount }) : t("settings.pendingNone")}
         />
+        <Row label="Translation diagnostics" sub="Reports each stage of the pipeline">
+          <Pressable onPress={onTranslationDiagnostics} accessibilityRole="button">
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#767B24" }}>Run</Text>
+          </Pressable>
+        </Row>
       </AppCardSurface>
 
       <SectionLabel>{t("settings.account")}</SectionLabel>

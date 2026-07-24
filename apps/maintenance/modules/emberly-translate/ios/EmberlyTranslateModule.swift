@@ -160,7 +160,10 @@ final class TranslatorModel: ObservableObject {
       let source = Locale.Language(identifier: from)
       let target = Locale.Language(identifier: to)
       if let existing = self.configuration, existing.source == source, existing.target == target {
-        existing.invalidate()
+        // Mutate the stored @Published value in place so the change republishes
+        // and `.translationTask` re-fires. invalidate() bumps an internal id
+        // that SwiftUI observes even though source/target are unchanged.
+        self.configuration?.invalidate()
       } else {
         self.configuration = TranslationSession.Configuration(source: source, target: target)
       }

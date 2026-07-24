@@ -49,7 +49,12 @@ export function useWorkOrderTranslationSync(): void {
     const orders = useWorkOrders.getState().workOrders;
     const priorityIds = useMyDay.getState().stops.flatMap((s) => s.workOrderIds);
     const sources = orderedTranslationSources(orders, priorityIds);
-    if (sources.length > 0) void useTranslations.getState().translate(language, sources);
+    if (sources.length > 0) {
+      // Evict translations of prose no longer present before backfilling the
+      // new set, so edited/closed work orders don't accumulate dead entries.
+      useTranslations.getState().reap(sources);
+      void useTranslations.getState().translate(language, sources);
+    }
     // dataVersion changes only when rows actually change, so this fires on real
     // syncs and language switches — not on every render. `stops` is read for its
     // identity: a rebuilt day reorders the queue toward the new visible work.

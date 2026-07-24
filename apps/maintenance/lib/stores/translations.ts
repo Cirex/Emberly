@@ -5,6 +5,7 @@ import type { AppLanguage } from "@/lib/i18n";
 import {
   computeTranslations,
   lookupTranslation,
+  reapOrphans,
   type BatchTranslate,
   type TranslationEntries,
 } from "@/lib/translation/cache";
@@ -53,6 +54,9 @@ interface TranslationsState {
   /** Translate every not-yet-cached source into `lang` and store the results.
    *  Safe to call every sync; deduped, batched, and never throws. */
   translate: (lang: AppLanguage, sources: string[], translator?: BatchTranslate) => Promise<void>;
+  /** Drop entries whose source is no longer among `liveSources`. No-op when
+   *  nothing is orphaned or the source list is empty (data not loaded yet). */
+  reap: (liveSources: string[]) => void;
   clear: () => void;
 }
 
@@ -93,6 +97,10 @@ export const useTranslations = create<TranslationsState>()(
           commit(); // whatever the last window collected, plus anything on failure
           running = false;
         }
+      },
+      reap: (liveSources) => {
+        const next = reapOrphans(get().entries, liveSources);
+        if (next !== get().entries) set({ entries: next });
       },
       clear: () => set({ entries: {} }),
     }),

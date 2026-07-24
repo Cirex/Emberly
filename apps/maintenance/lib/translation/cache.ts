@@ -31,6 +31,46 @@ export function lookupTranslation(
   return entries[translationKey(lang, source)] ?? null;
 }
 
+/**
+ * Drop entries whose source is no longer live, across every language.
+ *
+ * The cache is content-addressed: an edited or removed work order simply routes
+ * to a different key, so a reader can never see a stale translation — but the
+ * old entry is never read again either, and nothing else deletes it. Left alone
+ * the store grows without bound as prose churns. This sweeps keys whose source
+ * hash isn't among the current sources.
+ *
+ * Language-agnostic on purpose: keys are `${lang}:${hash}` and the hash is of
+ * the (language-independent) source, so one live-hash set covers every target
+ * language at once.
+ *
+ * Returns the same object when nothing is orphaned, so callers can skip a write.
+ * Refuses to sweep against an empty `liveSources` — that's "data not loaded
+ * yet", not "everything is dead", and acting on it would wipe the whole cache.
+ */
+export function reapOrphans(
+  entries: TranslationEntries,
+  liveSources: string[],
+): TranslationEntries {
+  if (liveSources.length === 0) return entries;
+
+  const liveHashes = new Set<string>();
+  for (const s of liveSources) {
+    const text = s?.trim();
+    if (text) liveHashes.add(textHash(text));
+  }
+
+  let removed = 0;
+  const kept: TranslationEntries = {};
+  for (const [key, value] of Object.entries(entries)) {
+    // key = `${lang}:${hash}`; the hash is everything after the first ':'.
+    const hash = key.slice(key.indexOf(":") + 1);
+    if (liveHashes.has(hash)) kept[key] = value;
+    else removed += 1;
+  }
+  return removed === 0 ? entries : kept;
+}
+
 /** Distinct, non-blank sources not already in `existing`, in first-seen order. */
 export function pendingSources(
   lang: AppLanguage,

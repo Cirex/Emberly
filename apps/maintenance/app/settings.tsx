@@ -175,31 +175,33 @@ export default function Settings() {
    */
   const onTranslationDiagnostics = async () => {
     const lang = useSettings.getState().language;
+    // Probe Spanish even while the app is in English. The pipeline is a no-op
+    // in English by design, so reporting "n/a" there would make the diagnostic
+    // useless in exactly the mode someone is most likely to run it from.
+    const probe: AppLanguage = lang === "en" ? "es" : lang;
     const orders = useWorkOrders.getState().workOrders;
     const entries = useTranslations.getState().entries;
     const priorityIds = useMyDay.getState().stops.flatMap((s) => s.workOrderIds);
     const sources = orderedTranslationSources(orders, priorityIds);
-    const pending = pendingSources(lang, sources, entries);
+    const pending = pendingSources(probe, sources, entries);
 
     const sample = sources[0] ?? "";
-    const cachedSample = sample ? lookupTranslation(entries, lang, sample) : null;
+    const cachedSample = sample ? lookupTranslation(entries, probe, sample) : null;
 
-    const availability = lang === "en" ? "n/a (English)" : await translateAvailability("en", lang);
+    const availability = await translateAvailability("en", probe);
 
-    let live = "not attempted";
-    if (lang !== "en") {
-      try {
-        const out = await translateBatchOrTimeout(["Water heater leaking"], "en", lang);
-        live = out[0] ?? "(empty)";
-      } catch (err) {
-        live = `FAILED — ${err instanceof Error ? err.message : String(err)}`;
-      }
+    let live: string;
+    try {
+      const out = await translateBatchOrTimeout(["Water heater leaking"], "en", probe);
+      live = out[0] ?? "(empty)";
+    } catch (err) {
+      live = `FAILED — ${err instanceof Error ? err.message : String(err)}`;
     }
 
     Alert.alert(
       "Translation diagnostics",
       [
-        `language: ${lang}`,
+        `language: ${lang}${lang === "en" ? ` (probing ${probe})` : ""}`,
         `moduleLinked: ${isTranslateModuleLinked()}`,
         `availability: ${availability}`,
         `workOrders: ${orders.length}`,

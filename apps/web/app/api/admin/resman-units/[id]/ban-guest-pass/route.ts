@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/admin-request";
 import { recordAdminAuditLog } from "@/lib/admin-audit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveExpiry, unitContext } from "@/lib/unit-expiry";
 
 /**
  * Unit-level guest-pass suspension, keyed to the ResMan unit.
@@ -13,8 +14,17 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * surfaced as "Guests allowed: No" on the unit detail and the guard app.
  */
 
+/**
+ * Expiry mirrors unit tags exactly (lib/unit-expiry.ts). `move_out` is the one
+ * that matters most: the "NO GUESTS ALLOWED" tag that usually prompts a
+ * suspension expires with the lease, and a suspension that outlived it would
+ * silently punish the next household.
+ */
 const SuspensionSchema = z.object({
   reason: z.string().max(500).optional(),
+  expiryKind: z.enum(["never", "date", "duration", "move_out", "status_change"]).optional().default("never"),
+  expiresOn: z.string().trim().optional().nullable(),
+  durationDays: z.number().int().positive().max(3650).optional().nullable(),
 });
 
 interface RouteContext {
@@ -60,6 +70,26 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       );
     }
 
+    // Conditional rules snapshot the unit's live lease/status, so they need the
+    // unit's context. A move_out suspension on a vacant unit has nothing to
+    // bind to and is rejected rather than silently stored as permanent.
+    let expiry;
+    try {
+      expiry = resolveExpiry(
+        {
+          kind: parsed.data.expiryKind,
+          expiresOn: parsed.data.expiresOn,
+          durationDays: parsed.data.durationDays,
+        },
+        await unitContext(supabase, unitNumber)
+      );
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Invalid expiry rule" },
+        { status: 422 }
+      );
+    }
+
     const { data: ban, error: banError } = await supabase
       .from("guest_pass_unit_bans")
       .upsert(
@@ -69,6 +99,8 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           reason: parsed.data.reason ?? null,
           banned_by: admin.displayName,
           banned_at: new Date().toISOString(),
+          expiry_kind: parsed.data.expiryKind,
+          ...expiry,
         },
         { onConflict: "resman_unit_id" }
       )
@@ -86,6 +118,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       targetId: unitId,
       metadata: {
         unitNumber,
+        expiryKind: parsed.data.expiryKind,
+        ...(expiry.expires_at ? { expiresAt: expiry.expires_at } : {}),
+        ...(expiry.bound_lease_id ? { boundLeaseId: expiry.bound_lease_id } : {}),
+        ...(expiry.status_trigger ? { statusTrigger: expiry.status_trigger } : {}),
         ...(parsed.data.reason ? { reason: parsed.data.reason } : {}),
       },
     });

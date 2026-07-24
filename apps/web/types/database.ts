@@ -267,6 +267,10 @@ export interface Database {
           reason: string | null;
           banned_by: string;
           banned_at: string;
+          expiry_kind: string;
+          expires_at: string | null;
+          bound_lease_id: string | null;
+          status_trigger: string | null;
         };
         Insert: {
           resman_unit_id: string;
@@ -274,6 +278,10 @@ export interface Database {
           reason?: string | null;
           banned_by: string;
           banned_at?: string;
+          expiry_kind?: string;
+          expires_at?: string | null;
+          bound_lease_id?: string | null;
+          status_trigger?: string | null;
         };
         Update: {
           resman_unit_id?: string;
@@ -281,6 +289,10 @@ export interface Database {
           reason?: string | null;
           banned_by?: string;
           banned_at?: string;
+          expiry_kind?: string;
+          expires_at?: string | null;
+          bound_lease_id?: string | null;
+          status_trigger?: string | null;
         };
         Relationships: [];
       };

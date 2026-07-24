@@ -452,10 +452,46 @@ function FinancialsRail({ unit }: { unit: ResmanUnitFull }) {
  * ban this needs no enrolled login, so it works for households that never
  * registered — the gap that made never-logged-in tenants unbannable.
  */
+type SuspendExpiryKind = "never" | "date" | "duration" | "move_out" | "status_change";
+
+/**
+ * The unit-tag expiry vocabulary, worded for a suspension. move_out leads
+ * because it is nearly always what's meant: the ban belongs to the household
+ * that earned it, not to the door.
+ */
+const SUSPEND_EXPIRY_OPTIONS: { kind: SuspendExpiryKind; label: string; hint: string }[] = [
+  { kind: "move_out", label: "When tenant moves out", hint: "lifts when this lease ends" },
+  { kind: "never", label: "Never", hint: "until lifted by hand" },
+  { kind: "date", label: "On a date", hint: "lifts that day" },
+  { kind: "duration", label: "After a set time", hint: "days from now" },
+  { kind: "status_change", label: "When lease status changes", hint: "watches the current status" },
+];
+
+/** Plain-English rendering of the rule a live suspension is running under. */
+function suspensionRule(ban: NonNullable<ResmanUnitDetail["unitBan"]>): string {
+  switch (ban.expiry_kind) {
+    case "move_out":
+      return "⛓ Lifts automatically when this tenant moves out.";
+    case "status_change":
+      return `↻ Lifts when the lease leaves “${ban.status_trigger ?? "its current status"}”.`;
+    case "date":
+    case "duration": {
+      if (!ban.expires_at) return "⏱ Expiring.";
+      const days = Math.ceil((new Date(ban.expires_at).getTime() - Date.now()) / 86_400_000);
+      return days <= 1 ? "⏱ Lifts today." : `⏱ Lifts in ${days} days (${date(ban.expires_at)}).`;
+    }
+    default:
+      return "Stays until lifted by hand.";
+  }
+}
+
 function GuestSuspendControl({ unit, unitBan }: { unit: ResmanUnitFull; unitBan: ResmanUnitDetail["unitBan"] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const [kind, setKind] = useState<SuspendExpiryKind>("move_out");
+  const [expiresOn, setExpiresOn] = useState("");
+  const [durationDays, setDurationDays] = useState("30");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -466,7 +502,16 @@ function GuestSuspendControl({ unit, unitBan }: { unit: ResmanUnitFull; unitBan:
       await fetchAdminJson(`/api/admin/resman-units/${unit.resman_unit_id}/ban-guest-pass`, {
         method,
         headers: { "Content-Type": "application/json" },
-        ...(method === "POST" ? { body: JSON.stringify({ reason }) } : {}),
+        ...(method === "POST"
+          ? {
+              body: JSON.stringify({
+                reason,
+                expiryKind: kind,
+                ...(kind === "date" ? { expiresOn } : {}),
+                ...(kind === "duration" ? { durationDays: Number(durationDays) } : {}),
+              }),
+            }
+          : {}),
       });
       setOpen(false);
       setReason("");
@@ -479,12 +524,14 @@ function GuestSuspendControl({ unit, unitBan }: { unit: ResmanUnitFull; unitBan:
   }
 
   if (unitBan) {
+    const rule = suspensionRule(unitBan);
     return (
       <div className="mt-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2">
         <p className="text-[11px] leading-snug text-red-700">
           Guest visits suspended by <span className="font-semibold">{unitBan.banned_by}</span> on {date(unitBan.banned_at)}
           {unitBan.reason ? <> — {unitBan.reason}</> : null}. Passes can’t be created and existing ones are denied at the gate.
         </p>
+        <p className="mt-1 text-[11px] font-semibold text-red-700/80">{rule}</p>
         {error ? <p className="mt-1 text-[11px] font-semibold text-red-700">{error}</p> : null}
         <AdminButton variant="ghost" className="mt-1.5" disabled={loading} onClick={() => void mutate("DELETE")}>
           {loading ? "Re-enabling…" : "Re-enable guest visits"}
@@ -508,6 +555,39 @@ function GuestSuspendControl({ unit, unitBan }: { unit: ResmanUnitFull; unitBan:
             maxLength={500}
             className="mb-1.5 w-full rounded-md border border-line bg-white px-2 py-1.5 text-[12px] text-textNavy outline-none focus:border-primary/40"
           />
+          {/* Same expiry vocabulary as unit tags, so the two can't drift: a
+              "NO GUESTS ALLOWED" tag lifts at move-out and so should this. */}
+          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted">Lifts</label>
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value as SuspendExpiryKind)}
+            className="mb-1.5 w-full rounded-md border border-line bg-white px-2 py-1.5 text-[12px] text-textNavy outline-none focus:border-primary/40"
+          >
+            {SUSPEND_EXPIRY_OPTIONS.map((o) => (
+              <option key={o.kind} value={o.kind}>
+                {o.label} — {o.hint}
+              </option>
+            ))}
+          </select>
+          {kind === "date" ? (
+            <input
+              type="date"
+              value={expiresOn}
+              onChange={(e) => setExpiresOn(e.target.value)}
+              className="mb-1.5 w-full rounded-md border border-line bg-white px-2 py-1.5 text-[12px] text-textNavy outline-none focus:border-primary/40"
+            />
+          ) : null}
+          {kind === "duration" ? (
+            <input
+              type="number"
+              min={1}
+              max={3650}
+              value={durationDays}
+              onChange={(e) => setDurationDays(e.target.value)}
+              placeholder="Days"
+              className="mb-1.5 w-full rounded-md border border-line bg-white px-2 py-1.5 text-[12px] text-textNavy outline-none focus:border-primary/40"
+            />
+          ) : null}
           {error ? <p className="mb-1.5 text-[11px] font-semibold text-red-700">{error}</p> : null}
           <div className="flex gap-2">
             <AdminButton variant="danger" disabled={loading} onClick={() => void mutate("POST")}>

@@ -1,3 +1,4 @@
+import { purgeExpiredUnitBans } from "@/lib/guest-pass-unit-bans";
 import { createUntypedAdminClient } from "@/lib/supabase/admin";
 import type { UntypedSupabase } from "@/lib/supabase/types";
 import type { ResmanWorkOrderRow } from "@/lib/admin-resman-work-orders";
@@ -226,7 +227,16 @@ export type ResmanUnitDetail = {
   guestsAllowed: boolean;
   guestBans: number;
   /** The unit-level suspension, when one is in force. */
-  unitBan: { reason: string | null; banned_by: string; banned_at: string } | null;
+  unitBan: {
+    reason: string | null;
+    banned_by: string;
+    banned_at: string;
+    /** Expiry rule, shared vocabulary with unit tags (lib/unit-expiry.ts). */
+    expiry_kind: string;
+    expires_at: string | null;
+    bound_lease_id: string | null;
+    status_trigger: string | null;
+  } | null;
 };
 
 const UNIT_FULL_SELECT =
@@ -316,6 +326,11 @@ export async function getResmanUnitDetail(unitId: string): Promise<ResmanUnitDet
     residents = (residentData ?? []) as unknown as ResmanResidentSummary[];
   }
 
+  // Sweep suspensions whose rule has come due before reading, so this page
+  // never shows a ban the gate has already stopped enforcing. Same
+  // purge-on-read contract as unit tags.
+  await purgeExpiredUnitBans(supabase);
+
   const personLeaseIds = residents.map((r) => r.resman_person_lease_id);
   const [vehicleRes, banRes, unitBanRes] = await Promise.all([
     personLeaseIds.length > 0
@@ -331,7 +346,7 @@ export async function getResmanUnitDetail(unitId: string): Promise<ResmanUnitDet
       : Promise.resolve({ data: [] }),
     supabase
       .from("guest_pass_unit_bans")
-      .select("reason, banned_by, banned_at")
+      .select("reason, banned_by, banned_at, expiry_kind, expires_at, bound_lease_id, status_trigger")
       .eq("resman_unit_id", unitId)
       .maybeSingle(),
   ]);

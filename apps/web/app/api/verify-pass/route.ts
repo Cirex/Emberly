@@ -9,6 +9,7 @@ import {
   touchScannerLastSeen,
   rateLimitScannerAttempt,
 } from "@/lib/scanner-auth";
+import { activeUnitBanForNumber } from "@/lib/guest-pass-unit-bans";
 import { isResidentAccessFresh } from "@/lib/residents";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { EMBERLY_PROPERTY_NAME } from "@/lib/property";
@@ -300,12 +301,9 @@ async function verifyGuestPassRecord(
   // unit's guest visits were disabled must not still open the door.
   const passUnitNumber = (resident.unit_id ?? "").trim();
   if (passUnitNumber) {
-    const { data: unitBan } = await supabase
-      .from("guest_pass_unit_bans")
-      .select("resman_unit_id")
-      .eq("unit_number", passUnitNumber)
-      .limit(1)
-      .maybeSingle();
+    // Rule-evaluated, not row-presence: a suspension that lifted at move-out
+    // must not keep turning guests away at the gate.
+    const unitBan = await activeUnitBanForNumber(supabase, passUnitNumber);
 
     if (unitBan) {
       await recordAdminAlert(supabase, {

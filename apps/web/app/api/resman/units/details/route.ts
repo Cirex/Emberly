@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { activeUnitBans, BAN_SELECT } from "@/lib/guest-pass-unit-bans";
 import { requireResmanApiKey, tokenForbiddenForResource } from "@/lib/resman-api-auth";
 import { createUntypedAdminClient } from "@/lib/supabase/admin";
 import type { UntypedSupabase } from "@/lib/supabase/types";
@@ -126,9 +127,11 @@ export async function GET(request: Request): Promise<NextResponse> {
       push(vehiclesByPersonLease, v.resman_person_lease_id as string, vehicle);
     }
 
-    // ── Guest access: unit-level suspensions and per-resident bans.
-    const unitBanRows = await selectAll(supabase, "guest_pass_unit_bans", "resman_unit_id");
-    const unitBanned = new Set(unitBanRows.map((b) => b.resman_unit_id as string));
+    // ── Guest access: unit-level suspensions and per-resident bans. The
+    // suspensions are rule-evaluated (a move_out ban lifts with its lease), so
+    // this pane agrees with the gate rather than reporting a lapsed ban.
+    const unitBanRows = await selectAll(supabase, "guest_pass_unit_bans", BAN_SELECT);
+    const unitBanned = new Set((await activeUnitBans(supabase, unitBanRows)).keys());
 
     const banRows = await selectAll(supabase, "guest_pass_bans", "resident_id");
     const bannedResidents = new Set(banRows.map((b) => b.resident_id as string));

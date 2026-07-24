@@ -3,6 +3,7 @@ import { z } from "zod";
 import { addHours } from "date-fns";
 import { verifyRequest } from "@/lib/auth";
 import { buildGuestPassUrl } from "@/lib/guest-pass-share";
+import { activeUnitBanForNumber } from "@/lib/guest-pass-unit-bans";
 import { sendAndRecordGuestPassEmail } from "@/lib/guest-pass-email";
 import {
   createGuestPassShareToken,
@@ -84,12 +85,10 @@ export async function POST(request: NextRequest) {
     // the unit ever registered a login.
     const unitNumber = (resident.unit_id ?? "").trim();
     if (unitNumber) {
-      const { data: unitBan } = await supabase
-        .from("guest_pass_unit_bans")
-        .select("reason")
-        .eq("unit_number", unitNumber)
-        .limit(1)
-        .maybeSingle();
+      // Evaluates the suspension's expiry rule rather than trusting the row's
+      // presence, so one that lapsed at move-out stops refusing passes the
+      // moment it lapses, not whenever a purge next runs.
+      const unitBan = await activeUnitBanForNumber(supabase, unitNumber);
 
       if (unitBan) {
         return NextResponse.json(

@@ -139,15 +139,26 @@ create index guest_pass_bans_resident_id_idx on guest_pass_bans (resident_id);
 -- a resident login can still have guest visits disabled. unit_number is the
 -- bridge to the first-party side (residents.unit_id / entry_logs), which is
 -- where creation and verify-pass enforce it.
+-- Expiry follows the unit-tag vocabulary (see lib/unit-expiry.ts), so a
+-- suspension can lift at move-out the way the tag that prompted it does,
+-- instead of outliving the household it was set against.
 create table guest_pass_unit_bans (
   resman_unit_id text primary key,
   unit_number text not null,
   reason text,
   banned_by text not null,
-  banned_at timestamptz not null default now()
+  banned_at timestamptz not null default now(),
+  expiry_kind text not null default 'never'
+    check (expiry_kind in ('never', 'date', 'duration', 'move_out', 'status_change')),
+  expires_at timestamptz,
+  bound_lease_id text,
+  status_trigger text
 );
 
 create index guest_pass_unit_bans_unit_number_idx on guest_pass_unit_bans (unit_number);
+create index guest_pass_unit_bans_expires_at_idx
+  on guest_pass_unit_bans (expires_at)
+  where expires_at is not null;
 
 -- ------------------------------------------------------------
 -- Row-Level Security (RLS)

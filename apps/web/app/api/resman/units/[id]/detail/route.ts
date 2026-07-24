@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { activeUnitBanForId } from "@/lib/guest-pass-unit-bans";
 import { requireResmanApiKey, tokenForbiddenForResource } from "@/lib/resman-api-auth";
 import { createUntypedAdminClient } from "@/lib/supabase/admin";
 import type { UntypedSupabase } from "@/lib/supabase/types";
@@ -135,13 +136,9 @@ async function loadResidents(supabase: UntypedSupabase, unitNumber: string): Pro
  * the unit itself (`guest_pass_unit_bans` — which needs no enrollment at all).
  */
 async function loadGuestAccess(supabase: UntypedSupabase, unitId: string, residents: Resident[]) {
-  const { data: unitBan, error: unitBanError } = await supabase
-    .from("guest_pass_unit_bans")
-    .select("resman_unit_id")
-    .eq("resman_unit_id", unitId)
-    .maybeSingle();
-  if (unitBanError) throw unitBanError;
-  const unitBanned = Boolean(unitBan);
+  // Rule-evaluated, so a suspension bound to a lease that has ended reads as
+  // lifted here exactly as it does at the gate.
+  const unitBanned = (await activeUnitBanForId(supabase, unitId)) !== null;
 
   if (residents.length === 0) return { residents: 0, allowed: 0, banned: 0, unitBanned };
 

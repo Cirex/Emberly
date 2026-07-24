@@ -1,6 +1,7 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import {
@@ -29,13 +30,6 @@ const AMBER = "#E38736";
  * sync tick; this makes that queue visible and offers a manual flush.
  */
 
-const STATE_LABEL: Record<OutboxState, string> = {
-  sending: "Sending",
-  retrying: "Will retry",
-  queued: "Waiting for signal",
-  sent: "Delivered",
-};
-
 function stateColor(state: OutboxState): string {
   switch (state) {
     case "sending":
@@ -61,6 +55,7 @@ function kindIcon(kind: OutboxItem["kind"]): keyof typeof MaterialCommunityIcons
 }
 
 export default function Outbox() {
+  const { t } = useTranslation();
   const router = useRouter();
   const token = useConfig((s) => s.token);
   const baseUrl = useConfig((s) => s.baseUrl);
@@ -96,6 +91,15 @@ export default function Outbox() {
   );
   const pending = outboxPendingCount(items);
 
+  const itemTitle = (item: OutboxItem): string => {
+    if (item.kind === "close") return t("outbox.item.markedComplete");
+    if (item.kind === "photo") return t("outbox.item.photos", { count: item.photoCount ?? 1 });
+    const fields = (item.editFields ?? []).map((f) => t(`outbox.field.${f}`));
+    if (fields.length === 0) return t("outbox.item.markedComplete");
+    const joined = fields.join(" · ");
+    return joined.charAt(0).toUpperCase() + joined.slice(1);
+  };
+
   const onFlush = async () => {
     if (flushing) return;
     setFlushing(true);
@@ -128,10 +132,10 @@ export default function Outbox() {
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text className="text-navy dark:text-white" style={{ fontSize: 24, fontWeight: "700" }}>
-            Outbox
+            {t("outbox.title")}
           </Text>
           <Text className="text-slate dark:text-white/60" style={{ fontSize: 12.5, marginTop: 1 }}>
-            {pending > 0 ? `${pending} waiting to reach ResMan` : "All changes delivered"}
+            {pending > 0 ? t("outbox.waiting", { count: pending }) : t("outbox.allDelivered")}
           </Text>
         </View>
         {pending > 0 ? (
@@ -142,7 +146,7 @@ export default function Outbox() {
             style={{ opacity: flushing ? 0.5 : 1, paddingHorizontal: 6, paddingVertical: 8 }}
           >
             <Text style={{ fontSize: 13, fontWeight: "800", color: "#767B24" }}>
-              {flushing ? "Sending…" : "Sync now"}
+              {flushing ? t("outbox.sending") : t("outbox.syncNow")}
             </Text>
           </Pressable>
         ) : null}
@@ -152,17 +156,17 @@ export default function Outbox() {
       <View style={{ flexDirection: "row", alignItems: "center", gap: 9, marginTop: 14, marginBottom: 4 }}>
         <MaterialCommunityIcons name="shield-check-outline" size={18} color={GREEN} />
         <Text style={{ flex: 1, fontSize: 12.5, color: SLATE, fontWeight: "600" }}>
-          <Text style={{ fontWeight: "800", color: NAVY }}>Nothing is lost. </Text>
-          Everything here is saved on this phone and sends itself — you can close the app.
+          <Text style={{ fontWeight: "800", color: NAVY }}>{t("outbox.reassureLead")} </Text>
+          {t("outbox.reassureBody")}
         </Text>
       </View>
 
       {items.length === 0 ? (
         <AppCardSurface kind="panel" style={{ paddingVertical: 28, alignItems: "center", marginTop: 14 }}>
           <MaterialCommunityIcons name="tray-remove" size={30} color={MUTED} />
-          <Text style={{ fontSize: 14, fontWeight: "800", color: NAVY, marginTop: 10 }}>Outbox is empty</Text>
+          <Text style={{ fontSize: 14, fontWeight: "800", color: NAVY, marginTop: 10 }}>{t("outbox.emptyTitle")}</Text>
           <Text style={{ fontSize: 12, color: MUTED, marginTop: 3 }}>
-            Closes, notes, and photos will appear here until they reach ResMan.
+            {t("outbox.emptyBody")}
           </Text>
         </AppCardSurface>
       ) : (
@@ -195,10 +199,10 @@ export default function Outbox() {
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text className="text-navy dark:text-white" style={{ fontSize: 14, fontWeight: "800" }}>
-                  {item.title}
+                  {itemTitle(item)}
                 </Text>
                 <Text style={{ fontSize: 11.5, color: MUTED, marginTop: 2, fontWeight: "600" }} numberOfLines={1}>
-                  {woLabel.get(item.workOrderId) ?? "Work order"}
+                  {woLabel.get(item.workOrderId) ?? t("outbox.workOrderFallback")}
                 </Text>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 }}>
                   <View
@@ -216,12 +220,12 @@ export default function Outbox() {
                       <Ionicons name="checkmark" size={11} color={stateColor(item.state)} />
                     ) : null}
                     <Text style={{ fontSize: 10.5, fontWeight: "800", color: stateColor(item.state) }}>
-                      {STATE_LABEL[item.state]}
+                      {t(`outbox.state.${item.state}`)}
                     </Text>
                   </View>
                   {item.attempts > 1 && item.state !== "sent" ? (
                     <Text style={{ fontSize: 10.5, color: MUTED, fontWeight: "700" }}>
-                      {item.attempts} attempts
+                      {t("outbox.attempts", { count: item.attempts })}
                     </Text>
                   ) : null}
                 </View>

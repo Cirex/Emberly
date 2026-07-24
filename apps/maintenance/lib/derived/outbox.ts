@@ -21,29 +21,32 @@ export type OutboxKind = "close" | "photo" | "edit";
  */
 export type OutboxState = "sending" | "queued" | "retrying" | "sent";
 
+/** An edited field, as a stable key the screen localizes. */
+export type EditField = "notes" | "description" | "assignment";
+
 export interface OutboxItem {
   /** Stable per row, so a list key never collides across kinds. */
   id: string;
   kind: OutboxKind;
   workOrderId: string;
-  /** Human title, e.g. "Marked complete" / "2 completion photos". */
-  title: string;
   state: OutboxState;
   /** Delivery attempts so far; 0 until the first server-answered try. */
   attempts: number;
   /** Epoch ms the item was queued — the sort tiebreaker (oldest first). */
   queuedAt: number;
+  /** Photos collapsed into this row (kind === "photo"). */
+  photoCount?: number;
+  /** Fields an edit touches (kind === "edit"), for a localized title. */
+  editFields?: EditField[];
 }
 
-/** Which fields an edit touches, named for the tech ("technician notes"). */
-export function editSummary(patch: WorkOrderEditPatch): string {
-  const parts: string[] = [];
-  if (patch.completionNotes !== undefined) parts.push("technician notes");
-  if (patch.description !== undefined) parts.push("description");
-  if (patch.technician !== undefined) parts.push("assignment");
-  if (parts.length === 0) return "Edit";
-  const joined = parts.join(" · ");
-  return joined.charAt(0).toUpperCase() + joined.slice(1);
+/** Which fields an edit touches, as keys — the screen turns these into words. */
+export function editFields(patch: WorkOrderEditPatch): EditField[] {
+  const fields: EditField[] = [];
+  if (patch.completionNotes !== undefined) fields.push("notes");
+  if (patch.description !== undefined) fields.push("description");
+  if (patch.technician !== undefined) fields.push("assignment");
+  return fields;
 }
 
 function closeState(c: PendingClose): OutboxState {
@@ -77,7 +80,6 @@ export function buildOutbox(input: OutboxInput): OutboxItem[] {
       id: `close:${c.workOrderId}`,
       kind: "close",
       workOrderId: c.workOrderId,
-      title: "Marked complete",
       state: closeState(c),
       attempts: c.attempts ?? 1,
       queuedAt: c.queuedAt,
@@ -89,10 +91,10 @@ export function buildOutbox(input: OutboxInput): OutboxItem[] {
       id: `edit:${e.workOrderId}`,
       kind: "edit",
       workOrderId: e.workOrderId,
-      title: editSummary(e.patch),
       state: e.acked ? "sent" : "queued",
       attempts: 0,
       queuedAt: e.editedAt,
+      editFields: editFields(e.patch),
     });
   }
 
@@ -115,10 +117,10 @@ export function buildOutbox(input: OutboxInput): OutboxItem[] {
       id: `photo:${workOrderId}`,
       kind: "photo",
       workOrderId,
-      title: g.count === 1 ? "1 completion photo" : `${g.count} completion photos`,
       state,
       attempts: g.attempts,
       queuedAt: g.queuedAt,
+      photoCount: g.count,
     });
   }
 

@@ -372,8 +372,8 @@ export default function Settings() {
           accessibilityLabel="Open outbox"
         >
           <Row
-            label="Outbox"
-            sub={outboxCount > 0 ? `${outboxCount} waiting to reach ResMan` : "All changes delivered"}
+            label={t("settings.outbox")}
+            sub={outboxCount > 0 ? t("outbox.waiting", { count: outboxCount }) : t("outbox.allDelivered")}
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               {outboxCount > 0 ? (

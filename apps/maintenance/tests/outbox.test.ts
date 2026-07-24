@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildOutbox, editSummary, pendingCount, type OutboxInput } from "@/lib/derived/outbox";
+import { buildOutbox, editFields, pendingCount, type OutboxInput } from "@/lib/derived/outbox";
 import type { PendingClose } from "@/lib/stores/pending-closes";
 import type { PendingEdit } from "@/lib/stores/pending-edits";
 import type { WorkOrderPhotoQueue } from "@/lib/work-order-photo-queue";
@@ -35,11 +35,11 @@ const photoQueue = (...ids: { id: string; workOrderId: string; attempts: number;
     ids.map((p) => [p.id, { photoId: p.id, workOrderId: p.workOrderId, phase: "completion" as const, queuedAt: p.queuedAt, attempts: p.attempts }]),
   );
 
-describe("editSummary", () => {
-  test("names the fields a tech recognizes", () => {
-    expect(editSummary({ completionNotes: "x" })).toBe("Technician notes");
-    expect(editSummary({ technician: "Sam" })).toBe("Assignment");
-    expect(editSummary({ description: "d", completionNotes: "n" })).toBe("Technician notes · description");
+describe("editFields", () => {
+  test("returns the touched fields as stable keys, notes first", () => {
+    expect(editFields({ completionNotes: "x" })).toEqual(["notes"]);
+    expect(editFields({ technician: "Sam" })).toEqual(["assignment"]);
+    expect(editFields({ description: "d", completionNotes: "n" })).toEqual(["notes", "description"]);
   });
 });
 
@@ -78,7 +78,7 @@ describe("buildOutbox photo collapsing", () => {
       }),
     );
     const photo = items.find((i) => i.kind === "photo");
-    expect(photo?.title).toBe("2 completion photos");
+    expect(photo?.photoCount).toBe(2);
     // The row's queuedAt is the oldest of the group; its state reflects the
     // least-settled member (one has retried), so it isn't shown as fresh.
     expect(photo?.queuedAt).toBe(10);
@@ -89,7 +89,7 @@ describe("buildOutbox photo collapsing", () => {
     const items = buildOutbox(
       input({ photos: photoQueue({ id: "p1", workOrderId: "wo-9", attempts: 0, queuedAt: 5 }) }),
     );
-    expect(items[0].title).toBe("1 completion photo");
+    expect(items[0].photoCount).toBe(1);
   });
 });
 

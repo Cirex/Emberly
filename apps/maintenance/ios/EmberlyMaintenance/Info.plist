@@ -45,6 +45,15 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<!-- Lets the dev launcher discover Metro over mDNS. iOS 14+ blocks
+		     browsing for any service not declared here, so without it the
+		     launcher finds nothing even with Local Network permission granted
+		     and the server has to be typed in by hand. expo-dev-client's config
+		     plugin would normally add this, but ios/ predates its install. -->
+		<string>_expo._tcp</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your camera</string>
 	<key>NSFaceIDUsageDescription</key>

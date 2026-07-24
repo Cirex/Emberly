@@ -198,6 +198,20 @@ export default function Settings() {
       live = `FAILED — ${err instanceof Error ? err.message : String(err)}`;
     }
 
+    // Run the REAL store pipeline over the first few sources — mask, translate,
+    // sentinel-check, unmask, commit — which is everything the raw live test
+    // above skips. If native works but this leaves the cache empty, the fault
+    // is in that path, not the session.
+    const before = Object.keys(useTranslations.getState().entries).length;
+    let pipeErr = "ok";
+    try {
+      await useTranslations.getState().translate(probe, sources.slice(0, 5));
+    } catch (err) {
+      pipeErr = err instanceof Error ? err.message : String(err);
+    }
+    const after = Object.keys(useTranslations.getState().entries).length;
+    const firstNowCached = sample ? lookupTranslation(useTranslations.getState().entries, probe, sample) : null;
+
     Alert.alert(
       "Translation diagnostics",
       [
@@ -211,6 +225,10 @@ export default function Settings() {
         `first source: ${sample.slice(0, 40) || "(none)"}`,
         `its cached value: ${cachedSample ?? "(none)"}`,
         `live test: ${live}`,
+        `— store pipeline (5 sources) —`,
+        `entries: ${before} → ${after}`,
+        `pipeline error: ${pipeErr}`,
+        `first now cached: ${firstNowCached ?? "(none)"}`,
       ].join("\n"),
     );
   };

@@ -1,8 +1,10 @@
 import { useCallback, useEffect } from "react";
+import { useMyDay } from "@/lib/stores/my-day";
 import { useSettings } from "@/lib/stores/settings";
 import { useTranslations } from "@/lib/stores/translations";
 import { useWorkOrders } from "@/lib/stores/work-orders";
 import { lookupTranslation } from "@/lib/translation/cache";
+import { orderedTranslationSources } from "@/lib/translation/sources";
 
 export interface Translated {
   /** The text to render — the cached translation, or the source when there's none. */
@@ -39,17 +41,17 @@ export function useTranslated(): (source: string) => Translated {
 export function useWorkOrderTranslationSync(): void {
   const language = useSettings((s) => s.language);
   const dataVersion = useWorkOrders((s) => s.dataVersion);
+  // Today's stops are what the tech is actually looking at, so their prose goes
+  // to the front of the queue; the rest of the property backfills behind it.
+  const stops = useMyDay((s) => s.stops);
   useEffect(() => {
     if (language === "en") return;
     const orders = useWorkOrders.getState().workOrders;
-    const sources: string[] = [];
-    for (const o of orders) {
-      if (o.title) sources.push(o.title);
-      if (o.notes) sources.push(o.notes);
-      if (o.completion_notes) sources.push(o.completion_notes);
-    }
+    const priorityIds = useMyDay.getState().stops.flatMap((s) => s.workOrderIds);
+    const sources = orderedTranslationSources(orders, priorityIds);
     if (sources.length > 0) void useTranslations.getState().translate(language, sources);
     // dataVersion changes only when rows actually change, so this fires on real
-    // syncs and language switches — not on every render.
-  }, [language, dataVersion]);
+    // syncs and language switches — not on every render. `stops` is read for its
+    // identity: a rebuilt day reorders the queue toward the new visible work.
+  }, [language, dataVersion, stops]);
 }

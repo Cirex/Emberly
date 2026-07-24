@@ -82,6 +82,13 @@ export async function computeTranslations(
   existing: TranslationEntries,
   translator: BatchTranslate,
   chunkSize: number = TRANSLATE_CHUNK,
+  /**
+   * Called with each chunk's entries as it lands. Thousands of sources take
+   * minutes to work through; without this the caller sees nothing until the
+   * last chunk, so a tech watching the screen gets English the whole time and
+   * then everything at once. `sources` is ordered — what's on screen is first.
+   */
+  onChunk?: (entries: TranslationEntries) => void,
 ): Promise<TranslationEntries> {
   if (lang === "en") return {};
   const pending = pendingSources(lang, sources, existing);
@@ -96,13 +103,16 @@ export async function computeTranslations(
         "en",
         lang,
       );
+      const landed: TranslationEntries = {};
       translated.forEach((out, i) => {
         const { tokens } = masked[i];
         // Reject a result that lost a placeholder — a protected part number may
         // have been dropped; keep English for that string instead.
         if (!sentinelsIntact(out, tokens.length)) return;
-        next[translationKey(lang, group[i])] = unmask(out, tokens);
+        landed[translationKey(lang, group[i])] = unmask(out, tokens);
       });
+      Object.assign(next, landed);
+      if (onChunk && Object.keys(landed).length > 0) onChunk(landed);
     } catch {
       // Unavailable / offline / timed out — skip this chunk, keep the rest.
       continue;

@@ -9,6 +9,16 @@ import {
   type TranslationEntries,
 } from "@/lib/translation/cache";
 
+/**
+ * Floor on how often a backfill writes to the store. Each write re-renders
+ * every screen reading translated prose, so the long tail is coalesced rather
+ * than published chunk by chunk. Zero delay for the first chunk — see below.
+ */
+const COMMIT_INTERVAL_MS = 3_000;
+
+/** Guards against two overlapping passes requesting the same sources. */
+let running = false;
+
 export type { BatchTranslate } from "@/lib/translation/cache";
 
 /**
@@ -42,9 +52,36 @@ export const useTranslations = create<TranslationsState>()(
       entries: {},
       lookup: (lang, source) => lookupTranslation(get().entries, lang, source),
       translate: async (lang, sources, translator = defaultTranslator) => {
-        const next = await computeTranslations(lang, sources, get().entries, translator);
-        if (Object.keys(next).length > 0) {
-          set((state) => ({ entries: { ...state.entries, ...next } }));
+        // One pass at a time. A sync tick and a language switch can both fire,
+        // and a second pass computed against the same snapshot would re-request
+        // everything the first is already working through.
+        if (running) return;
+        running = true;
+
+        // Commit is coalesced, not per-chunk. `entries` is a new object on every
+        // write and every useTranslated consumer reads it, so a write is a
+        // re-render of every list showing work-order prose — hundreds of chunks
+        // would mean hundreds of redraws. The first chunk lands immediately
+        // (that's the visible work, ordered to the front); the long backfill
+        // behind it commits at most once per COMMIT_INTERVAL_MS.
+        let buffer: TranslationEntries = {};
+        let lastCommit = 0;
+        const commit = () => {
+          if (Object.keys(buffer).length === 0) return;
+          const landed = buffer;
+          buffer = {};
+          lastCommit = Date.now();
+          set((state) => ({ entries: { ...state.entries, ...landed } }));
+        };
+
+        try {
+          await computeTranslations(lang, sources, get().entries, translator, undefined, (landed) => {
+            Object.assign(buffer, landed);
+            if (Date.now() - lastCommit >= COMMIT_INTERVAL_MS) commit();
+          });
+        } finally {
+          commit(); // whatever the last window collected, plus anything on failure
+          running = false;
         }
       },
       clear: () => set({ entries: {} }),

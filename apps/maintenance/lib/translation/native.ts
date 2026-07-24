@@ -69,6 +69,23 @@ export async function translateBatch(
 export const TRANSLATE_TIMEOUT_MS = 25_000;
 
 /**
+ * The native module hosts exactly one `TranslationSession` and rejects a second
+ * batch outright ("already in flight") rather than queuing it. Callers are
+ * independent — the sync tick and a settings probe can land in the same tick —
+ * so serialize here: every batch waits for the previous one to settle.
+ *
+ * The chain deliberately swallows the predecessor's rejection; one failed batch
+ * must not cascade into every batch queued behind it.
+ */
+let inFlight: Promise<unknown> = Promise.resolve();
+
+function serialize<T>(work: () => Promise<T>): Promise<T> {
+  const next = inFlight.then(work, work);
+  inFlight = next.catch(() => undefined);
+  return next;
+}
+
+/**
  * `translateBatch` that rejects instead of hanging.
  *
  * The native session is handed to us by SwiftUI's `.translationTask`; when that
@@ -82,18 +99,20 @@ export async function translateBatchOrTimeout(
   to: AppLanguage,
   timeoutMs: number = TRANSLATE_TIMEOUT_MS,
 ): Promise<string[]> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      translateBatch(texts, from, to),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new TranslateUnavailableError(`Translation timed out after ${timeoutMs}ms`)),
-          timeoutMs,
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+  return serialize(async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        translateBatch(texts, from, to),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new TranslateUnavailableError(`Translation timed out after ${timeoutMs}ms`)),
+            timeoutMs,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  });
 }

@@ -51,38 +51,62 @@ export function pendingSources(
 }
 
 /**
+ * Strings per native call.
+ *
+ * A property with thousands of work orders yields tens of thousands of sources,
+ * and handing those to one `TranslationSession.translations(from:)` is a single
+ * point of failure: it is slow enough to trip any watchdog, and one rejection
+ * loses every string in it. Chunking bounds each call and makes progress
+ * durable — a chunk that fails costs only its own strings.
+ */
+export const TRANSLATE_CHUNK = 50;
+
+export function chunk<T>(items: T[], size: number = TRANSLATE_CHUNK): T[][] {
+  if (size < 1) return items.length > 0 ? [items] : [];
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/**
  * Translate the not-yet-cached sources and return ONLY the new entries to merge
  * (empty when nothing to do, the translator is unavailable, or every result
  * failed its placeholder-integrity check). Never throws.
+ *
+ * Chunks are sequential and independent: a failed chunk is skipped and the rest
+ * still land, so a transient error degrades the result instead of erasing it.
  */
 export async function computeTranslations(
   lang: AppLanguage,
   sources: string[],
   existing: TranslationEntries,
   translator: BatchTranslate,
+  chunkSize: number = TRANSLATE_CHUNK,
 ): Promise<TranslationEntries> {
   if (lang === "en") return {};
   const pending = pendingSources(lang, sources, existing);
   if (pending.length === 0) return {};
 
-  const masked = pending.map((t) => mask(t));
-  try {
-    const translated = await translator(
-      masked.map((m) => m.masked),
-      "en",
-      lang,
-    );
-    const next: TranslationEntries = {};
-    translated.forEach((out, i) => {
-      const { tokens } = masked[i];
-      // Reject a result that lost a placeholder — a protected part number may
-      // have been dropped; keep English for that string instead.
-      if (!sentinelsIntact(out, tokens.length)) return;
-      next[translationKey(lang, pending[i])] = unmask(out, tokens);
-    });
-    return next;
-  } catch {
-    // Unavailable / offline / pack missing — nothing new; render English.
-    return {};
+  const next: TranslationEntries = {};
+  for (const group of chunk(pending, chunkSize)) {
+    const masked = group.map((t) => mask(t));
+    try {
+      const translated = await translator(
+        masked.map((m) => m.masked),
+        "en",
+        lang,
+      );
+      translated.forEach((out, i) => {
+        const { tokens } = masked[i];
+        // Reject a result that lost a placeholder — a protected part number may
+        // have been dropped; keep English for that string instead.
+        if (!sentinelsIntact(out, tokens.length)) return;
+        next[translationKey(lang, group[i])] = unmask(out, tokens);
+      });
+    } catch {
+      // Unavailable / offline / timed out — skip this chunk, keep the rest.
+      continue;
+    }
   }
+  return next;
 }

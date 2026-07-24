@@ -16,6 +16,7 @@
     "sync:unit-info": "bun --env-file=.env run src/run-unit-info.ts",
     "sync:delinquency": "bun --env-file=.env run src/run-delinquency.ts",
     "sync:work-orders": "bun --env-file=.env run src/run-work-orders.ts",
+    "sync:translate-work-orders": "bun --env-file=.env run src/run-translate-work-orders.ts",
     "sync:unit-details": "bun --env-file=.env run src/run-unit-details.ts",
     "sync:lease-details": "bun --env-file=.env run src/run-lease-details.ts",
     "sync:mlgw-bills": "bun --env-file=.env run src/run-mlgw-bills.ts",
@@ -25,7 +26,7 @@
     "sync:snapshots": "bun --env-file=.env run src/run-snapshots.ts",
     "sync:snapshots:backfill": "bun --env-file=.env run src/run-snapshots-backfill.ts",
     "sync:owner-report": "bun --env-file=.env run src/run-owner-report.ts",
-    "sync:all:once": "bun run src/run-units.ts && bun run src/run-unit-info.ts && bun run src/run-available-units.ts && bun run src/run-delinquency.ts && bun run src/run-work-orders.ts && bun run src/run-unit-details.ts && bun run src/run-lease-details.ts && bun run src/run-mlgw-bills.ts && bun run src/run-mlgw-payments.ts && bun run src/run-pm-generate.ts && bun run src/run-manager-alerts.ts && bun run src/run-snapshots.ts",
+    "sync:all:once": "bun run src/run-units.ts && bun run src/run-unit-info.ts && bun run src/run-available-units.ts && bun run src/run-delinquency.ts && bun run src/run-work-orders.ts && bun run src/run-translate-work-orders.ts && bun run src/run-unit-details.ts && bun run src/run-lease-details.ts && bun run src/run-mlgw-bills.ts && bun run src/run-mlgw-payments.ts && bun run src/run-pm-generate.ts && bun run src/run-manager-alerts.ts && bun run src/run-snapshots.ts",
     "sync:all": "bun --env-file=.env run sync:all:once"
   },
   "dependencies": {

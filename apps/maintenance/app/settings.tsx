@@ -7,10 +7,10 @@ import {
   shouldCheckTranslation,
   translateNotice,
 } from "@/lib/translation/availability-notice";
-import { lookupTranslation, pendingSources } from "@/lib/translation/cache";
+import { computeTranslations, lookupTranslation, pendingSources } from "@/lib/translation/cache";
 import { orderedTranslationSources } from "@/lib/translation/sources";
 import { useMyDay } from "@/lib/stores/my-day";
-import { useTranslations } from "@/lib/stores/translations";
+import { isTranslating, useTranslations } from "@/lib/stores/translations";
 import {
   isTranslateModuleLinked,
   translateAvailability,
@@ -198,14 +198,24 @@ export default function Settings() {
       live = `FAILED — ${err instanceof Error ? err.message : String(err)}`;
     }
 
-    // Run the REAL store pipeline over the first few sources — mask, translate,
-    // sentinel-check, unmask, commit — which is everything the raw live test
-    // above skips. If native works but this leaves the cache empty, the fault
-    // is in that path, not the session.
+    // Run the pipeline itself — mask, translate, sentinel-check, unmask — over
+    // the first few sources, and commit whatever it yields. Call
+    // computeTranslations directly rather than store.translate so the `running`
+    // re-entrancy guard can't quietly short-circuit the test to 0 → 0; report
+    // that guard's state separately so a wedged background pass is visible.
+    const guardWas = isTranslating();
     const before = Object.keys(useTranslations.getState().entries).length;
     let pipeErr = "ok";
     try {
-      await useTranslations.getState().translate(probe, sources.slice(0, 5));
+      const produced = await computeTranslations(
+        probe,
+        sources.slice(0, 5),
+        useTranslations.getState().entries,
+        async (texts, from, to) => translateBatchOrTimeout(texts, from, to),
+      );
+      if (Object.keys(produced).length > 0) {
+        useTranslations.setState((s) => ({ entries: { ...s.entries, ...produced } }));
+      }
     } catch (err) {
       pipeErr = err instanceof Error ? err.message : String(err);
     }
@@ -226,6 +236,7 @@ export default function Settings() {
         `its cached value: ${cachedSample ?? "(none)"}`,
         `live test: ${live}`,
         `— store pipeline (5 sources) —`,
+        `guard was running: ${guardWas}`,
         `entries: ${before} → ${after}`,
         `pipeline error: ${pipeErr}`,
         `first now cached: ${firstNowCached ?? "(none)"}`,

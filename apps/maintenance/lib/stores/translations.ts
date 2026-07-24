@@ -19,6 +19,16 @@ const COMMIT_INTERVAL_MS = 3_000;
 /** Guards against two overlapping passes requesting the same sources. */
 let running = false;
 
+/** Whether a translation pass is currently in flight. */
+export function isTranslating(): boolean {
+  return running;
+}
+
+/** Force the guard down. Only for diagnostics recovering from a wedged pass. */
+export function resetTranslating(): void {
+  running = false;
+}
+
 export type { BatchTranslate } from "@/lib/translation/cache";
 
 /**

@@ -24,7 +24,10 @@ export function useTranslated(): (source: string) => Translated {
   const entries = useTranslations((s) => s.entries);
   return useCallback(
     (source: string): Translated => {
-      if (language === "en" || !source) return { shown: source, translated: false };
+      // No English short-circuit any more — an English reader still gets the
+      // Spanish prose translated. A source already in the reader's language has
+      // no cache entry and falls through to itself.
+      if (!source) return { shown: source, translated: false };
       const hit = lookupTranslation(entries, language, source);
       return hit !== null ? { shown: hit, translated: true } : { shown: source, translated: false };
     },
@@ -45,7 +48,8 @@ export function useWorkOrderTranslationSync(): void {
   // to the front of the queue; the rest of the property backfills behind it.
   const stops = useMyDay((s) => s.stops);
   useEffect(() => {
-    if (language === "en") return;
+    // Runs in both languages now: an English reader needs the Spanish notes
+    // translated just as a Spanish reader needs the English work orders.
     const orders = useWorkOrders.getState().workOrders;
     const priorityIds = useMyDay.getState().stops.flatMap((s) => s.workOrderIds);
     const sources = orderedTranslationSources(orders, priorityIds);

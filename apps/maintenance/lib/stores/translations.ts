@@ -48,6 +48,12 @@ const defaultTranslator: BatchTranslate = async (texts, from, to) => {
   return translateBatchOrTimeout(texts, from, to);
 };
 
+/** On-device per-string language detection; injected so tests stay hermetic. */
+const defaultDetector = async (texts: string[]): Promise<string[]> => {
+  const { detectLanguages } = await import("@/lib/translation/native");
+  return detectLanguages(texts);
+};
+
 interface TranslationsState {
   entries: TranslationEntries;
   lookup: (lang: AppLanguage, source: string) => string | null;
@@ -89,10 +95,18 @@ export const useTranslations = create<TranslationsState>()(
         };
 
         try {
-          await computeTranslations(lang, sources, get().entries, translator, undefined, (landed) => {
-            Object.assign(buffer, landed);
-            if (Date.now() - lastCommit >= COMMIT_INTERVAL_MS) commit();
-          });
+          await computeTranslations(
+            lang,
+            sources,
+            get().entries,
+            translator,
+            undefined,
+            (landed) => {
+              Object.assign(buffer, landed);
+              if (Date.now() - lastCommit >= COMMIT_INTERVAL_MS) commit();
+            },
+            defaultDetector,
+          );
         } finally {
           commit(); // whatever the last window collected, plus anything on failure
           running = false;

@@ -1,6 +1,7 @@
 import type { AppLanguage } from "@/lib/i18n";
 import { mask, sentinelsIntact, unmask } from "@/lib/translation/mask";
 import { textHash } from "@/lib/translation/hash";
+import { planTranslation } from "@/lib/translation/routing";
 
 /**
  * Pure translation-cache logic — the mask → translate → restore → verify pass,
@@ -21,13 +22,21 @@ export function translationKey(lang: AppLanguage, source: string): string {
   return `${lang}:${textHash(source)}`;
 }
 
-/** The translated form of `source` for `lang`, or null (untranslated / English). */
+/**
+ * The translated form of `source` for `lang`, or null when there's nothing to
+ * show but the source itself.
+ *
+ * Not gated on English any more: an English reader has translations too, of the
+ * Spanish prose a previous tech left. Blank sources never translate; a source
+ * whose own language is `lang` simply has no cache entry and returns null, so
+ * the reader sees it unchanged.
+ */
 export function lookupTranslation(
   entries: TranslationEntries,
   lang: AppLanguage,
   source: string,
 ): string | null {
-  if (lang === "en" || !source.trim()) return null;
+  if (!source.trim()) return null;
   return entries[translationKey(lang, source)] ?? null;
 }
 
@@ -129,33 +138,46 @@ export async function computeTranslations(
    * then everything at once. `sources` is ordered — what's on screen is first.
    */
   onChunk?: (entries: TranslationEntries) => void,
+  /**
+   * Per-string language detector. Defaults to "everything is English", which
+   * preserves the original one-directional behaviour (ResMan prose → the tech's
+   * language) for callers and tests that don't inject one. Production passes the
+   * real on-device detector so a Spanish note reaches an English reader too.
+   */
+  detector: (texts: string[]) => Promise<string[]> = async (t) => t.map(() => "en"),
 ): Promise<TranslationEntries> {
-  if (lang === "en") return {};
   const pending = pendingSources(lang, sources, existing);
   if (pending.length === 0) return {};
 
+  // Detect first, then translate only what's in a different supported language.
+  const detected = await detector(pending);
+  const groups = planTranslation(pending, detected, lang);
+  if (groups.length === 0) return {};
+
   const next: TranslationEntries = {};
-  for (const group of chunk(pending, chunkSize)) {
-    const masked = group.map((t) => mask(t));
-    try {
-      const translated = await translator(
-        masked.map((m) => m.masked),
-        "en",
-        lang,
-      );
-      const landed: TranslationEntries = {};
-      translated.forEach((out, i) => {
-        const { tokens } = masked[i];
-        // Reject a result that lost a placeholder — a protected part number may
-        // have been dropped; keep English for that string instead.
-        if (!sentinelsIntact(out, tokens.length)) return;
-        landed[translationKey(lang, group[i])] = unmask(out, tokens);
-      });
-      Object.assign(next, landed);
-      if (onChunk && Object.keys(landed).length > 0) onChunk(landed);
-    } catch {
-      // Unavailable / offline / timed out — skip this chunk, keep the rest.
-      continue;
+  for (const group of groups) {
+    for (const part of chunk(group.texts, chunkSize)) {
+      const masked = part.map((t) => mask(t));
+      try {
+        const translated = await translator(
+          masked.map((m) => m.masked),
+          group.from,
+          lang,
+        );
+        const landed: TranslationEntries = {};
+        translated.forEach((out, i) => {
+          const { tokens } = masked[i];
+          // Reject a result that lost a placeholder — a protected part number
+          // may have been dropped; keep the source for that string instead.
+          if (!sentinelsIntact(out, tokens.length)) return;
+          landed[translationKey(lang, part[i])] = unmask(out, tokens);
+        });
+        Object.assign(next, landed);
+        if (onChunk && Object.keys(landed).length > 0) onChunk(landed);
+      } catch {
+        // Unavailable / offline / timed out — skip this chunk, keep the rest.
+        continue;
+      }
     }
   }
   return next;

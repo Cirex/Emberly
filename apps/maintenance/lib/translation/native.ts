@@ -18,6 +18,8 @@ interface EmberlyTranslateNative {
   availability(from: string, to: string): Promise<TranslateAvailability>;
   /** Batch translate; returns one string per input, in order. */
   translateBatch(texts: string[], from: string, to: string): Promise<string[]>;
+  /** Detect each string's dominant language; returns a BCP-47 code or "und". */
+  detectLanguages(texts: string[]): Promise<string[]>;
 }
 
 const native = requireOptionalNativeModule<EmberlyTranslateNative>("EmberlyTranslate");
@@ -116,4 +118,20 @@ export async function translateBatchOrTimeout(
       if (timer) clearTimeout(timer);
     }
   });
+}
+
+/**
+ * Detect each string's language on-device. Returns one BCP-47 code per input in
+ * order; "und" (undetermined) whenever detection is unavailable or unsure, which
+ * every caller reads as "leave this string in place". Never throws.
+ */
+export async function detectLanguages(texts: string[]): Promise<string[]> {
+  if (!native || texts.length === 0) return texts.map(() => "und");
+  try {
+    const out = await native.detectLanguages(texts);
+    if (!Array.isArray(out) || out.length !== texts.length) return texts.map(() => "und");
+    return out;
+  } catch {
+    return texts.map(() => "und");
+  }
 }

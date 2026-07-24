@@ -1,4 +1,5 @@
 import ExpoModulesCore
+import NaturalLanguage
 import SwiftUI
 import Translation
 
@@ -37,6 +38,29 @@ public class EmberlyTranslateModule: Module {
         case .unsupported: promise.resolve("unsupported")
         @unknown default: promise.resolve("unsupported")
         }
+      }
+    }
+
+    /**
+     * Detect the dominant language of each string with NLLanguageRecognizer.
+     * Returns a BCP-47 code per input, in order, or "und" (undetermined) when
+     * the text is too short or ambiguous to call. Runs on-device, no framework
+     * gate — NaturalLanguage predates the Translation framework — so language
+     * routing works even on systems where translation itself is unsupported.
+     */
+    AsyncFunction("detectLanguages") { (texts: [String]) -> [String] in
+      texts.map { text in
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 4 else { return "und" }
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(trimmed)
+        // Require a confident call; a coin-flip between two languages is worse
+        // than "undetermined", which the JS side treats as "leave it alone".
+        let hypotheses = recognizer.languageHypotheses(withMaximum: 1)
+        guard let (language, confidence) = hypotheses.first, confidence >= 0.5 else {
+          return "und"
+        }
+        return language.rawValue
       }
     }
 

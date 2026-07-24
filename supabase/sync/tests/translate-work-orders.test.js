@@ -188,3 +188,29 @@ test("sourceLang override flips the direction", async () => {
   assert.equal(row.source_lang, "es");
   assert.equal(row.target_lang, "en");
 });
+
+test("curated overrides beat the translator and correct already-cached rows", async () => {
+  const { overrideFor } = require("../src/resman/derive/translation-overrides.ts");
+  assert.equal(overrideFor("Punch", "es"), "Repaso (punch list)");
+  assert.equal(overrideFor("  punch  ", "es"), "Repaso (punch list)"); // trimmed, case-insensitive
+  assert.equal(overrideFor("Doors", "es"), null);
+
+  const tables = {
+    resman_work_orders: [{ title: "Punch", notes: "", completion_notes: "" }],
+    // A row a previous run wrote with the machine's wrong wording.
+    work_order_translations: [
+      { source_hash: textHash("Punch"), target_lang: "es", source_lang: "en",
+        translated_text: "Puñetazo", char_count: 5 },
+    ],
+  };
+  const result = await translateWorkOrders({
+    supabase: fakeSupabase(tables),
+    translator: fakeTranslator,
+  });
+
+  // The override is re-applied even though the hash was already cached...
+  assert.equal(result.overrides, 1);
+  // ...and it never went to the translator.
+  assert.equal(result.translated, 0);
+  assert.equal(tables.work_order_translations[0].translated_text, "Repaso (punch list)");
+});

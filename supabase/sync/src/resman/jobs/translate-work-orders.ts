@@ -17,6 +17,7 @@ import { textHash } from "@emberly/core";
 import { inParallel, type ServiceClient } from "../../db/client";
 import type { Translator } from "../../shared/langbly";
 import { otherLang } from "../derive/translation-routing";
+import { overrideFor } from "../derive/translation-overrides";
 
 export interface TranslateWorkOrdersDeps {
   supabase: ServiceClient;
@@ -46,6 +47,8 @@ export interface TranslateWorkOrdersResult {
   detected: number;
   translated: number;
   reaped: number;
+  /** Rows written from the curated jargon list rather than the translator. */
+  overrides: number;
   skippedNoTranslator: boolean;
 }
 
@@ -112,6 +115,7 @@ export async function translateWorkOrders(
     detected: 0,
     translated: 0,
     reaped: 0,
+    overrides: 0,
     skippedNoTranslator: false,
   };
 
@@ -128,10 +132,32 @@ export async function translateWorkOrders(
   const liveHashes = new Set(distinct.values());
   const cachedHashes = await loadCachedHashes(deps.supabase);
 
-  // New or changed sources = those whose hash isn't cached yet.
+  const from = deps.sourceLang ?? "en";
+  const to = otherLang(from);
+
+  // Curated jargon wins over the machine translation, and is re-applied every
+  // run regardless of the cache — that's what lets a newly-added override
+  // correct a row an earlier run already wrote with the wrong wording.
+  const overrideRows: Record<string, unknown>[] = [];
+  const overridden = new Set<string>();
+  for (const [source, hash] of distinct) {
+    const text = overrideFor(source, to);
+    if (text === null) continue;
+    overridden.add(source);
+    overrideRows.push({
+      source_hash: hash,
+      target_lang: to,
+      source_lang: from,
+      translated_text: text,
+      char_count: source.length,
+    });
+  }
+
+  // New or changed sources = those whose hash isn't cached yet. Overridden
+  // sources never go to the API at all.
   const missing: string[] = [];
   for (const [source, hash] of distinct) {
-    if (!cachedHashes.has(hash)) missing.push(source);
+    if (!cachedHashes.has(hash) && !overridden.has(source)) missing.push(source);
   }
   log(
     `[translate-work-orders] ${distinct.size} distinct, ${missing.length} new/changed, ${
@@ -141,8 +167,6 @@ export async function translateWorkOrders(
 
   let translated = 0;
   if (missing.length > 0) {
-    const from = deps.sourceLang ?? "en";
-    const to = otherLang(from);
     // Commit each batch as it lands. A full backfill is thousands of strings
     // and many minutes of paid API calls; collecting them all and writing once
     // at the end means any failure — a timeout, a rate limit, a killed worker —
@@ -174,11 +198,24 @@ export async function translateWorkOrders(
     });
   }
 
+  // Apply curated overrides last so they win over anything the API produced.
+  let overrodeCount = 0;
+  for (let i = 0; i < overrideRows.length; i += DELETE_CHUNK) {
+    const chunk = overrideRows.slice(i, i + DELETE_CHUNK);
+    const { error } = await deps.supabase
+      .from("work_order_translations")
+      .upsert(chunk, { onConflict: "source_hash,target_lang" });
+    if (error) throw new Error(`upsert overrides: ${error.message}`);
+    overrodeCount += chunk.length;
+  }
+  if (overrodeCount > 0) log(`[translate-work-orders] applied ${overrodeCount} curated override(s)`);
+
   const reaped = await reapStale(deps.supabase, liveHashes);
   log(`[translate-work-orders] translated ${translated}, reaped ${reaped}`);
   return {
     distinctSources: distinct.size,
-    alreadyCached: distinct.size - missing.length,
+    alreadyCached: distinct.size - missing.length - overrideRows.length,
+    overrides: overrodeCount,
     detected: missing.length,
     translated,
     reaped,

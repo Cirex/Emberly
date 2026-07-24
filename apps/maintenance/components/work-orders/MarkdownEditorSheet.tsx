@@ -28,6 +28,7 @@ import {
   toggleLineStyle,
 } from "@/lib/markdown-edit";
 import { MarkdownLite } from "./markdown";
+import { PhotoMarkupSheet } from "./PhotoMarkupSheet";
 import { useDictation } from "@/lib/dictation/use-dictation";
 import { useSettings } from "@/lib/stores/settings";
 import { MUTED, NAVY, OLIVE_TEXT } from "@/theme/tokens";
@@ -104,6 +105,8 @@ export function MarkdownEditorSheet({
   // Photos attached to this note, as local file URIs. Cleared with the draft so
   // a dismissed sheet never resurrects a previous field's attachments.
   const [photos, setPhotos] = useState<string[]>([]);
+  // Which attached photo is open in the markup editor, or null.
+  const [markupIndex, setMarkupIndex] = useState<number | null>(null);
   if (visible && seededFor !== title) {
     setDraft(initialText);
     setMode("write");
@@ -323,11 +326,33 @@ export function MarkdownEditorSheet({
                 contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingVertical: 8 }}
               >
                 {photos.map((uri, i) => (
-                  <View key={`${uri}:${i}`} style={{ width: 56, height: 56 }}>
+                  <Pressable
+                    key={`${uri}:${i}`}
+                    onPress={() => setMarkupIndex(i)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Mark up photo"
+                    style={{ width: 56, height: 56 }}
+                  >
                     <Image
                       source={{ uri }}
                       style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: hairline }}
                     />
+                    {/* A pencil badge signals the thumbnail is tappable to draw on. */}
+                    <View
+                      style={{
+                        position: "absolute",
+                        bottom: 3,
+                        left: 3,
+                        width: 17,
+                        height: 17,
+                        borderRadius: 9,
+                        backgroundColor: "rgba(9,13,19,0.62)",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <MaterialCommunityIcons name="pencil" size={10} color="#FFFFFF" />
+                    </View>
                     <Pressable
                       onPress={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
                       accessibilityRole="button"
@@ -347,7 +372,7 @@ export function MarkdownEditorSheet({
                     >
                       <Ionicons name="close" size={11} color="#FFFFFF" />
                     </Pressable>
-                  </View>
+                  </Pressable>
                 ))}
               </ScrollView>
             ) : null}
@@ -446,6 +471,18 @@ export function MarkdownEditorSheet({
           </ScrollView>
         )}
       </View>
+
+      {/* Photo markup, over the editor. Save swaps the flattened copy in place;
+          the marked image is what rides the upload queue. */}
+      <PhotoMarkupSheet
+        visible={markupIndex !== null}
+        sourceUri={markupIndex !== null ? photos[markupIndex] ?? null : null}
+        onCancel={() => setMarkupIndex(null)}
+        onSave={(markedUri) => {
+          setPhotos((prev) => prev.map((u, i) => (i === markupIndex ? markedUri : u)));
+          setMarkupIndex(null);
+        }}
+      />
     </Modal>
   );
 }

@@ -134,6 +134,12 @@ final class TranslatorModel: ObservableObject {
       TranslationSession.Request(sourceText: text, clientIdentifier: String(index))
     }
     do {
+      // A `supported` pair translates only after its language pack is on the
+      // device, and nothing downloads it implicitly — without this, a tech who
+      // has never used Apple Translate gets English prose forever and no error
+      // they can see. `prepareTranslation` presents the system download prompt
+      // and is a no-op once the pack is installed, so it is safe every batch.
+      try await session.prepareTranslation()
       let responses = try await session.translations(from: requests)
       var byIndex: [Int: String] = [:]
       for response in responses {

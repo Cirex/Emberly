@@ -1,8 +1,13 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import Constants from "expo-constants";
+import {
+  shouldCheckTranslation,
+  translateNotice,
+} from "@/lib/translation/availability-notice";
+import { isTranslateModuleLinked, translateAvailability } from "@/lib/translation/native";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import { capture, resetAnalytics } from "@/lib/analytics";
 import type { AppLanguage } from "@/lib/i18n";
@@ -148,6 +153,22 @@ export default function Settings() {
   const router = useRouter();
   const { t } = useTranslation();
   const settings = useSettings();
+
+  // Switching to Spanish is the moment work-order prose is supposed to start
+  // translating. When it can't, the sync path fails quietly by design and the
+  // tech is left staring at English — so say why, here, once.
+  const onPickLanguage = (language: AppLanguage) => {
+    settings.setLanguage(language);
+    if (!shouldCheckTranslation(language, Platform.OS)) return;
+    void translateAvailability("en", language).then((availability) => {
+      const notice = translateNotice({
+        availability,
+        moduleLinked: isTranslateModuleLinked(),
+        platform: Platform.OS,
+      });
+      if (notice) Alert.alert(notice.title, notice.body);
+    });
+  };
   const admin = useConfig((s) => s.admin);
   const token = useConfig((s) => s.token);
   const baseUrl = useConfig((s) => s.baseUrl);
@@ -276,7 +297,7 @@ export default function Settings() {
           </View>
         </Row>
         <Row label={t("settings.language")}>
-          <Segments value={settings.language} options={LANGUAGE_OPTIONS} onChange={settings.setLanguage} />
+          <Segments value={settings.language} options={LANGUAGE_OPTIONS} onChange={onPickLanguage} />
         </Row>
       </AppCardSurface>
 

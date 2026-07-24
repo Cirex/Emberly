@@ -21,6 +21,8 @@ import type { ParsedWorkOrder } from "@/lib/derived/types";
 import { useDerivedSnapshot } from "@/lib/hooks/use-derived-snapshot";
 import { useConfig } from "@/lib/stores/config";
 import { useMapJump } from "@emberly/ui";
+import { JobTimeCard } from "@/components/work-orders/JobTimeCard";
+import { useJobTime } from "@/lib/stores/job-time";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { usePendingEdits } from "@/lib/stores/pending-edits";
 import { useWorkOrderPhotos } from "@/lib/stores/work-order-photos";
@@ -193,6 +195,10 @@ export default function WorkOrderDetail() {
           // Copying the picked file failed — skip this photo, keep closing.
         }
       }
+      // The clock stops and the record is stamped, not pruned: time and
+      // parts have nowhere to go until closed-WO submission exists, so the
+      // device holds the only copy.
+      useJobTime.getState().close(workOrderId);
       await queueClose(workOrderId, "", config);
       if (photoUris.length > 0) await useWorkOrderPhotos.getState().flush(config);
     })();
@@ -353,6 +359,11 @@ export default function WorkOrderDetail() {
           }
         >
           <Journey wo={wo} nowMs={nowMs} dark={dark} paper={paper} />
+        </Section>
+
+        {/* Time & parts — device-local until closed-WO submission exists. */}
+        <Section label={t("jobTime.section")} hairline={hairline}>
+          <JobTimeCard workOrderId={wo.id} closed={wo.completedAt !== null} hairline={hairline} />
         </Section>
 
         {/* Technician — tap to reassign. */}

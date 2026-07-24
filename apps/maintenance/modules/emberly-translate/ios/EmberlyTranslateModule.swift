@@ -149,11 +149,21 @@ final class TranslatorModel: ObservableObject {
     let batch = generation
     return try await withCheckedThrowingContinuation { cont in
       self.continuation = cont
-      // Assigning a fresh config triggers `.translationTask` to hand us a session.
-      self.configuration = TranslationSession.Configuration(
-        source: Locale.Language(identifier: from),
-        target: Locale.Language(identifier: to)
-      )
+      // `.translationTask` re-runs only when the configuration it observes
+      // *changes*. Two Configurations for the same language pair are equal, so
+      // assigning a fresh en→es config after the first batch is a no-op — the
+      // task never re-fires, the session is never handed over, and every batch
+      // after the first hangs until the watchdog trips. Apple's mechanism for
+      // re-running the same pair is `invalidate()`; use it whenever a matching
+      // configuration is already installed, and only build a new one when the
+      // pair actually changes (or on the very first batch).
+      let source = Locale.Language(identifier: from)
+      let target = Locale.Language(identifier: to)
+      if let existing = self.configuration, existing.source == source, existing.target == target {
+        existing.invalidate()
+      } else {
+        self.configuration = TranslationSession.Configuration(source: source, target: target)
+      }
       Task { [weak self] in
         try? await Task.sleep(for: Self.batchTimeout)
         guard let self, self.generation == batch, self.continuation != nil else { return }
@@ -196,7 +206,10 @@ final class TranslatorModel: ObservableObject {
   private func finish(_ result: Result<[String], Error>) {
     let cont = continuation
     continuation = nil
-    configuration = nil
+    // Deliberately NOT clearing `configuration`. Nil-ing it here and setting an
+    // equal config back on the next batch coalesces to "no change" within a
+    // runloop turn, so `.translationTask` never re-fires. The config stays
+    // installed and the next batch re-runs it with `invalidate()`.
     pending = []
     switch result {
     case .success(let value): cont?.resume(returning: value)

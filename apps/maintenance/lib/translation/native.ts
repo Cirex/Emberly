@@ -65,8 +65,9 @@ export async function translateBatch(
   return result;
 }
 
-/** Default ceiling for one batch, a little above the native watchdog's. */
-export const TRANSLATE_TIMEOUT_MS = 25_000;
+/** Default ceiling for one batch, a little above the native watchdog's (45s) so
+ *  the native side times out first with its more specific message. */
+export const TRANSLATE_TIMEOUT_MS = 50_000;
 
 /**
  * The native module hosts exactly one `TranslationSession` and rejects a second

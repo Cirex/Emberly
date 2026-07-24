@@ -126,15 +126,22 @@ final class TranslationCoordinator {
 final class TranslatorModel: ObservableObject {
   @Published var configuration: TranslationSession.Configuration?
   private var pending: [String] = []
+  private var currentFrom = ""
+  private var currentTo = ""
   private var continuation: CheckedContinuation<[String], Error>?
   /// Distinguishes batches so a watchdog only ever cancels the batch it armed for.
   private var generation = 0
+  /// Language pairs already prepared this session. `prepareTranslation` verifies
+  /// the model on every call; doing it once per pair instead of once per batch
+  /// removes the dominant per-batch cost of a large backfill.
+  private var prepared: Set<String> = []
 
   /// A `.translationTask` that never fires leaves the continuation dangling and
   /// every later batch rejected by the in-flight guard — translation stays dead
   /// until the app restarts, with nothing logged. The watchdog turns that
-  /// silence into an error the JS side can report.
-  private static let batchTimeout: Duration = .seconds(20)
+  /// silence into an error the JS side can report. Larger batches take longer,
+  /// so this allows generous headroom over a typical on-device batch.
+  private static let batchTimeout: Duration = .seconds(45)
 
   /// One batch at a time — set the config, await the session callback.
   func run(texts: [String], from: String, to: String) async throws -> [String] {
@@ -145,6 +152,8 @@ final class TranslatorModel: ObservableObject {
       )
     }
     pending = texts
+    currentFrom = from
+    currentTo = to
     generation &+= 1
     let batch = generation
     return try await withCheckedThrowingContinuation { cont in
@@ -188,9 +197,14 @@ final class TranslatorModel: ObservableObject {
       // A `supported` pair translates only after its language pack is on the
       // device, and nothing downloads it implicitly — without this, a tech who
       // has never used Apple Translate gets English prose forever and no error
-      // they can see. `prepareTranslation` presents the system download prompt
-      // and is a no-op once the pack is installed, so it is safe every batch.
-      try await session.prepareTranslation()
+      // they can see. `prepareTranslation` presents the system download prompt.
+      // It re-verifies the model on every call, which is the dominant cost of a
+      // large backfill, so run it once per language pair and skip it thereafter.
+      let pairKey = "\(currentFrom)→\(currentTo)"
+      if !prepared.contains(pairKey) {
+        try await session.prepareTranslation()
+        prepared.insert(pairKey)
+      }
       let responses = try await session.translations(from: requests)
       var byIndex: [Int: String] = [:]
       for response in responses {

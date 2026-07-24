@@ -59,7 +59,7 @@ export function pendingSources(
  * loses every string in it. Chunking bounds each call and makes progress
  * durable — a chunk that fails costs only its own strings.
  */
-export const TRANSLATE_CHUNK = 50;
+export const TRANSLATE_CHUNK = 200;
 
 export function chunk<T>(items: T[], size: number = TRANSLATE_CHUNK): T[][] {
   if (size < 1) return items.length > 0 ? [items] : [];

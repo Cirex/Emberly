@@ -64,40 +64,59 @@ public class EmberlyTranslateModule: Module {
 final class TranslationCoordinator {
   static let shared = TranslationCoordinator()
 
-  private var window: UIWindow?
+  private var host: UIHostingController<TranslatorHostView>?
   private let model = TranslatorModel()
   private var mounted = false
 
-  /// Keep a 1×1 offscreen window so the SwiftUI `.translationTask` actually runs
-  /// without ever being visible. Mounted lazily on first use.
-  private func mountIfNeeded() throws {
+  /**
+   * Host the SwiftUI view inside the app's real view hierarchy.
+   *
+   * This previously lived in its own `UIWindow` at `windowLevel -1000`, behind
+   * everything. SwiftUI never ran `.translationTask` for it — the device
+   * reported "the system never started a session" on every batch — because a
+   * window the compositor never displays doesn't drive the view's update loop.
+   * A 1×1, near-transparent child of the key window's root view controller is
+   * just as invisible and is genuinely rendered, so the task fires.
+   */
+  private func mountIfNeeded() async throws {
     guard !mounted else { return }
     guard
       let scene = UIApplication.shared.connectedScenes
         .compactMap({ $0 as? UIWindowScene })
         .first(where: { $0.activationState == .foregroundActive }) ??
-        UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first
+        UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+      let root = (scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first)?
+        .rootViewController
     else {
       throw NSError(
         domain: "EmberlyTranslate", code: 2,
-        userInfo: [NSLocalizedDescriptionKey: "No active window scene to host translation"]
+        userInfo: [NSLocalizedDescriptionKey: "No active window to host translation"]
       )
     }
-    let host = UIHostingController(rootView: TranslatorHostView(model: model))
-    host.view.backgroundColor = .clear
-    let w = UIWindow(windowScene: scene)
-    w.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
-    w.rootViewController = host
-    w.windowLevel = UIWindow.Level(rawValue: -1000) // behind everything
-    w.isUserInteractionEnabled = false
-    w.isHidden = false
-    window = w
+
+    let controller = UIHostingController(rootView: TranslatorHostView(model: model))
+    controller.view.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
+    controller.view.backgroundColor = .clear
+    // Fully transparent views can be skipped entirely; keep it renderable.
+    controller.view.alpha = 0.01
+    controller.view.isUserInteractionEnabled = false
+    root.addChild(controller)
+    root.view.addSubview(controller.view)
+    controller.didMove(toParent: root)
+    host = controller
     mounted = true
+
+    // `.translationTask` reacts to a *change* in the configuration it observes.
+    // Assigning one in the same turn the view mounts means there is nothing
+    // mounted yet to observe it, and the first batch hangs forever. Give
+    // SwiftUI a turn to render before any configuration is set.
+    await Task.yield()
+    try? await Task.sleep(for: .milliseconds(100))
   }
 
   func translate(_ texts: [String], from: String, to: String) async throws -> [String] {
     if texts.isEmpty { return [] }
-    try mountIfNeeded()
+    try await mountIfNeeded()
     return try await model.run(texts: texts, from: from, to: to)
   }
 }

@@ -1,9 +1,13 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  Alert,
+  Image,
   Keyboard,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -12,6 +16,11 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  canDictate,
+  dictationNotice,
+  shouldOfferDictation,
+} from "@/lib/dictation/availability-notice";
 import {
   activeStyles,
   toggleBold,
@@ -47,6 +56,7 @@ export function MarkdownEditorSheet({
   dark,
   paper,
   ink,
+  allowPhotos = false,
   onSave,
   onClose,
 }: {
@@ -56,9 +66,13 @@ export function MarkdownEditorSheet({
   dark: boolean;
   paper: string;
   ink: string;
-  onSave: (text: string) => void;
+  /** Offer the camera. Notes get photos; the description field doesn't. */
+  allowPhotos?: boolean;
+  /** Photos are local file URIs; the caller owns queuing them for upload. */
+  onSave: (text: string, photoUris: string[]) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { height: windowH } = useWindowDimensions();
   const inputRef = useRef<TextInput>(null);
@@ -87,15 +101,19 @@ export function MarkdownEditorSheet({
   const [forced, setForced] = useState<Selection | null>(null);
   // Re-seed the draft each time the sheet opens for a (possibly different) field.
   const [seededFor, setSeededFor] = useState<string | null>(null);
+  // Photos attached to this note, as local file URIs. Cleared with the draft so
+  // a dismissed sheet never resurrects a previous field's attachments.
+  const [photos, setPhotos] = useState<string[]>([]);
   if (visible && seededFor !== title) {
     setDraft(initialText);
     setMode("write");
+    setPhotos([]);
     selRef.current = { start: initialText.length, end: initialText.length };
     setSeededFor(title);
   } else if (!visible && seededFor !== null) {
     setSeededFor(null);
   }
-  const dirty = draft !== initialText;
+  const dirty = draft !== initialText || photos.length > 0;
 
   const hairline = dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.08)";
   const active = activeStyles(draft, selRef.current.start, selRef.current.end);
@@ -138,6 +156,53 @@ export function MarkdownEditorSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
+  // The mic always renders on iOS. When it can't run it says why, because a
+  // control that silently disappears is indistinguishable from one that was
+  // never built — which is exactly how this went unnoticed.
+  const offersDictation = shouldOfferDictation({
+    availability: dictation.availability,
+    moduleLinked: dictation.moduleLinked,
+    platform: Platform.OS,
+  });
+  const dictationUsable = canDictate(dictation.availability);
+  const onMicPress = () => {
+    if (dictationUsable) {
+      dictation.toggle();
+      return;
+    }
+    const notice = dictationNotice({
+      availability: dictation.availability,
+      moduleLinked: dictation.moduleLinked,
+      platform: Platform.OS,
+    });
+    if (notice) Alert.alert(notice.title, notice.body);
+  };
+
+  // Photos ride the same capture path as completion photos; the caller queues
+  // them on save so a cancelled sheet uploads nothing.
+  const pickPhoto = () => {
+    Keyboard.dismiss();
+    const attach = (result: ImagePicker.ImagePickerResult) => {
+      const uri = result.assets?.[0]?.uri;
+      if (result.canceled || !uri) return;
+      setPhotos((prev) => [...prev, uri]);
+    };
+    Alert.alert(t("workOrders.closeFlow.addPhoto"), undefined, [
+      {
+        text: t("workOrders.closeFlow.takePhoto"),
+        onPress: () => void ImagePicker.launchCameraAsync({ quality: 0.7 }).then(attach),
+      },
+      {
+        text: t("workOrders.closeFlow.chooseFromLibrary"),
+        onPress: () =>
+          void ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.8 }).then(
+            attach,
+          ),
+      },
+      { text: t("workOrders.closeFlow.cancel"), style: "cancel" },
+    ]);
+  };
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: paper, paddingBottom: mode === "write" ? kb : 0 }}>
@@ -159,7 +224,7 @@ export function MarkdownEditorSheet({
           </Pressable>
           <Text style={{ fontSize: 13.5, fontWeight: "800", color: ink, letterSpacing: -0.1 }}>{title}</Text>
           <Pressable
-            onPress={() => onSave(draft)}
+            onPress={() => onSave(draft, photos)}
             disabled={!dirty}
             accessibilityRole="button"
             hitSlop={8}
@@ -248,6 +313,45 @@ export function MarkdownEditorSheet({
               <HighlightedSource text={draft} ink={ink} dark={dark} />
             </TextInput>
 
+            {/* Attached photos, between the note and the toolbar that added
+                them. Removable until save — nothing uploads from here. */}
+            {photos.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingVertical: 8 }}
+              >
+                {photos.map((uri, i) => (
+                  <View key={`${uri}:${i}`} style={{ width: 56, height: 56 }}>
+                    <Image
+                      source={{ uri }}
+                      style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: hairline }}
+                    />
+                    <Pressable
+                      onPress={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
+                      accessibilityRole="button"
+                      accessibilityLabel={t("workOrders.closeFlow.removePhoto")}
+                      hitSlop={8}
+                      style={{
+                        position: "absolute",
+                        top: 3,
+                        right: 3,
+                        width: 17,
+                        height: 17,
+                        borderRadius: 9,
+                        backgroundColor: "rgba(9,13,19,0.62)",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Ionicons name="close" size={11} color="#FFFFFF" />
+                    </Pressable>
+                  </View>
+                ))}
+              </ScrollView>
+            ) : null}
+
             {/* Dictation state, docked above the toolbar so the mic's effect is
                 visible without stealing room from the editor. */}
             {dictation.listening || dictation.error ? (
@@ -295,23 +399,33 @@ export function MarkdownEditorSheet({
                   color={active.line === "checkbox" ? OLIVE_TEXT : toolIdle(dark)}
                 />
               </ToolButton>
-              {/* The mic only appears where it can actually work — no dead
-                  control on Android, in Expo Go, or on a denied device. */}
-              {dictation.availability !== "unsupported" ? (
-                <>
-                  <View style={{ width: 1, height: 20, backgroundColor: hairline }} />
-                  <ToolButton
-                    on={dictation.listening}
-                    onPress={dictation.toggle}
-                    label={dictation.listening ? "Stop dictation" : "Dictate"}
-                  >
-                    <MaterialCommunityIcons
-                      name={dictation.listening ? "microphone" : "microphone-outline"}
-                      size={19}
-                      color={dictation.listening ? RED : toolIdle(dark)}
-                    />
-                  </ToolButton>
-                </>
+              {allowPhotos || offersDictation ? (
+                <View style={{ width: 1, height: 20, backgroundColor: hairline }} />
+              ) : null}
+              {allowPhotos ? (
+                <ToolButton on={false} onPress={pickPhoto} label={t("workOrders.closeFlow.addPhoto")}>
+                  <MaterialCommunityIcons name="camera-outline" size={20} color={toolIdle(dark)} />
+                </ToolButton>
+              ) : null}
+              {/* Android has no Apple Speech twin, so the mic stays hidden there.
+                  On iOS it always renders: when it can't run it explains why
+                  rather than vanishing, which used to make an old binary look
+                  identical to a feature that was never built. */}
+              {offersDictation ? (
+                <ToolButton
+                  on={dictation.listening}
+                  onPress={onMicPress}
+                  label={dictation.listening ? "Stop dictation" : "Dictate"}
+                >
+                  <MaterialCommunityIcons
+                    name={dictation.listening ? "microphone" : "microphone-outline"}
+                    size={20}
+                    color={
+                      dictation.listening ? RED : dictationUsable ? toolIdle(dark) : MUTED
+                    }
+                    style={dictationUsable ? undefined : { opacity: 0.55 }}
+                  />
+                </ToolButton>
               ) : null}
             </Toolbar>
           </>

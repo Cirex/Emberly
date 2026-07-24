@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type DictationAvailability,
   dictationAvailability,
+  isDictationModuleLinked,
   onDictationError,
   onDictationResult,
   requestDictationPermissions,
@@ -26,6 +27,9 @@ export function useDictation(input: {
   onText: (text: string, caret: number) => void;
 }): {
   availability: DictationAvailability;
+  /** Whether the native module is in this binary — the one signal that tells
+   *  an old build apart from a device that can't dictate. */
+  moduleLinked: boolean;
   listening: boolean;
   error: string | null;
   toggle: () => void;
@@ -117,5 +121,12 @@ export function useDictation(input: {
     else void start();
   }, [listening, start, stop]);
 
-  return { availability, listening, error, toggle, clearError: () => setError(null) };
+  return {
+    availability,
+    moduleLinked: isDictationModuleLinked(),
+    listening,
+    error,
+    toggle,
+    clearError: () => setError(null),
+  };
 }

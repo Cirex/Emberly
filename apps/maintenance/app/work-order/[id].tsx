@@ -644,10 +644,16 @@ export default function WorkOrderDetail() {
         dark={dark}
         paper={paper}
         ink={ink}
-        onSave={(text) => {
+        allowPhotos={editing === "completionNotes"}
+        onSave={(text, photoUris) => {
           const field = editing === "completionNotes" ? "completionNotes" : "description";
           setEditing(null);
           void queueEdit(wo.id, { [field]: text }, { baseUrl, token });
+          // Photos join the completion-photo queue and upload on the sync tick,
+          // same path as the close flow's captures.
+          for (const uri of photoUris) {
+            void useWorkOrderPhotos.getState().enqueue(wo.id, uri, "completion");
+          }
         }}
         onClose={() => setEditing(null)}
       />

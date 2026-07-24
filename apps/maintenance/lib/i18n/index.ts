@@ -431,6 +431,12 @@ const en = {
       recentTickets90: "{{count}} recent tickets in 90 days",
     },
   },
+  dictation: {
+    listening: "Listening…",
+    onDevice: "on this device",
+    dictate: "Dictate",
+    stop: "Stop dictation",
+  },
   myWeek: {
     open: "My Week",
     backToMyDay: "My Day",
@@ -908,6 +914,12 @@ const es: typeof en = {
       openOnHotSpots: "Tickets abiertos ligados a unidades críticas",
       recentTickets90: "{{count}} tickets recientes en 90 días",
     },
+  },
+  dictation: {
+    listening: "Escuchando…",
+    onDevice: "en este dispositivo",
+    dictate: "Dictar",
+    stop: "Detener dictado",
   },
   myWeek: {
     open: "Mi semana",

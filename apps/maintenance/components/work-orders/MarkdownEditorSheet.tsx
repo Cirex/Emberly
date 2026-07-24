@@ -1,5 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Fragment, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Keyboard,
   Modal,
@@ -18,9 +19,12 @@ import {
   toggleLineStyle,
 } from "@/lib/markdown-edit";
 import { MarkdownLite } from "./markdown";
+import { useDictation } from "@/lib/dictation/use-dictation";
+import { useSettings } from "@/lib/stores/settings";
 import { MUTED, NAVY, OLIVE_TEXT } from "@/theme/tokens";
 
 const SLATE = "#4C556F";
+const RED = "#D1382E";
 
 type Mode = "write" | "preview";
 type Selection = { start: number; end: number };
@@ -112,6 +116,27 @@ export function MarkdownEditorSheet({
     if (next === "preview") Keyboard.dismiss();
     else inputRef.current?.focus();
   };
+
+  // Dictation writes into the same draft the keyboard does, at the same caret.
+  // Getters rather than values: the recognizer's callbacks outlive this render.
+  const language = useSettings((s) => s.language);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const dictation = useDictation({
+    language,
+    getText: () => draftRef.current,
+    getSelection: () => selRef.current,
+    onText: (text, caret) => {
+      setDraft(text);
+      selRef.current = { start: caret, end: caret };
+      setForced({ start: caret, end: caret });
+    },
+  });
+  // Preview has no caret to dictate into, so a running session ends with the mode.
+  useEffect(() => {
+    if (mode === "preview" && dictation.listening) dictation.toggle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -223,6 +248,18 @@ export function MarkdownEditorSheet({
               <HighlightedSource text={draft} ink={ink} dark={dark} />
             </TextInput>
 
+            {/* Dictation state, docked above the toolbar so the mic's effect is
+                visible without stealing room from the editor. */}
+            {dictation.listening || dictation.error ? (
+              <DictationBand
+                listening={dictation.listening}
+                error={dictation.error}
+                language={language}
+                hairline={hairline}
+                onDismissError={dictation.clearError}
+              />
+            ) : null}
+
             {/* Formatting toolbar — sits above the tracked keyboard overlap. */}
             <Toolbar dark={dark} hairline={hairline} bottomInset={kb === 0 ? Math.max(insets.bottom, 8) : 8}>
               <ToolButton on={active.bold} onPress={() => onToolbar("bold")} label="Bold">
@@ -258,6 +295,24 @@ export function MarkdownEditorSheet({
                   color={active.line === "checkbox" ? OLIVE_TEXT : toolIdle(dark)}
                 />
               </ToolButton>
+              {/* The mic only appears where it can actually work — no dead
+                  control on Android, in Expo Go, or on a denied device. */}
+              {dictation.availability !== "unsupported" ? (
+                <>
+                  <View style={{ width: 1, height: 20, backgroundColor: hairline }} />
+                  <ToolButton
+                    on={dictation.listening}
+                    onPress={dictation.toggle}
+                    label={dictation.listening ? "Stop dictation" : "Dictate"}
+                  >
+                    <MaterialCommunityIcons
+                      name={dictation.listening ? "microphone" : "microphone-outline"}
+                      size={19}
+                      color={dictation.listening ? RED : toolIdle(dark)}
+                    />
+                  </ToolButton>
+                </>
+              ) : null}
             </Toolbar>
           </>
         ) : (
@@ -283,6 +338,93 @@ export function MarkdownEditorSheet({
 
 function toolIdle(dark: boolean): string {
   return dark ? "rgba(255,255,255,0.72)" : SLATE;
+}
+
+/**
+ * "Listening" state for dictation, or the reason it stopped.
+ *
+ * The on-device claim is stated plainly rather than implied: maintenance notes
+ * name residents and units, and a tech holding the phone to their mouth in
+ * someone's kitchen deserves to know the audio isn't leaving it.
+ */
+function DictationBand({
+  listening,
+  error,
+  language,
+  hairline,
+  onDismissError,
+}: {
+  listening: boolean;
+  error: string | null;
+  language: string;
+  hairline: string;
+  onDismissError: () => void;
+}) {
+  const { t } = useTranslation();
+  if (error) {
+    return (
+      <Pressable
+        onPress={onDismissError}
+        accessibilityRole="button"
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 9,
+          marginHorizontal: 12,
+          paddingVertical: 9,
+          paddingHorizontal: 12,
+          borderRadius: 16,
+          borderWidth: 1,
+          borderColor: "rgba(209,56,46,0.24)",
+          backgroundColor: "rgba(209,56,46,0.08)",
+        }}
+      >
+        <Ionicons name="alert-circle-outline" size={15} color={RED} />
+        <Text style={{ flex: 1, fontSize: 11.5, fontWeight: "700", color: RED }} numberOfLines={2}>
+          {error}
+        </Text>
+        <Ionicons name="close" size={14} color={RED} />
+      </Pressable>
+    );
+  }
+  if (!listening) return null;
+  return (
+    <View
+      accessibilityLiveRegion="polite"
+      accessibilityLabel={t("dictation.listening")}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+        marginHorizontal: 12,
+        paddingVertical: 9,
+        paddingHorizontal: 12,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: "rgba(209,56,46,0.24)",
+        backgroundColor: "rgba(209,56,46,0.08)",
+      }}
+    >
+      <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: RED }} />
+      <Text style={{ flex: 1, fontSize: 11.5, fontWeight: "800", color: RED }}>
+        {t("dictation.listening")}
+        <Text style={{ fontWeight: "600", color: MUTED }}> · {t("dictation.onDevice")}</Text>
+      </Text>
+      <View
+        style={{
+          borderRadius: 999,
+          borderWidth: 1,
+          borderColor: hairline,
+          paddingHorizontal: 9,
+          paddingVertical: 3,
+        }}
+      >
+        <Text style={{ fontSize: 10, fontWeight: "800", color: OLIVE_TEXT }}>
+          {language.toUpperCase()}
+        </Text>
+      </View>
+    </View>
+  );
 }
 
 /** The formatting capsule, rendered inline above the keyboard overlap. */

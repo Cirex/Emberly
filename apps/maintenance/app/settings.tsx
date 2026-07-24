@@ -8,10 +8,6 @@ import {
   shouldCheckTranslation,
   translateNotice,
 } from "@/lib/translation/availability-notice";
-import { computeTranslations, lookupTranslation, pendingSources } from "@/lib/translation/cache";
-import { orderedTranslationSources } from "@/lib/translation/sources";
-import { useMyDay } from "@/lib/stores/my-day";
-import { isTranslating, useTranslations } from "@/lib/stores/translations";
 import {
   isTranslateModuleLinked,
   translateAvailability,
@@ -170,84 +166,6 @@ export default function Settings() {
   // Switching to Spanish is the moment work-order prose is supposed to start
   // translating. When it can't, the sync path fails quietly by design and the
   // tech is left staring at English — so say why, here, once.
-  /**
-   * Report every stage of the translation pipeline in one place.
-   *
-   * Each stage has failed independently at least once — the native session,
-   * the cache, the sync pass, the render path — and each failure looked
-   * identical from the outside: English prose. This says which link is broken
-   * instead of leaving it to be guessed at one rebuild per hypothesis.
-   */
-  const onTranslationDiagnostics = async () => {
-    const lang = useSettings.getState().language;
-    // Probe Spanish even while the app is in English. The pipeline is a no-op
-    // in English by design, so reporting "n/a" there would make the diagnostic
-    // useless in exactly the mode someone is most likely to run it from.
-    const probe: AppLanguage = lang === "en" ? "es" : lang;
-    const orders = useWorkOrders.getState().workOrders;
-    const entries = useTranslations.getState().entries;
-    const priorityIds = useMyDay.getState().stops.flatMap((s) => s.workOrderIds);
-    const sources = orderedTranslationSources(orders, priorityIds);
-    const pending = pendingSources(probe, sources, entries);
-
-    const sample = sources[0] ?? "";
-    const cachedSample = sample ? lookupTranslation(entries, probe, sample) : null;
-
-    const availability = await translateAvailability("en", probe);
-
-    let live: string;
-    try {
-      const out = await translateBatchOrTimeout(["Water heater leaking"], "en", probe);
-      live = out[0] ?? "(empty)";
-    } catch (err) {
-      live = `FAILED — ${err instanceof Error ? err.message : String(err)}`;
-    }
-
-    // Run the pipeline itself — mask, translate, sentinel-check, unmask — over
-    // the first few sources, and commit whatever it yields. Call
-    // computeTranslations directly rather than store.translate so the `running`
-    // re-entrancy guard can't quietly short-circuit the test to 0 → 0; report
-    // that guard's state separately so a wedged background pass is visible.
-    const guardWas = isTranslating();
-    const before = Object.keys(useTranslations.getState().entries).length;
-    let pipeErr = "ok";
-    try {
-      const produced = await computeTranslations(
-        probe,
-        sources.slice(0, 5),
-        useTranslations.getState().entries,
-        async (texts, from, to) => translateBatchOrTimeout(texts, from, to),
-      );
-      if (Object.keys(produced).length > 0) {
-        useTranslations.setState((s) => ({ entries: { ...s.entries, ...produced } }));
-      }
-    } catch (err) {
-      pipeErr = err instanceof Error ? err.message : String(err);
-    }
-    const after = Object.keys(useTranslations.getState().entries).length;
-    const firstNowCached = sample ? lookupTranslation(useTranslations.getState().entries, probe, sample) : null;
-
-    Alert.alert(
-      "Translation diagnostics",
-      [
-        `language: ${lang}${lang === "en" ? ` (probing ${probe})` : ""}`,
-        `moduleLinked: ${isTranslateModuleLinked()}`,
-        `availability: ${availability}`,
-        `workOrders: ${orders.length}`,
-        `sources: ${sources.length}`,
-        `cached entries: ${Object.keys(entries).length}`,
-        `still pending: ${pending.length}`,
-        `first source: ${sample.slice(0, 40) || "(none)"}`,
-        `its cached value: ${cachedSample ?? "(none)"}`,
-        `live test: ${live}`,
-        `— store pipeline (5 sources) —`,
-        `guard was running: ${guardWas}`,
-        `entries: ${before} → ${after}`,
-        `pipeline error: ${pipeErr}`,
-        `first now cached: ${firstNowCached ?? "(none)"}`,
-      ].join("\n"),
-    );
-  };
 
   const onPickLanguage = (language: AppLanguage) => {
     settings.setLanguage(language);
@@ -301,7 +219,6 @@ export default function Settings() {
       photosSyncing,
     }),
   );
-  const pendingCount = Object.keys(pending).length;
   const [syncBusy, setSyncBusy] = useState(false);
 
   const themeOptions = [
@@ -478,11 +395,6 @@ export default function Settings() {
             </View>
           </Row>
         </Pressable>
-        <Row label="Translation diagnostics" sub="Reports each stage of the pipeline">
-          <Pressable onPress={onTranslationDiagnostics} accessibilityRole="button">
-            <Text style={{ fontSize: 13, fontWeight: "700", color: "#767B24" }}>Run</Text>
-          </Pressable>
-        </Row>
       </AppCardSurface>
 
       <SectionLabel>{t("settings.account")}</SectionLabel>

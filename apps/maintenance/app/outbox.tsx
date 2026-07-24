@@ -1,0 +1,235 @@
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useMemo, useState } from "react";
+import { Pressable, ScrollView, Text, View } from "react-native";
+import { AppCardSurface } from "@/components/ui/AppCardSurface";
+import {
+  buildOutbox,
+  pendingCount as outboxPendingCount,
+  type OutboxItem,
+  type OutboxState,
+} from "@/lib/derived/outbox";
+import { useConfig } from "@/lib/stores/config";
+import { usePendingCloses } from "@/lib/stores/pending-closes";
+import { usePendingEdits } from "@/lib/stores/pending-edits";
+import { useWorkOrders } from "@/lib/stores/work-orders";
+import { useWorkOrderPhotos } from "@/lib/stores/work-order-photos";
+
+const NAVY = "#091B54";
+const MUTED = "#70788F";
+const SLATE = "#4C556F";
+const GREEN = "#1F8A4C";
+const INFO = "#2563B4";
+const AMBER = "#E38736";
+
+/**
+ * The Outbox — a read-only view over the pending-close, pending-edit, and
+ * work-order-photo stores, so a tech can see the work is captured and on its
+ * way to ResMan. Reached from Settings › Data. The stores already flush on the
+ * sync tick; this makes that queue visible and offers a manual flush.
+ */
+
+const STATE_LABEL: Record<OutboxState, string> = {
+  sending: "Sending",
+  retrying: "Will retry",
+  queued: "Waiting for signal",
+  sent: "Delivered",
+};
+
+function stateColor(state: OutboxState): string {
+  switch (state) {
+    case "sending":
+      return INFO;
+    case "retrying":
+      return "#B05E14";
+    case "sent":
+      return GREEN;
+    default:
+      return SLATE;
+  }
+}
+
+function kindIcon(kind: OutboxItem["kind"]): keyof typeof MaterialCommunityIcons.glyphMap {
+  switch (kind) {
+    case "close":
+      return "check-circle-outline";
+    case "photo":
+      return "camera-outline";
+    default:
+      return "pencil-outline";
+  }
+}
+
+export default function Outbox() {
+  const router = useRouter();
+  const token = useConfig((s) => s.token);
+  const baseUrl = useConfig((s) => s.baseUrl);
+
+  const closes = usePendingCloses((s) => s.pending);
+  const edits = usePendingEdits((s) => s.pending);
+  const photos = useWorkOrderPhotos((s) => s.pending);
+  const photosSyncing = useWorkOrderPhotos((s) => s.syncing);
+  const workOrders = useWorkOrders((s) => s.workOrders);
+
+  const [flushing, setFlushing] = useState(false);
+
+  // workOrderId → "#number · unit", so a row names the job, not a UUID.
+  const woLabel = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const w of workOrders) {
+      const number = w.number ? `#${w.number}` : "";
+      const unit = w.unit_number ?? "";
+      m.set(w.resman_work_order_id, [number, unit].filter(Boolean).join(" · "));
+    }
+    return m;
+  }, [workOrders]);
+
+  const items = useMemo(
+    () =>
+      buildOutbox({
+        closes: Object.values(closes),
+        edits: Object.values(edits),
+        photos,
+        photosSyncing,
+      }),
+    [closes, edits, photos, photosSyncing],
+  );
+  const pending = outboxPendingCount(items);
+
+  const onFlush = async () => {
+    if (flushing) return;
+    setFlushing(true);
+    const config = { baseUrl, token };
+    // Closes and edits first, then photos — the same order the sync tick uses,
+    // so a photo's work order exists on the server before its bytes arrive.
+    await usePendingCloses.getState().flush(config).catch(() => {});
+    await usePendingEdits.getState().flush(config).catch(() => {});
+    await useWorkOrderPhotos.getState().flush(config).catch(() => {});
+    setFlushing(false);
+  };
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 4 }}>
+        <Pressable
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          hitSlop={10}
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 17,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="chevron-back" size={20} color={NAVY} />
+        </Pressable>
+        <View style={{ flex: 1 }}>
+          <Text className="text-navy dark:text-white" style={{ fontSize: 24, fontWeight: "700" }}>
+            Outbox
+          </Text>
+          <Text className="text-slate dark:text-white/60" style={{ fontSize: 12.5, marginTop: 1 }}>
+            {pending > 0 ? `${pending} waiting to reach ResMan` : "All changes delivered"}
+          </Text>
+        </View>
+        {pending > 0 ? (
+          <Pressable
+            onPress={onFlush}
+            accessibilityRole="button"
+            disabled={flushing}
+            style={{ opacity: flushing ? 0.5 : 1, paddingHorizontal: 6, paddingVertical: 8 }}
+          >
+            <Text style={{ fontSize: 13, fontWeight: "800", color: "#767B24" }}>
+              {flushing ? "Sending…" : "Sync now"}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      {/* Reassurance — the whole point of the screen. */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 9, marginTop: 14, marginBottom: 4 }}>
+        <MaterialCommunityIcons name="shield-check-outline" size={18} color={GREEN} />
+        <Text style={{ flex: 1, fontSize: 12.5, color: SLATE, fontWeight: "600" }}>
+          <Text style={{ fontWeight: "800", color: NAVY }}>Nothing is lost. </Text>
+          Everything here is saved on this phone and sends itself — you can close the app.
+        </Text>
+      </View>
+
+      {items.length === 0 ? (
+        <AppCardSurface kind="panel" style={{ paddingVertical: 28, alignItems: "center", marginTop: 14 }}>
+          <MaterialCommunityIcons name="tray-remove" size={30} color={MUTED} />
+          <Text style={{ fontSize: 14, fontWeight: "800", color: NAVY, marginTop: 10 }}>Outbox is empty</Text>
+          <Text style={{ fontSize: 12, color: MUTED, marginTop: 3 }}>
+            Closes, notes, and photos will appear here until they reach ResMan.
+          </Text>
+        </AppCardSurface>
+      ) : (
+        <View style={{ marginTop: 12, gap: 9 }}>
+          {items.map((item) => (
+            <AppCardSurface
+              key={item.id}
+              kind="panel"
+              style={{
+                paddingHorizontal: 14,
+                paddingVertical: 13,
+                flexDirection: "row",
+                alignItems: "flex-start",
+                gap: 12,
+                borderLeftWidth: item.state === "retrying" ? 3.5 : 0,
+                borderLeftColor: AMBER,
+              }}
+            >
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 11,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: `${stateColor(item.state)}1A`,
+                }}
+              >
+                <MaterialCommunityIcons name={kindIcon(item.kind)} size={19} color={stateColor(item.state)} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text className="text-navy dark:text-white" style={{ fontSize: 14, fontWeight: "800" }}>
+                  {item.title}
+                </Text>
+                <Text style={{ fontSize: 11.5, color: MUTED, marginTop: 2, fontWeight: "600" }} numberOfLines={1}>
+                  {woLabel.get(item.workOrderId) ?? "Work order"}
+                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 5,
+                      paddingHorizontal: 9,
+                      paddingVertical: 3.5,
+                      borderRadius: 999,
+                      backgroundColor: `${stateColor(item.state)}1A`,
+                    }}
+                  >
+                    {item.state === "sent" ? (
+                      <Ionicons name="checkmark" size={11} color={stateColor(item.state)} />
+                    ) : null}
+                    <Text style={{ fontSize: 10.5, fontWeight: "800", color: stateColor(item.state) }}>
+                      {STATE_LABEL[item.state]}
+                    </Text>
+                  </View>
+                  {item.attempts > 1 && item.state !== "sent" ? (
+                    <Text style={{ fontSize: 10.5, color: MUTED, fontWeight: "700" }}>
+                      {item.attempts} attempts
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            </AppCardSurface>
+          ))}
+        </View>
+      )}
+    </ScrollView>
+  );
+}

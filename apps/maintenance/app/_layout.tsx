@@ -90,6 +90,7 @@ function RootLayout() {
                     <Stack.Screen name="(tabs)" />
                     <Stack.Screen name="work-order/[id]" options={{ presentation: "modal" }} />
                     <Stack.Screen name="settings" options={{ presentation: "formSheet" }} />
+                    <Stack.Screen name="outbox" options={{ presentation: "formSheet" }} />
                   </Stack.Protected>
                   <Stack.Screen name="sign-in" />
                 </Stack>

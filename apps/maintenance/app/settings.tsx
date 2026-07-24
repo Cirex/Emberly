@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -22,6 +23,9 @@ import type { AppLanguage } from "@/lib/i18n";
 import { registerForEmergencyPush, unregisterEmergencyPush } from "@/lib/push";
 import { useConfig } from "@/lib/stores/config";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
+import { usePendingEdits } from "@/lib/stores/pending-edits";
+import { useWorkOrderPhotos } from "@/lib/stores/work-order-photos";
+import { buildOutbox, pendingCount as outboxPendingCount } from "@/lib/derived/outbox";
 import { useSettings } from "@/lib/stores/settings";
 import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
@@ -29,6 +33,7 @@ import { ACCENT_THEMES, type AccentThemeId } from "@/theme/tokens";
 
 const NAVY = "#091B54";
 const RED = "#D1382E";
+const MUTED = "#70788F";
 
 // Language names are shown in their own language on purpose — a Spanish
 // speaker stuck in English must be able to find "Español".
@@ -285,6 +290,17 @@ export default function Settings() {
   const unitCount = useUnits((s) => s.allUnits.length);
   const refreshUnits = useUnits((s) => s.refresh);
   const pending = usePendingCloses((s) => s.pending);
+  const pendingEdits = usePendingEdits((s) => s.pending);
+  const pendingPhotos = useWorkOrderPhotos((s) => s.pending);
+  const photosSyncing = useWorkOrderPhotos((s) => s.syncing);
+  const outboxCount = outboxPendingCount(
+    buildOutbox({
+      closes: Object.values(pending),
+      edits: Object.values(pendingEdits),
+      photos: pendingPhotos,
+      photosSyncing,
+    }),
+  );
   const pendingCount = Object.keys(pending).length;
   const [syncBusy, setSyncBusy] = useState(false);
 
@@ -433,10 +449,35 @@ export default function Settings() {
             <Text style={{ fontSize: 13, fontWeight: "700", color: "#767B24" }}>{t("settings.syncNow")}</Text>
           </Pressable>
         </Row>
-        <Row
-          label={t("settings.pendingChanges")}
-          sub={pendingCount > 0 ? t("settings.pendingCloses", { count: pendingCount }) : t("settings.pendingNone")}
-        />
+        <Pressable
+          onPress={() => router.push("/outbox")}
+          accessibilityRole="button"
+          accessibilityLabel="Open outbox"
+        >
+          <Row
+            label="Outbox"
+            sub={outboxCount > 0 ? `${outboxCount} waiting to reach ResMan` : "All changes delivered"}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {outboxCount > 0 ? (
+                <View
+                  style={{
+                    minWidth: 22,
+                    height: 22,
+                    paddingHorizontal: 6,
+                    borderRadius: 11,
+                    backgroundColor: "#E38736",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "800" }}>{outboxCount}</Text>
+                </View>
+              ) : null}
+              <Ionicons name="chevron-forward" size={16} color={MUTED} />
+            </View>
+          </Row>
+        </Pressable>
         <Row label="Translation diagnostics" sub="Reports each stage of the pipeline">
           <Pressable onPress={onTranslationDiagnostics} accessibilityRole="button">
             <Text style={{ fontSize: 13, fontWeight: "700", color: "#767B24" }}>Run</Text>

@@ -21,7 +21,6 @@ interface PhotoMarkupState {
    * Deletes the files, then clears the records. Safe to call on every tick.
    */
   sweepOriginals: (submittedWorkOrderIds: ReadonlySet<string>, nowMs?: number) => Promise<number>;
-  forWorkOrder: (workOrderId: string) => MarkedPhoto[];
 }
 
 let seq = 0;
@@ -108,9 +107,6 @@ export const usePhotoMarkup = create<PhotoMarkupState>()(
         });
         return due.length;
       },
-
-      forWorkOrder: (workOrderId) =>
-        Object.values(get().photos).filter((p) => p.workOrderId === workOrderId),
     }),
     {
       name: "emberly-maintenance-photo-markup",

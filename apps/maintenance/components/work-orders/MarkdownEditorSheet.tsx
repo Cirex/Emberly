@@ -29,6 +29,7 @@ import {
 } from "@/lib/markdown-edit";
 import { MarkdownLite } from "./markdown";
 import { PhotoMarkupSheet } from "./PhotoMarkupSheet";
+import { usePhotoMarkup } from "@/lib/stores/photo-markup";
 import { useDictation } from "@/lib/dictation/use-dictation";
 import { useSettings } from "@/lib/stores/settings";
 import { MUTED, NAVY, OLIVE_TEXT } from "@/theme/tokens";
@@ -58,6 +59,7 @@ export function MarkdownEditorSheet({
   paper,
   ink,
   allowPhotos = false,
+  workOrderId,
   onSave,
   onClose,
 }: {
@@ -69,6 +71,8 @@ export function MarkdownEditorSheet({
   ink: string;
   /** Offer the camera. Notes get photos; the description field doesn't. */
   allowPhotos?: boolean;
+  /** Keys marked-photo retention so the original survives until submission. */
+  workOrderId?: string;
   /** Photos are local file URIs; the caller owns queuing them for upload. */
   onSave: (text: string, photoUris: string[]) => void;
   onClose: () => void;
@@ -478,7 +482,16 @@ export function MarkdownEditorSheet({
         visible={markupIndex !== null}
         sourceUri={markupIndex !== null ? photos[markupIndex] ?? null : null}
         onCancel={() => setMarkupIndex(null)}
-        onSave={(markedUri) => {
+        onSave={(markedUri, strokes) => {
+          // Retain the original alongside the marked copy in the markup store,
+          // so the sync sweep can expire it only once the work order is
+          // submitted (mirror-closed). Without a work order id there's nothing
+          // to key retention on, so the marked copy simply stands in place.
+          if (workOrderId && markupIndex !== null) {
+            const original = photos[markupIndex];
+            const id = usePhotoMarkup.getState().add(workOrderId, "completion", original);
+            usePhotoMarkup.getState().saveMarkup(id, markedUri, strokes);
+          }
           setPhotos((prev) => prev.map((u, i) => (i === markupIndex ? markedUri : u)));
           setMarkupIndex(null);
         }}

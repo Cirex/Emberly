@@ -645,6 +645,7 @@ export default function WorkOrderDetail() {
         paper={paper}
         ink={ink}
         allowPhotos={editing === "completionNotes"}
+        workOrderId={wo.id}
         onSave={(text, photoUris) => {
           const field = editing === "completionNotes" ? "completionNotes" : "description";
           setEditing(null);

@@ -11,6 +11,7 @@ import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { usePendingEdits } from "@/lib/stores/pending-edits";
 import { usePm } from "@/lib/stores/pm";
 import { useWorkOrderPhotos } from "@/lib/stores/work-order-photos";
+import { usePhotoMarkup } from "@/lib/stores/photo-markup";
 import { useTags } from "@/lib/stores/tags";
 import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
@@ -56,6 +57,12 @@ function useServerSync() {
               .map((wo) => wo.resman_work_order_id),
           );
           closes.prune(closedIds, Date.now());
+          // A work order the mirror reports closed has been submitted, so the
+          // untouched originals of its marked-up photos can retire — the marked
+          // copy is what was uploaded and what stands. Safe every tick; the
+          // sweep refuses to expire a photo that has no marked copy to replace
+          // it (lib/derived/photo-markup.ts).
+          void usePhotoMarkup.getState().sweepOriginals(closedIds);
           // Pending edits retire the same way: retry un-acked, drop absorbed.
           const edits = usePendingEdits.getState();
           void edits.flush(config);

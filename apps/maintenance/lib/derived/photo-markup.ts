@@ -84,12 +84,3 @@ export function expireOriginal(photo: MarkedPhoto, nowMs: number): MarkedPhoto {
   if (photo.originalUri === null) return photo;
   return { ...photo, originalUri: null, originalExpiredAt: nowMs };
 }
-
-/** Before and after for one work order, newest last within each phase. */
-export function groupByPhase(photos: MarkedPhoto[]): Record<WorkOrderPhotoPhase, MarkedPhoto[]> {
-  const out: Record<WorkOrderPhotoPhase, MarkedPhoto[]> = { before: [], after: [], completion: [] };
-  for (const photo of [...photos].sort((a, b) => a.capturedAt - b.capturedAt)) {
-    out[photo.phase].push(photo);
-  }
-  return out;
-}

@@ -5,7 +5,6 @@ import {
   displayUri,
   expirableOriginals,
   expireOriginal,
-  groupByPhase,
   hasMarkup,
   type MarkedPhoto,
 } from "@/lib/derived/photo-markup";
@@ -112,24 +111,5 @@ describe("hasMarkup", () => {
         }),
       ),
     ).toBe(true);
-  });
-});
-
-describe("groupByPhase", () => {
-  test("splits before/after/completion and orders each oldest first", () => {
-    const photos = [
-      photo({ photoId: "b2", phase: "before", capturedAt: NOW + 100 }),
-      photo({ photoId: "a1", phase: "after", capturedAt: NOW }),
-      photo({ photoId: "b1", phase: "before", capturedAt: NOW }),
-    ];
-    const grouped = groupByPhase(photos);
-    expect(grouped.before.map((p) => p.photoId)).toEqual(["b1", "b2"]);
-    expect(grouped.after.map((p) => p.photoId)).toEqual(["a1"]);
-    expect(grouped.completion).toEqual([]);
-  });
-
-  test("always returns all three buckets, so the UI never reflows", () => {
-    const grouped = groupByPhase([]);
-    expect(Object.keys(grouped).sort()).toEqual(["after", "before", "completion"]);
   });
 });

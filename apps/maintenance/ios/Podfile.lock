@@ -1,6 +1,10 @@
 PODS:
   - boost (1.84.0)
   - DoubleConversion (1.1.6)
+  - EmberlySpeech (1.0.0):
+    - ExpoModulesCore
+  - EmberlyTranslate (1.0.0):
+    - ExpoModulesCore
   - EXApplication (57.0.2):
     - ExpoModulesCore
   - EXConstants (57.0.3):
@@ -3184,6 +3188,8 @@ PODS:
 DEPENDENCIES:
   - "boost (from `../../../node_modules/.bun/react-native@0.86.0+9da80eb6df22ec8a/node_modules/react-native/third-party-podspecs/boost.podspec`)"
   - "DoubleConversion (from `../../../node_modules/.bun/react-native@0.86.0+9da80eb6df22ec8a/node_modules/react-native/third-party-podspecs/DoubleConversion.podspec`)"
+  - EmberlySpeech (from `../modules/emberly-speech/ios`)
+  - EmberlyTranslate (from `../modules/emberly-translate/ios`)
   - "EXApplication (from `../../../node_modules/.bun/expo-application@57.0.2+a74eebb1bd530098/node_modules/expo-application/ios`)"
   - "EXConstants (from `../../../node_modules/.bun/expo-constants@57.0.3+a74eebb1bd530098/node_modules/expo-constants/ios`)"
   - "Expo (from `../../../node_modules/.bun/expo@57.0.4+a74eebb1bd530098/node_modules/expo`)"
@@ -3308,6 +3314,10 @@ EXTERNAL SOURCES:
     :podspec: "../../../node_modules/.bun/react-native@0.86.0+9da80eb6df22ec8a/node_modules/react-native/third-party-podspecs/boost.podspec"
   DoubleConversion:
     :podspec: "../../../node_modules/.bun/react-native@0.86.0+9da80eb6df22ec8a/node_modules/react-native/third-party-podspecs/DoubleConversion.podspec"
+  EmberlySpeech:
+    :path: "../modules/emberly-speech/ios"
+  EmberlyTranslate:
+    :path: "../modules/emberly-translate/ios"
   EXApplication:
     :path: "../../../node_modules/.bun/expo-application@57.0.2+a74eebb1bd530098/node_modules/expo-application/ios"
   EXConstants:
@@ -3537,6 +3547,8 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   boost: 7e761d76ca2ce687f7cc98e698152abd03a18f90
   DoubleConversion: cb417026b2400c8f53ae97020b2be961b59470cb
+  EmberlySpeech: 664ce8297720c74bb4c774313004e3aa6242996d
+  EmberlyTranslate: 5db0c2d1cb750ee9c54bc0f691468576846fd185
   EXApplication: bbd517d50878ca1d121fb3843392beb210181e28
   EXConstants: d8e1120987c64ca99d96f298f209ff9a0744b232
   Expo: c771b2dfbd0a9f8702b3eaf2534b4c7dfb091cfd

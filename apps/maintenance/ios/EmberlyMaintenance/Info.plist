@@ -58,9 +58,11 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>EmberlyMaintenance uses your location to show accurate day/night camera coverage on the property map.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Allow $(PRODUCT_NAME) to access your microphone</string>
+	<string>EmberlyMaintenance uses the microphone so you can dictate work-order notes instead of typing them.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to detect your current motion activity</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>EmberlyMaintenance transcribes your dictated notes on this device. The audio is not sent to Apple or to Emberly.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>EmberlyMaintenance attaches photos from your library to property-map annotations.</string>
 	<key>NSUserActivityTypes</key>

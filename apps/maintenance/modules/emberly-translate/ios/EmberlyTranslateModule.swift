@@ -108,6 +108,14 @@ final class TranslatorModel: ObservableObject {
   @Published var configuration: TranslationSession.Configuration?
   private var pending: [String] = []
   private var continuation: CheckedContinuation<[String], Error>?
+  /// Distinguishes batches so a watchdog only ever cancels the batch it armed for.
+  private var generation = 0
+
+  /// A `.translationTask` that never fires leaves the continuation dangling and
+  /// every later batch rejected by the in-flight guard — translation stays dead
+  /// until the app restarts, with nothing logged. The watchdog turns that
+  /// silence into an error the JS side can report.
+  private static let batchTimeout: Duration = .seconds(20)
 
   /// One batch at a time — set the config, await the session callback.
   func run(texts: [String], from: String, to: String) async throws -> [String] {
@@ -118,6 +126,8 @@ final class TranslatorModel: ObservableObject {
       )
     }
     pending = texts
+    generation &+= 1
+    let batch = generation
     return try await withCheckedThrowingContinuation { cont in
       self.continuation = cont
       // Assigning a fresh config triggers `.translationTask` to hand us a session.
@@ -125,6 +135,15 @@ final class TranslatorModel: ObservableObject {
         source: Locale.Language(identifier: from),
         target: Locale.Language(identifier: to)
       )
+      Task { [weak self] in
+        try? await Task.sleep(for: Self.batchTimeout)
+        guard let self, self.generation == batch, self.continuation != nil else { return }
+        self.finish(.failure(NSError(
+          domain: "EmberlyTranslate", code: 3,
+          userInfo: [NSLocalizedDescriptionKey:
+            "Translation timed out — the system never started a session for \(from)→\(to)"]
+        )))
+      }
     }
   }
 

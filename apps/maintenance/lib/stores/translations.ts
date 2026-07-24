@@ -21,8 +21,10 @@ export type { BatchTranslate } from "@/lib/translation/cache";
 /** Lazily loads the native binding only when actually invoked, so the store never
  *  eagerly pulls `expo-modules-core` into non-native runtimes. */
 const defaultTranslator: BatchTranslate = async (texts, from, to) => {
-  const { translateBatch } = await import("@/lib/translation/native");
-  return translateBatch(texts, from, to);
+  const { translateBatchOrTimeout } = await import("@/lib/translation/native");
+  // Bounded: a session the OS never starts would otherwise leave this promise
+  // pending forever, which reads on screen as "nothing needed translating".
+  return translateBatchOrTimeout(texts, from, to);
 };
 
 interface TranslationsState {

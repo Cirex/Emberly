@@ -7,7 +7,11 @@ import {
   shouldCheckTranslation,
   translateNotice,
 } from "@/lib/translation/availability-notice";
-import { isTranslateModuleLinked, translateAvailability } from "@/lib/translation/native";
+import {
+  isTranslateModuleLinked,
+  translateAvailability,
+  translateBatchOrTimeout,
+} from "@/lib/translation/native";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import { capture, resetAnalytics } from "@/lib/analytics";
 import type { AppLanguage } from "@/lib/i18n";
@@ -160,14 +164,32 @@ export default function Settings() {
   const onPickLanguage = (language: AppLanguage) => {
     settings.setLanguage(language);
     if (!shouldCheckTranslation(language, Platform.OS)) return;
-    void translateAvailability("en", language).then((availability) => {
+    void (async () => {
+      const availability = await translateAvailability("en", language);
       const notice = translateNotice({
         availability,
         moduleLinked: isTranslateModuleLinked(),
         platform: Platform.OS,
       });
-      if (notice) Alert.alert(notice.title, notice.body);
-    });
+      if (notice) {
+        Alert.alert(notice.title, notice.body);
+        return;
+      }
+      // The OS says the pair is installed — so prove it end to end rather than
+      // trusting the claim. `availability` reports what the system supports;
+      // only a real batch exercises the session the work-order sync depends on,
+      // and that is the part that has been failing without a word.
+      try {
+        await translateBatchOrTimeout(["Water heater leaking"], "en", language);
+      } catch (err) {
+        Alert.alert(
+          "Translation isn't working",
+          `The language pack is installed but a test translation failed:\n\n${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    })();
   };
   const admin = useConfig((s) => s.admin);
   const token = useConfig((s) => s.token);

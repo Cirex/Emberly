@@ -64,3 +64,36 @@ export async function translateBatch(
   }
   return result;
 }
+
+/** Default ceiling for one batch, a little above the native watchdog's. */
+export const TRANSLATE_TIMEOUT_MS = 25_000;
+
+/**
+ * `translateBatch` that rejects instead of hanging.
+ *
+ * The native session is handed to us by SwiftUI's `.translationTask`; when that
+ * closure never fires, the promise never settles. An awaited-forever batch is
+ * indistinguishable from "this work order has nothing to translate" — no error,
+ * no entry, no way to tell. Rejecting turns it into something reportable.
+ */
+export async function translateBatchOrTimeout(
+  texts: string[],
+  from: AppLanguage,
+  to: AppLanguage,
+  timeoutMs: number = TRANSLATE_TIMEOUT_MS,
+): Promise<string[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      translateBatch(texts, from, to),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new TranslateUnavailableError(`Translation timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}

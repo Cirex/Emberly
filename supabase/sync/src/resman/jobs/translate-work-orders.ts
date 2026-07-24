@@ -16,15 +16,25 @@
 import { textHash } from "@emberly/core";
 import type { ServiceClient } from "../../db/client";
 import type { Translator } from "../../shared/langbly";
-import {
-  groupByDirection,
-  planServerTranslations,
-} from "../derive/translation-routing";
+import { otherLang } from "../derive/translation-routing";
 
 export interface TranslateWorkOrdersDeps {
   supabase: ServiceClient;
   /** Null → the job no-ops (no LANGBLY_API_KEY configured). */
   translator: Translator | null;
+  /**
+   * Language ResMan prose is authored in. Defaults to English, which is what
+   * this property's work orders actually are.
+   *
+   * We do NOT detect per string here: Langbly's /detect returns "und" with zero
+   * confidence for everything, and the detectedSourceLanguage on a translate
+   * call is wrong too (it reported "en" for "Fuga de agua caliente"). Guessing
+   * from an unreliable signal would route text the wrong way; assuming the
+   * corpus language is both correct and cheaper. The reverse direction — a
+   * tech's Spanish note read in English — is handled on-device, where Apple's
+   * NLLanguageRecognizer does work.
+   */
+  sourceLang?: "en" | "es";
   log?: (message: string) => void;
 }
 
@@ -39,6 +49,15 @@ export interface TranslateWorkOrdersResult {
 
 const PAGE = 1000;
 const DELETE_CHUNK = 200;
+/** Sources per translate request — the client batches internally too, but this
+ *  bounds a single failure's blast radius and gives progress logging. */
+const TRANSLATE_BATCH = 100;
+
+function chunked<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
 
 /** Distinct, trimmed prose across all work orders → its content hash. */
 async function loadDistinctProse(
@@ -118,29 +137,30 @@ export async function translateWorkOrders(
 
   let translated = 0;
   if (missing.length > 0) {
-    const detected = await deps.translator.detect(missing);
-    const plans = planServerTranslations(missing, detected);
-    const rows: Record<string, unknown>[] = [];
-    for (const group of groupByDirection(plans)) {
-      const outputs = await deps.translator.translateBatch(group.sources, group.from, group.to);
-      group.sources.forEach((source, i) => {
-        rows.push({
-          source_hash: textHash(source),
-          target_lang: group.to,
-          source_lang: group.from,
-          translated_text: outputs[i],
-          char_count: source.length,
-        });
-      });
-    }
-    for (let i = 0; i < rows.length; i += DELETE_CHUNK) {
-      const chunk = rows.slice(i, i + DELETE_CHUNK);
+    const from = deps.sourceLang ?? "en";
+    const to = otherLang(from);
+    // Commit each batch as it lands. A full backfill is thousands of strings
+    // and many minutes of paid API calls; collecting them all and writing once
+    // at the end means any failure — a timeout, a rate limit, a killed worker —
+    // throws away everything already translated and paid for. Per-batch upserts
+    // make progress durable, and because the cache is content-addressed a
+    // re-run simply resumes with whatever is still missing.
+    for (const group of chunked(missing, TRANSLATE_BATCH)) {
+      const outputs = await deps.translator.translateBatch(group, from, to);
+      const rows = group.map((source, i) => ({
+        source_hash: textHash(source),
+        target_lang: to,
+        source_lang: from,
+        translated_text: outputs[i],
+        char_count: source.length,
+      }));
       const { error } = await deps.supabase
         .from("work_order_translations")
-        .upsert(chunk, { onConflict: "source_hash,target_lang" });
+        .upsert(rows, { onConflict: "source_hash,target_lang" });
       if (error) throw new Error(`upsert translations: ${error.message}`);
+      translated += rows.length;
+      log(`[translate-work-orders] ${translated}/${missing.length} translated`);
     }
-    translated = rows.length;
   }
 
   const reaped = await reapStale(deps.supabase, liveHashes);

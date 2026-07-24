@@ -153,10 +153,13 @@ test("job translates new prose, skips cached, and reaps stale", async () => {
   // Stale row gone; three fresh rows in.
   assert.equal(cache.length, 3);
   const doors = cache.find((r) => r.source_hash === textHash("Doors"));
-  assert.equal(doors.target_lang, "es"); // English source → Spanish
+  assert.equal(doors.target_lang, "es");
   assert.equal(doors.translated_text, "es:Doors");
-  const fuga = cache.find((r) => r.source_hash === textHash("Reparación urgente"));
-  assert.equal(fuga.target_lang, "en"); // Spanish source → English
+  // Server assumes the corpus language (English) rather than trusting Langbly's
+  // detect, which returns "und" for everything — so every row targets Spanish.
+  const rep = cache.find((r) => r.source_hash === textHash("Reparación urgente"));
+  assert.equal(rep.target_lang, "es");
+  assert.ok(cache.every((r) => r.target_lang === "es" && r.source_lang === "en"));
 });
 
 test("re-running the job translates nothing (content-addressed)", async () => {
@@ -169,4 +172,19 @@ test("re-running the job translates nothing (content-addressed)", async () => {
   const second = await translateWorkOrders(deps);
   assert.equal(second.translated, 0);
   assert.equal(second.alreadyCached, 1);
+});
+
+test("sourceLang override flips the direction", async () => {
+  const tables = {
+    resman_work_orders: [{ title: "Fuga", notes: "", completion_notes: "" }],
+    work_order_translations: [],
+  };
+  await translateWorkOrders({
+    supabase: fakeSupabase(tables),
+    translator: fakeTranslator,
+    sourceLang: "es",
+  });
+  const row = tables.work_order_translations[0];
+  assert.equal(row.source_lang, "es");
+  assert.equal(row.target_lang, "en");
 });

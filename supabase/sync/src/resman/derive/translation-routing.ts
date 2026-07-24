@@ -18,7 +18,7 @@ export function normalizeLang(code: string): Lang | null {
   return (SUPPORTED as readonly string[]).includes(base) ? (base as Lang) : null;
 }
 
-function otherLang(l: Lang): Lang {
+export function otherLang(l: Lang): Lang {
   return l === "en" ? "es" : "en";
 }
 

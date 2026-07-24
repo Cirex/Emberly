@@ -31,6 +31,11 @@ export const ENV = {
   SUPABASE_URL: "SUPABASE_URL",
   SUPABASE_URL_LEGACY: "NEXT_PUBLIC_SUPABASE_URL",
   SUPABASE_SERVICE_ROLE_KEY: "SUPABASE_SERVICE_ROLE_KEY",
+
+  // Langbly (translation pre-cache). Optional: with no key the
+  // translate-work-orders job no-ops, so the pipeline stays deployable.
+  LANGBLY_API_KEY: "LANGBLY_API_KEY",
+  LANGBLY_API_URL: "LANGBLY_API_URL",
 } as const;
 
 export type EnvVarName = (typeof ENV)[keyof typeof ENV];

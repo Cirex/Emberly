@@ -11,10 +11,15 @@
  * throwing, so the sync is safe to deploy before the key exists.
  */
 
+import { ENV, type EnvRecord } from "../config/env";
+
 export interface Translator {
   detect(texts: string[]): Promise<string[]>;
   translateBatch(texts: string[], from: string, to: string): Promise<string[]>;
 }
+
+/** Langbly's API host. Override with LANGBLY_API_URL for any v2-compatible endpoint. */
+const DEFAULT_BASE_URL = "https://api.langbly.com";
 
 /** Segments per request. Google v2 caps at 128; stay comfortably under. */
 const BATCH = 100;
@@ -97,9 +102,9 @@ export class LangblyClient implements Translator {
 }
 
 /** Build a client from env, or null when no key is configured. */
-export function langblyFromEnv(env: NodeJS.ProcessEnv): LangblyClient | null {
-  const apiKey = env.LANGBLY_API_KEY?.trim();
+export function langblyFromEnv(env: EnvRecord): LangblyClient | null {
+  const apiKey = env[ENV.LANGBLY_API_KEY]?.trim();
   if (!apiKey) return null;
-  const baseUrl = env.LANGBLY_API_URL?.trim() || "https://api.langbly.com";
+  const baseUrl = env[ENV.LANGBLY_API_URL]?.trim() || DEFAULT_BASE_URL;
   return new LangblyClient({ apiKey, baseUrl });
 }

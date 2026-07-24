@@ -2,6 +2,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Text, View } from "react-native";
 import { classificationColor, workOrderStatusColor } from "@/lib/derived/status";
 import { CALLBACK_TINT } from "@/theme/tokens";
+import { useTranslated } from "@/lib/translation/use-translated";
 
 /**
  * The structured two-line row language every work-order list shares (approved
@@ -152,6 +153,11 @@ export function WorkOrderRow({
   trailing?: string;
   signal?: "callback" | "duplicate" | null;
 }) {
+  // Every closed row and hot-spot row funnels through here, so translating the
+  // title once covers them all — and any future caller — rather than leaving
+  // each list to remember on its own.
+  const tr = useTranslated();
+  const titleShown = tr(title).shown;
   return (
     <View
       style={{
@@ -194,7 +200,7 @@ export function WorkOrderRow({
         className="text-navy dark:text-white"
         style={{ fontSize: 14, fontWeight: "600", lineHeight: 19, marginTop: 5 }}
       >
-        {title || "Untitled work order"}
+        {titleShown || "Untitled work order"}
       </Text>
     </View>
   );

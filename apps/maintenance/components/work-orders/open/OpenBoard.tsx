@@ -10,6 +10,7 @@ import { tagIconName } from "@/lib/derived/tags";
 import { abbreviatedDate, calendarDaysBetween, DAY_MS, startOfDay } from "@/lib/derived/time";
 import type { ParsedWorkOrder } from "@/lib/derived/types";
 import { CALLBACK_TINT } from "@/theme/tokens";
+import { useTranslated } from "@/lib/translation/use-translated";
 
 const RAIL_TINTS = {
   blocked: "#D1382E",
@@ -346,6 +347,7 @@ function WorkOrderTicket({
   first: boolean;
   pad: number;
 }) {
+  const tr = useTranslated();
   const statusColor = workOrderStatusColor(wo.status);
   return (
     <Pressable
@@ -382,7 +384,7 @@ function WorkOrderTicket({
           numberOfLines={1}
           style={{ fontSize: 12.5, fontWeight: "700", letterSpacing: -0.1 }}
         >
-          {wo.title || "Untitled work order"}
+          {tr(wo.title).shown || "Untitled work order"}
         </Text>
         <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "700", color: statusColor, marginTop: 1 }}>
           {wo.status}

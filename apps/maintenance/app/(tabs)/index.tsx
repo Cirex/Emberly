@@ -31,6 +31,7 @@ import { TRADE_TINT, tagIconName, tagTint } from "@/lib/derived/tags";
 import { workOrderStatusColor } from "@/lib/derived/status";
 import { abbreviatedDate } from "@/lib/derived/time";
 import type { ParsedWorkOrder } from "@/lib/derived/types";
+import { useTranslated } from "@/lib/translation/use-translated";
 import { activeLocale } from "@/lib/i18n";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
 import { useMyDay, type MyDayStop } from "@/lib/stores/my-day";
@@ -825,6 +826,9 @@ function QueueRow({
   onAdd: () => void;
 }) {
   const { t } = useTranslation();
+  // Lists showed raw ResMan prose, so a full translation cache changed nothing
+  // outside the detail screen — the feature looked dead from My Day.
+  const tr = useTranslated();
   const swipeRef = useRef<SwipeableMethods>(null);
   const statusColor = workOrderStatusColor(wo.status);
 
@@ -854,7 +858,7 @@ function QueueRow({
         }}
       >
         <Text className="text-navy dark:text-white" style={{ fontSize: 14, fontWeight: "600", lineHeight: 19 }}>
-          {wo.title || t("myDay.untitledWorkOrder")}
+          {tr(wo.title).shown || t("myDay.untitledWorkOrder")}
         </Text>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 7 }}>
           <View style={{ paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999, backgroundColor: `${statusColor}1A` }}>

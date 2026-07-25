@@ -69,6 +69,29 @@ function daysToCloseLabel(days: number | null): string {
   return days === 1 ? "1 day" : `${days.toLocaleString()} days`;
 }
 
+/**
+ * Rows reused across rebuilds, keyed on the RAW work order.
+ *
+ * A sync bumps dataVersion, every derived object is rebuilt, and every mounted
+ * row re-renders because its `row` prop is a new object — measured at a 202ms
+ * commit on device, and far worse on the pass that widens the staged parse. The
+ * rows are pure functions of the raw row, so an unchanged one can keep its
+ * object and its memoized component can skip.
+ *
+ * Raw identity already implies the title, number, unit, dates and technician are
+ * unchanged, and tags are cached against the same object upstream. What it does
+ * NOT imply is the cross-set engine signals or the unit's classification, so
+ * those are checked explicitly — as is the calendar day, since the date label
+ * is relative to it.
+ */
+interface CachedClosedRow {
+  dayKey: number;
+  classification: string;
+  callbackStatus: string;
+  row: ClosedWorkOrderRow;
+}
+const closedRowCache = new WeakMap<object, CachedClosedRow>();
+
 export function buildClosedRows(input: {
   workOrders: ParsedWorkOrder[];
   option: WorkOrderSortOption;
@@ -77,14 +100,26 @@ export function buildClosedRows(input: {
 }): ClosedWorkOrderRow[] {
   const { option, unitIndex, nowMs } = input;
 
+  const dayKey = Math.floor(nowMs / 86_400_000);
+
   const rows: ClosedWorkOrderRow[] = input.workOrders.map((wo) => {
     const facts = unitIndex.get(wo.unitNumber);
-    return {
+    const classification = facts?.classification.trim() ? facts.classification : "—";
+    const cached = closedRowCache.get(wo.raw);
+    if (
+      cached &&
+      cached.dayKey === dayKey &&
+      cached.classification === classification &&
+      cached.callbackStatus === wo.callbackStatus
+    ) {
+      return cached.row;
+    }
+    const row: ClosedWorkOrderRow = {
       id: wo.id,
       number: wo.number,
       status: wo.status,
       unitNumber: wo.unitNumber,
-      classification: facts?.classification.trim() ? facts.classification : "—",
+      classification,
       title: wo.title,
       dateCompletedText: abbreviatedDate(wo.completedAt, nowMs),
       dateCompletedMs: wo.completedAt,
@@ -97,6 +132,8 @@ export function buildClosedRows(input: {
       daysToCloseLabel: daysToCloseLabel(wo.daysToComplete),
       isCallback: wo.callbackStatus === "possible" || wo.callbackStatus === "confirmed",
     };
+    closedRowCache.set(wo.raw, { dayKey, classification, callbackStatus: wo.callbackStatus, row });
+    return row;
   });
 
   // Port of sortOrder(for:). recentMoveInDescending has no meaning on closed

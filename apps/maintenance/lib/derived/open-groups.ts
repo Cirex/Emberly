@@ -72,6 +72,55 @@ export interface OpenWorkOrderGroup {
   firstIssueAfterMoveIn: { eventIndex: number; elapsedDays: number } | null;
 }
 
+/**
+ * Groups reused across rebuilds.
+ *
+ * A card is a gradient, a laid-out timeline rail and every ticket row in the
+ * unit, and a data change used to hand each mounted one a brand-new `group`
+ * object — so all of them re-rendered even though a sync typically touches a
+ * handful of units. The group is a pure function of its members plus the
+ * ordering and the calendar day, so an untouched unit can keep its object and
+ * its memoized card can skip.
+ *
+ * The signature is built from RAW OBJECT IDENTITY, not from the work-order id.
+ * A delta merge keeps the object for a row it did not touch and substitutes a
+ * new one for a row it did — so identity is exactly the question being asked.
+ * Keying on the id instead let an edited row keep its stale card, which is what
+ * the reuse test caught. The engine signals go in too: those can change for the
+ * same raw row when OTHER rows move.
+ */
+
+/**
+ * A stable number per raw row object. Cheaper than trying to serialize a row,
+ * and it says precisely what matters: is this the same object as last time?
+ */
+const rowTokens = new WeakMap<object, number>();
+let nextRowToken = 1;
+function rowToken(raw: object): number {
+  let token = rowTokens.get(raw);
+  if (token === undefined) {
+    token = nextRowToken++;
+    rowTokens.set(raw, token);
+  }
+  return token;
+}
+const groupCache = new Map<string, OpenWorkOrderGroup>();
+/** Bounded so a long session cannot accumulate every past shape of the board. */
+const GROUP_CACHE_MAX = 600;
+
+function groupSignature(
+  unitNumber: string,
+  members: ParsedWorkOrder[],
+  option: WorkOrderSortOption,
+  dayKey: number,
+  classification: string,
+  moveInAt: number | null,
+): string {
+  let sig = `${unitNumber}|${option}|${dayKey}|${classification}|${moveInAt ?? ""}`;
+  for (const wo of members) sig += `|${rowToken(wo.raw)}:${wo.callbackStatus}:${wo.isDuplicate ? 1 : 0}`;
+  return sig;
+}
+
 export function buildOpenGroups(input: {
   workOrders: ParsedWorkOrder[];
   option: WorkOrderSortOption;
@@ -88,10 +137,25 @@ export function buildOpenGroups(input: {
     else byUnit.set(key, [wo]);
   }
 
+  const dayKey = Math.floor(nowMs / (24 * 60 * 60 * 1000));
   const groups: OpenWorkOrderGroup[] = [];
   for (const [unitNumber, members] of byUnit) {
     const workOrders = sortOpenWorkOrders(members, option, unitIndex);
     const facts = unitIndex.get(unitNumber);
+
+    const signature = groupSignature(
+      unitNumber,
+      workOrders,
+      option,
+      dayKey,
+      facts?.classification ?? "",
+      facts?.moveInAt ?? null,
+    );
+    const reused = groupCache.get(signature);
+    if (reused) {
+      groups.push(reused);
+      continue;
+    }
 
     // Tag chips: counted per work order (a wo's duplicate tags count once),
     // callback signal outranks duplicate, top 4 by count then name.
@@ -232,6 +296,12 @@ export function buildOpenGroups(input: {
       moveIn,
       firstIssueAfterMoveIn,
     });
+    groupCache.set(signature, groups[groups.length - 1]);
+  }
+  while (groupCache.size > GROUP_CACHE_MAX) {
+    const oldest = groupCache.keys().next().value;
+    if (oldest === undefined) break;
+    groupCache.delete(oldest);
   }
 
   return sortOpenGroups(groups, option);

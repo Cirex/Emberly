@@ -22,8 +22,11 @@
     "sync:build": "bun run --filter '@emberly/sync' build"
   },
   "devDependencies": {
-    "prettier": "^3.9.5",
-    "turbo": "^2.10.4",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.6",
     "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "sharp": "^0.35.3"
   }
 }

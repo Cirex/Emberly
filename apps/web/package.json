@@ -25,20 +25,20 @@
   },
   "dependencies": {
     "@emberly/core": "workspace:*",
-    "@img/sharp-darwin-arm64": "0.34.5",
+    "@img/sharp-darwin-arm64": "0.35.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@sentry/nextjs": "^10.65.0",
     "@supabase/supabase-js": "^2.110.2",
     "color": "^4",
     "date-fns": "^4.4.0",
     "detect-libc": "^2",
-    "next": "^16.2.10",
+    "next": "^16.2.11",
     "qrcode": "^1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "resend": "^6.17.2",
     "semver": "^7",
-    "sharp": "0.34.5",
+    "sharp": "^0.35.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {

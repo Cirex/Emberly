@@ -187,6 +187,20 @@ export default function WorkOrdersScreen() {
   );
 
   // ----- Open: zone-washed unit groups -----------------------------------
+  // Stable references for the closed list — see the note at its FlatList.
+  //
+  // Declared HERE, above every display-mode branch: those branches return early,
+  // so a hook placed below one is called conditionally and React's hook order
+  // breaks the moment a tech switches modes.
+  const closedVisible = useMemo(
+    () => snapshot.closedRows.slice(0, renderLimit),
+    [snapshot.closedRows, renderLimit],
+  );
+  const renderClosedRow = useCallback(
+    ({ item }: { item: ClosedWorkOrderRow }) => <ClosedRow row={item} />,
+    [],
+  );
+
   if (view.displayMode === "open") {
     return (
       <View style={{ flex: 1 }}>
@@ -220,16 +234,6 @@ export default function WorkOrdersScreen() {
   }
 
   // ----- Closed: full-bleed table with smart scroll ----------------------
-  // Stable references for the closed list — see the note at the FlatList.
-  const closedVisible = useMemo(
-    () => snapshot.closedRows.slice(0, renderLimit),
-    [snapshot.closedRows, renderLimit],
-  );
-  const renderClosedRow = useCallback(
-    ({ item }: { item: ClosedWorkOrderRow }) => <ClosedRow row={item} />,
-    [],
-  );
-
   if (view.displayMode === "closed") {
     const rows = snapshot.closedRows;
     return (

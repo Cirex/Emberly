@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { mock } = require("bun:test");
 const { NextResponse } = require("next/server");
+const { tokenForbiddenForResource } = require("../lib/app-role-capabilities");
 
 // Same bun:test mock.module harness as tests/map-annotations.test.js — this
 // suite runs in its own process (the package.json `test` script runs each file
@@ -21,6 +22,16 @@ const state = {
 
 mock.module("@/lib/resman-api-auth", () => ({
   requireResmanApiKey: async () => state.auth,
+  // Only AUTHENTICATION is stubbed. The allow/deny decision runs the real
+  // policy from lib/app-role-capabilities.ts, so a route wired to the wrong
+  // capability fails here rather than quietly passing a stubbed check.
+  requireStaffToken: async (_request, capability) => {
+    if (!state.auth.ok) return state.auth;
+    if (state.auth.kind === "scanner" || tokenForbiddenForResource(state.auth.subject, capability)) {
+      return { ok: false, response: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+    }
+    return state.auth;
+  },
 }));
 
 mock.module("@/lib/resman-api", () => ({
@@ -269,6 +280,51 @@ test("every photo route is gated by resman API auth and touches nothing when it 
     assert.equal(response.status, 401);
   }
   assert.equal(state.storage.calls.uploads.length, 0);
+});
+
+test("a gate scanner cannot read, upload or DELETE completion photos", async () => {
+  // These are pictures of the inside of a resident's home. Every handler here
+  // used to accept any authenticated caller, and a scanner credential is
+  // authenticated — a shared key on a wall by the gate could stream them and
+  // soft-delete them. The upload handler LOOKED gated (it forwarded
+  // `auth.kind === "scanner"` into getResource) but getResource only narrows
+  // when the resource declares `scannerVisible`, and work-orders does not.
+  state.auth = { ok: true, kind: "scanner" };
+  state.db = untouchableDb();
+  state.workOrderRow = { resman_work_order_id: "wo-1" };
+  state.storage = fakeStorage();
+
+  const attempts = [
+    photosRoute.GET(new Request("https://emberly-web.test/api/resman/work-orders/wo-1/photos"), listParams),
+    photosRoute.POST(uploadRequest({ dataBase64: JPEG_BASE64, contentType: "image/jpeg" }), listParams),
+    photoRoute.GET(new Request("https://emberly-web.test/api/resman/work-order-photos/photo-1"), photoParams),
+    photoRoute.DELETE(
+      new Request("https://emberly-web.test/api/resman/work-order-photos/photo-1", { method: "DELETE" }),
+      photoParams,
+    ),
+  ];
+  for (const attempt of attempts) {
+    assert.equal((await attempt).status, 403);
+  }
+  assert.equal(state.storage.calls.uploads.length, 0);
+});
+
+test("the maintenance app's own token still reaches its photos", async () => {
+  // The gate above must not cost the app the surface it exists for: the
+  // maintenance token's role allows `work-orders`, which is what these routes
+  // are gated on.
+  state.auth = tokenAuth({ role: "security_manager", scopes: ["units", "work-orders"] });
+  state.workOrderRow = { resman_work_order_id: "wo-1" };
+  state.storage = fakeStorage();
+  state.db = scriptedSupabase(
+    [{ table: "work_order_photos", insert: { data: photoRow(), error: null } }],
+    [],
+  );
+  const response = await photosRoute.POST(
+    uploadRequest({ dataBase64: JPEG_BASE64, contentType: "image/jpeg" }),
+    listParams,
+  );
+  assert.equal(response.status, 201);
 });
 
 // --- upload ---------------------------------------------------------------

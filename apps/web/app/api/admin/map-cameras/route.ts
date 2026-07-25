@@ -50,7 +50,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // requireAdmin, not requireAdminOrScanner: cameras are placed at a desk,
   // and a compromised gate device must not be able to redraw the coverage map.
-  const auth = await requireAdmin(request);
+  const auth = await requireAdmin(request, { roles: ["property_manager", "security_manager"] });
   if (!auth.ok) return auth.response;
 
   const body = await readJson(request);

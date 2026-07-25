@@ -16,7 +16,7 @@ export async function DELETE(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
-  const auth = await requireAdmin(request);
+  const auth = await requireAdmin(request, { roles: ["super_admin"] });
   if (!auth.ok) return auth.response;
 
   const { id } = await context.params;

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getResource } from "@/lib/resman-api";
-import { requireResmanApiKey } from "@/lib/resman-api-auth";
+import { requireStaffToken } from "@/lib/resman-api-auth";
 import { workOrdersResource } from "@/lib/resman-resources";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { UntypedSupabase } from "@/lib/supabase/types";
@@ -28,7 +28,7 @@ export const runtime = "nodejs";
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, { params }: RouteParams): Promise<NextResponse> {
-  const auth = await requireResmanApiKey(request);
+  const auth = await requireStaffToken(request, "work-orders");
   if (!auth.ok) return auth.response;
 
   try {
@@ -58,7 +58,7 @@ const CreateSchema = z.object({
 });
 
 export async function POST(request: Request, { params }: RouteParams): Promise<NextResponse> {
-  const auth = await requireResmanApiKey(request);
+  const auth = await requireStaffToken(request, "work-orders");
   if (!auth.ok) return auth.response;
 
   const parsed = CreateSchema.safeParse(await request.json().catch(() => null));
@@ -68,12 +68,12 @@ export async function POST(request: Request, { params }: RouteParams): Promise<N
 
   try {
     const { id } = await params;
-    const row = await getResource(
-      workOrdersResource,
-      id,
-      createAdminClient() as UntypedSupabase,
-      auth.kind === "scanner",
-    );
+    // Existence check only. The scanner flag is gone because requireStaffToken
+    // already refused scanners — and it was never doing anything here anyway:
+    // getResource only narrows when the resource declares `scannerVisible`, and
+    // work-orders deliberately doesn't, so passing `true` applied no filter and
+    // returned the row regardless.
+    const row = await getResource(workOrdersResource, id, createAdminClient() as UntypedSupabase);
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const result = await createWorkOrderPhoto(id, workOrderPhotoActor(auth), parsed.data);

@@ -22,7 +22,7 @@ const CreateSchema = z.object({
 });
 
 export async function POST(request: Request, { params }: RouteParams) {
-  const auth = await requireAdminOrScanner(request);
+  const auth = await requireAdminOrScanner(request, { roles: ["property_manager", "security_manager"] });
   if (!auth.ok) return auth.response;
   const { annotationId } = await params;
 

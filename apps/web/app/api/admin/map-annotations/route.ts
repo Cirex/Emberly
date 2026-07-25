@@ -82,7 +82,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const auth = await requireAdminOrScanner(request);
+  const auth = await requireAdminOrScanner(request, { roles: ["property_manager", "security_manager"] });
   if (!auth.ok) return auth.response;
 
   const body = await readJson(request);

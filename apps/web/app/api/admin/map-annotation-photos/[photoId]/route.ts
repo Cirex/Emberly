@@ -25,7 +25,7 @@ export async function GET(request: Request, { params }: RouteParams) {
 }
 
 export async function DELETE(request: Request, { params }: RouteParams) {
-  const auth = await requireAdminOrScanner(request);
+  const auth = await requireAdminOrScanner(request, { roles: ["property_manager", "security_manager"] });
   if (!auth.ok) return auth.response;
   const { photoId } = await params;
 

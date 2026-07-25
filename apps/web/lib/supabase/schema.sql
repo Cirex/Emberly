@@ -1179,6 +1179,35 @@ create trigger resman_work_orders_updated_at
 alter table public.resman_work_orders enable row level security;
 
 -- ------------------------------------------------------------
+-- work_order_translations — server-side translation cache for work-order prose
+-- ------------------------------------------------------------
+-- The sync worker translates title/notes/completion_notes via Langbly and
+-- stores the result keyed by a content hash of the SOURCE text
+-- (packages/core textHash) plus the target language. The maintenance app reads
+-- this and merges it into its on-device cache under the identical
+-- `${lang}:${hash}` key, so a phone never re-translates prose the server
+-- already paid to translate. Content-addressed: when a work order's text
+-- changes its hash changes, a new row is written, and the stale row is reaped
+-- once no live work order hashes to it.
+create table if not exists work_order_translations (
+  source_hash      text        not null,
+  target_lang      text        not null check (target_lang in ('en', 'es')),
+  source_lang      text        not null,
+  translated_text  text        not null,
+  char_count       integer     not null default 0,
+  updated_at       timestamptz not null default now(),
+  primary key (source_hash, target_lang)
+);
+
+-- The device pulls "everything for my language, changed since my last sync".
+create index if not exists work_order_translations_lang_updated_idx
+  on work_order_translations (target_lang, updated_at desc);
+
+-- Server-authoritative, like the resman_* mirrors: RLS on with no policy, so
+-- only the service role reads or writes it.
+alter table work_order_translations enable row level security;
+
+-- ------------------------------------------------------------
 -- work_order_photos — completion photos attached by maintenance techs
 -- ------------------------------------------------------------
 -- Technicians attach before/after photos when closing a work order in the

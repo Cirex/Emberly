@@ -30,7 +30,7 @@ const UpdateSchema = z.object({
 });
 
 export async function PATCH(request: NextRequest, { params }: RouteContext): Promise<NextResponse> {
-  const auth = await requireAdmin(request);
+  const auth = await requireAdmin(request, { roles: ["property_manager", "security_manager"] });
   if (!auth.ok) return auth.response;
 
   const body = await readJson(request);
@@ -84,7 +84,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext): Pro
 }
 
 export async function DELETE(request: NextRequest, { params }: RouteContext): Promise<NextResponse> {
-  const auth = await requireAdmin(request);
+  const auth = await requireAdmin(request, { roles: ["property_manager", "security_manager"] });
   if (!auth.ok) return auth.response;
 
   try {

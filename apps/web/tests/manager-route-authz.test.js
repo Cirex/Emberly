@@ -145,6 +145,18 @@ test("an unauthenticated caller gets 401, not 403", async () => {
 const STAFF_ROOTS = [
   path.join(__dirname, "..", "app", "api", "resman", "manager"),
   path.join(__dirname, "..", "app", "api", "resman", "pm-tasks"),
+  // Completion photos are pictures of the inside of a resident's home. These
+  // routes accepted ANY authenticated caller, which included a gate scanner —
+  // a shared credential on a wall could stream them and DELETE them. The
+  // upload route looked like it checked (it passed `auth.kind === "scanner"`
+  // into getResource) but that only narrows when the resource declares
+  // `scannerVisible`, and work-orders deliberately doesn't.
+  path.join(__dirname, "..", "app", "api", "resman", "work-order-photos"),
+];
+
+/** Individual staff routes outside the roots above. */
+const STAFF_FILES = [
+  path.join(__dirname, "..", "app", "api", "resman", "work-orders", "[id]", "photos", "route.ts"),
 ];
 
 function routeFiles(dir) {
@@ -158,9 +170,9 @@ function routeFiles(dir) {
 }
 
 test("every staff route authorizes through requireStaffToken", () => {
-  const files = STAFF_ROOTS.flatMap(routeFiles);
+  const files = [...STAFF_ROOTS.flatMap(routeFiles), ...STAFF_FILES];
   // Guards against a mistyped path silently making this suite vacuous.
-  assert.ok(files.length >= 20, `expected the staff surface, found ${files.length} routes`);
+  assert.ok(files.length >= 22, `expected the staff surface, found ${files.length} routes`);
 
   const offenders = [];
   const allowed = new Set([...appRoleScopes("property_manager"), ...appRoleScopes("security_manager")]);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireResmanApiKey } from "@/lib/resman-api-auth";
+import { requireStaffToken } from "@/lib/resman-api-auth";
 import { deleteWorkOrderPhoto, fetchWorkOrderPhoto } from "@/lib/work-order-photos";
 
 export const runtime = "nodejs";
@@ -16,7 +16,7 @@ export const runtime = "nodejs";
 type RouteParams = { params: Promise<{ photoId: string }> };
 
 export async function GET(request: Request, { params }: RouteParams): Promise<NextResponse> {
-  const auth = await requireResmanApiKey(request);
+  const auth = await requireStaffToken(request, "work-orders");
   if (!auth.ok) return auth.response;
 
   try {
@@ -37,7 +37,7 @@ export async function GET(request: Request, { params }: RouteParams): Promise<Ne
 }
 
 export async function DELETE(request: Request, { params }: RouteParams): Promise<NextResponse> {
-  const auth = await requireResmanApiKey(request);
+  const auth = await requireStaffToken(request, "work-orders");
   if (!auth.ok) return auth.response;
 
   try {

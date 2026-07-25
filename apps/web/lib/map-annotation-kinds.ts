@@ -12,7 +12,7 @@ import { z } from "zod";
 export const ANNOTATION_KINDS = ["pin", "utility_pin", "utility_line"] as const;
 export type AnnotationKind = (typeof ANNOTATION_KINDS)[number];
 
-export const UTILITY_TYPES = ["water", "sewer", "gas", "electrical", "other"] as const;
+export const UTILITY_TYPES = ["water", "sewer", "gas", "electrical", "internet", "other"] as const;
 export type UtilityType = (typeof UTILITY_TYPES)[number];
 
 /**

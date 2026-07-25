@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
-import { NAVY, OLIVE_GLASS, OLIVE_GLASS_DARK } from "@/theme/tokens";
+import { ACCENT_THEMES, NAVY, OLIVE_GLASS, OLIVE_GLASS_DARK } from "@/theme/tokens";
+import { useAccentHex } from "@/lib/hooks/use-accent";
 import { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
@@ -88,7 +89,16 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
 
   // Selected content takes the accent (like Music's red); the lozenge itself is
   // elevated glass, not a colored fill.
-  const accent = dark ? OLIVE_GLASS_DARK : OLIVE_GLASS;
+  // The chosen accent, not a hardcoded olive — this is the navigation chrome
+  // the accent setting is meant to reach. The olive glass tones stay as the
+  // brand default so a fresh install looks exactly as it did.
+  const accentHexValue = useAccentHex();
+  const accent =
+    accentHexValue === ACCENT_THEMES.olive.hex
+      ? dark
+        ? OLIVE_GLASS_DARK
+        : OLIVE_GLASS
+      : accentHexValue;
   const idleIcon = dark ? "rgba(255,255,255,0.62)" : "rgba(9,27,84,0.58)";
   const idleLabel = dark ? "rgba(255,255,255,0.72)" : "rgba(9,27,84,0.66)";
   const lozengeFill = dark ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.82)";

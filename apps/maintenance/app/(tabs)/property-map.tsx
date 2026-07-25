@@ -96,6 +96,7 @@ export default function PropertyMapScreen() {
   // The Utilities hub sheet (inventory of runs, per-device visibility).
   const [utilityHubOpen, setUtilityHubOpen] = useState(false);
   const hiddenRunIds = useUtilityVisibility((s) => s.hiddenIds);
+  const hiddenTypes = useUtilityVisibility((s) => s.hiddenTypes);
   /** Drawn runs on the layer (hidden ones included — they still exist). */
   const runCount = useMemo(
     () =>
@@ -146,17 +147,21 @@ export default function PropertyMapScreen() {
   // map should not show a pin the guard already deleted. With the utility
   // layer toggled off (Settings · Map), the canvas gets no utility rows at
   // all: nothing drawn, nothing tappable.
-  // Per-run hidden flags are a device-local viewing choice: a hidden run is
-  // neither drawn nor tappable here, but stays untouched on the sync channel.
+  // Hidden flags are a device-local viewing choice at two grains: a whole
+  // LAYER (all the gas runs) or a single RUN. Either way the annotation is
+  // neither drawn nor tappable here, and stays untouched on the sync channel —
+  // nothing hidden here disappears from a colleague's map.
   const visibleAnnotations = useMemo(
     () =>
-      ann.annotations.filter(
-        (a) =>
-          !a.removed &&
-          (utilityVisible || (a.kind ?? "pin") === "pin") &&
-          !(a.kind === "utility_line" && hiddenRunIds.includes(a.id)),
-      ),
-    [ann.annotations, utilityVisible, hiddenRunIds],
+      ann.annotations.filter((a) => {
+        if (a.removed) return false;
+        if (!utilityVisible && (a.kind ?? "pin") !== "pin") return false;
+        const utility = a.kind === "utility_line" || a.kind === "utility_pin";
+        if (!utility) return true;
+        if (a.kind === "utility_line" && hiddenRunIds.includes(a.id)) return false;
+        return !(a.utilityType != null && hiddenTypes.includes(a.utilityType));
+      }),
+    [ann.annotations, utilityVisible, hiddenRunIds, hiddenTypes],
   );
 
   // Filter color groups take precedence over the single occupancy tint when

@@ -8,6 +8,8 @@ export {
   ACCENT_THEMES,
   DEFAULT_ACCENT,
   accentVars,
+  accentHex,
+  accentTheme,
   STATUS_TINT,
   CLASSIFICATION_TINT,
   NAVY,

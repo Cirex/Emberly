@@ -11,7 +11,7 @@ import { isCallbackSignal } from "./filtering";
  *                   signal (a signal ticket's callbackMatchedId points at the
  *                   completed work order) — the quality counterweight to the
  *                   speed metrics.
- *   categoryMix:    where the closed work actually was, last 90 days, top four
+ *   categoryMix:    which TRADES the closed work was, last 90 days, top four
  *                   categories + Other.
  *
  * Reported counts come from the full non-make-ready set (an inflow is an
@@ -36,7 +36,7 @@ export interface CallbackMonth {
 }
 
 export interface CategorySlice {
-  /** Raw category label ("Plumbing", …) or null for the folded Other slice. */
+  /** Derived trade tag ("HVAC", "Leaks", …) or null for the folded Other slice. */
   category: string | null;
   count: number;
   /** Share of the 90-day closure total, 0..1. */
@@ -114,24 +114,43 @@ export function buildClosedInsights(input: {
     callbackMonths.push({ startMs, closed, callbacks, rate: closed > 0 ? callbacks / closed : 0 });
   }
 
-  // ── Category mix, last 90 days ────────────────────────────────────────────
+  // ── Trade mix, last 90 days ───────────────────────────────────────────────
+  //
+  // Counted from the app's OWN derived trade tags (HVAC, Electrical, Leaks…),
+  // not ResMan's `category`. That column is dominated by how a request ARRIVED
+  // rather than what the work was: "Online Work Order" alone is 818 of 2,885
+  // closed rows, and "ResMan Work Order" is more of the same. A mix chart built
+  // on it answers "how did people submit tickets", which nobody asked.
+  //
+  // A work order can carry more than one tag (a leaking water heater is Leaks
+  // and Hot Water), so slices are counted per TAG and the fractions are of
+  // tagged work — they intentionally do not sum to 1. `recentClosedCount`
+  // remains the count of closures, which is what the caption reports.
   const recent = closedFiltered.filter(
     (wo) => wo.completedAt !== null && wo.completedAt >= nowMs - MIX_WINDOW_MS,
   );
-  const byCategory = new Map<string, number>();
+  const byTag = new Map<string, number>();
+  let untagged = 0;
   for (const wo of recent) {
-    const key = wo.raw.category?.trim() || "";
-    byCategory.set(key, (byCategory.get(key) ?? 0) + 1);
+    const tags = new Set(wo.tags);
+    if (tags.size === 0) {
+      untagged += 1;
+      continue;
+    }
+    for (const tag of tags) byTag.set(tag, (byTag.get(tag) ?? 0) + 1);
   }
-  const ranked = [...byCategory.entries()].sort((a, b) => b[1] - a[1]);
-  const top = ranked.slice(0, MIX_TOP).filter(([category]) => category !== "");
-  const otherCount = recent.length - top.reduce((sum, [, n]) => sum + n, 0);
+  const ranked = [...byTag.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const top = ranked.slice(0, MIX_TOP);
   const denom = recent.length > 0 ? recent.length : 1;
   const categoryMix: CategorySlice[] = top.map(([category, count]) => ({
     category,
     count,
     fraction: count / denom,
   }));
+  // The tail is "everything else we tagged" plus work no tag matched — one
+  // honest bucket rather than pretending the top four cover the board.
+  const taggedTail = ranked.slice(MIX_TOP).reduce((sum, [, n]) => sum + n, 0);
+  const otherCount = taggedTail + untagged;
   if (otherCount > 0) categoryMix.push({ category: null, count: otherCount, fraction: otherCount / denom });
 
   return { weeks, callbackMonths, categoryMix, recentClosedCount: recent.length };

@@ -39,6 +39,7 @@ import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { HAIRLINE, MUTED, NAVY, OLIVE, OLIVE_TEXT, screenHPad } from "@/theme/tokens";
 import { statusLabel } from "@/lib/derived/resman-labels";
 import { useNowMs } from "@/lib/hooks/use-now";
+import { useAccentHex } from "@/lib/hooks/use-accent";
 
 const GREEN = "#33A666";
 const RED = "#D1382E";
@@ -67,6 +68,7 @@ export default function MyDayScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const dark = useColorScheme().colorScheme === "dark";
+  const accentHexValue = useAccentHex();
 
   const admin = useConfig((s) => s.admin);
   const token = useConfig((s) => s.token);
@@ -223,7 +225,14 @@ export default function MyDayScreen() {
           paddingHorizontal: pad,
         }}
       >
-        <Image source={FLOWER} style={{ width: 58, height: 58, alignSelf: "center" }} resizeMode="contain" />
+        {/* The mark is a single-colour silhouette (#B0B040 plus antialiasing),
+            so tintColor recolours it faithfully — no per-accent asset. */}
+        <Image
+          source={FLOWER}
+          tintColor={accentHexValue}
+          style={{ width: 58, height: 58, alignSelf: "center" }}
+          resizeMode="contain"
+        />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text
             className="text-navy dark:text-white"

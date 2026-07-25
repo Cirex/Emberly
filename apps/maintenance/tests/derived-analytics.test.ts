@@ -733,14 +733,22 @@ describe("buildClosedInsights", () => {
     expect(july.callbacks).toBe(0);
   });
 
-  test("category mix ranks 90-day closures and folds blanks into Other", () => {
+  test("trade mix counts OUR tags, not ResMan's submission channel", () => {
+    /**
+     * The mix used to count `category`, which is dominated by how a request
+     * ARRIVED rather than what the work was — "Online Work Order" alone is 818
+     * of 2,885 closed rows on the live board. Counting it answered "how did
+     * people submit tickets". These fixtures carry that exact category to prove
+     * it no longer reaches the chart.
+     */
     const rows = [
-      makeWo({ date_completed: "2026-07-01", category: "Plumbing" }),
-      makeWo({ date_completed: "2026-07-02", category: "Plumbing" }),
-      makeWo({ date_completed: "2026-07-03", category: "HVAC" }),
-      makeWo({ date_completed: "2026-07-04" }),
+      makeWo({ date_completed: "2026-07-01", category: "Online Work Order", title: "Kitchen sink leaking" }),
+      makeWo({ date_completed: "2026-07-02", category: "Online Work Order", title: "Bathroom faucet leaking" }),
+      makeWo({ date_completed: "2026-07-03", category: "ResMan Work Order", title: "AC not cooling" }),
+      // No trade any tag matches: folds into Other rather than inventing one.
+      makeWo({ date_completed: "2026-07-04", category: "Online Work Order", title: "Resident question" }),
       // Outside the 90-day window: ignored entirely.
-      makeWo({ date_completed: "2025-12-01", category: "Plumbing" }),
+      makeWo({ date_completed: "2025-12-01", category: "Online Work Order", title: "Kitchen sink leaking" }),
     ];
     const { categoryMix, recentClosedCount } = buildClosedInsights({
       allNonMakeReady: rows,
@@ -749,10 +757,32 @@ describe("buildClosedInsights", () => {
     });
 
     expect(recentClosedCount).toBe(4);
-    expect(categoryMix[0]).toMatchObject({ category: "Plumbing", count: 2 });
+    // Neither submission channel appears anywhere in the chart.
+    const labels = categoryMix.map((slice) => slice.category);
+    expect(labels).not.toContain("Online Work Order");
+    expect(labels).not.toContain("ResMan Work Order");
+
+    // The two leaks lead; the HVAC job follows.
+    expect(categoryMix[0]).toMatchObject({ category: "Leaks", count: 2 });
     expect(categoryMix[0].fraction).toBeCloseTo(0.5);
-    expect(categoryMix[1]).toMatchObject({ category: "HVAC", count: 1 });
-    // The uncategorized closure folds into the trailing Other slice.
+    expect(labels).toContain("HVAC");
+    // The untagged closure lands in the trailing Other slice.
     expect(categoryMix[categoryMix.length - 1]).toMatchObject({ category: null, count: 1 });
+  });
+
+  test("a job carrying two trades counts under both", () => {
+    // A leaking water heater is Leaks AND Hot Water. Forcing one trade per job
+    // would undercount whichever lost, so slices are per tag and deliberately
+    // do not sum to the closure count.
+    const rows = [makeWo({ date_completed: "2026-07-01", title: "Water heater leaking, no hot water" })];
+    const { categoryMix, recentClosedCount } = buildClosedInsights({
+      allNonMakeReady: rows,
+      closedFiltered: rows,
+      nowMs: NOW,
+    });
+    expect(recentClosedCount).toBe(1);
+    const total = categoryMix.reduce((n, slice) => n + slice.count, 0);
+    expect(total).toBeGreaterThan(recentClosedCount);
+    expect(categoryMix.length).toBeGreaterThan(1);
   });
 });

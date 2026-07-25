@@ -40,6 +40,8 @@ export function UtilitiesHub({
   const annotations = useAnnotations((s) => s.annotations);
   const hiddenIds = useUtilityVisibility((s) => s.hiddenIds);
   const toggleHidden = useUtilityVisibility((s) => s.toggle);
+  const hiddenTypes = useUtilityVisibility((s) => s.hiddenTypes);
+  const toggleType = useUtilityVisibility((s) => s.toggleType);
   const layerVisible = useSettings((s) => s.utilityLayerVisible);
   const setLayerVisible = useSettings((s) => s.setUtilityLayerVisible);
 
@@ -142,22 +144,59 @@ export function UtilitiesHub({
                 {t("utility.noRuns")}
               </Text>
             ) : (
-              UTILITY_TYPES.filter((type) => runsByType.has(type)).map((type) => (
+              UTILITY_TYPES.filter((type) => runsByType.has(type)).map((type) => {
+                const layerOff = hiddenTypes.includes(type);
+                return (
                 <View key={type}>
-                  <Text
+                  {/* The layer header IS the switch: colour, name, run count,
+                      and an eye for the whole trade. Chasing a water leak, a
+                      technician wants everything else out of the way — and
+                      hiding is a viewing choice, so nothing leaves the shared
+                      map for anybody else. */}
+                  <Pressable
+                    onPress={() => toggleType(type)}
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: !layerOff }}
+                    accessibilityLabel={t(`utility.types.${type}`)}
                     style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 9,
                       paddingHorizontal: 18,
-                      paddingTop: 12,
-                      paddingBottom: 5,
-                      fontSize: 10,
-                      fontWeight: "800",
-                      letterSpacing: 1,
-                      color: MUTED,
+                      paddingTop: 13,
+                      paddingBottom: 6,
                     }}
                   >
-                    {t(`utility.types.${type}`).toUpperCase()} · {runsByType.get(type)!.length}
-                  </Text>
-                  {runsByType.get(type)!.map((run) => {
+                    <View
+                      style={{
+                        width: 11,
+                        height: 11,
+                        borderRadius: 3.5,
+                        backgroundColor: UTILITY_COLORS[type],
+                        opacity: layerOff ? 0.3 : 1,
+                      }}
+                    />
+                    <Text
+                      style={{
+                        flex: 1,
+                        fontSize: 10,
+                        fontWeight: "800",
+                        letterSpacing: 1,
+                        color: MUTED,
+                        opacity: layerOff ? 0.5 : 1,
+                      }}
+                    >
+                      {t(`utility.types.${type}`).toUpperCase()} · {runsByType.get(type)!.length}
+                    </Text>
+                    <Ionicons
+                      name={layerOff ? "eye-off-outline" : "eye-outline"}
+                      size={15}
+                      color={layerOff ? MUTED : "#767B24"}
+                    />
+                  </Pressable>
+                  {layerOff
+                    ? null
+                    : runsByType.get(type)!.map((run) => {
                     const hidden = hiddenIds.includes(run.id);
                     return (
                       <Pressable
@@ -223,7 +262,8 @@ export function UtilitiesHub({
                     );
                   })}
                 </View>
-              ))
+                );
+              })
             )}
           </ScrollView>
         </View>

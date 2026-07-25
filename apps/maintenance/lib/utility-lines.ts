@@ -12,6 +12,7 @@ export const UTILITY_COLORS: Record<UtilityType, string> = {
   sewer: "#6B4A2B",
   gas: "#BA7517",
   electrical: "#7F77DD",
+  internet: "#0E9384",
   other: "#888780",
 };
 

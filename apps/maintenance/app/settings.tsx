@@ -25,7 +25,9 @@ import { buildOutbox, pendingCount as outboxPendingCount } from "@/lib/derived/o
 import { useSettings } from "@/lib/stores/settings";
 import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
-import { ACCENT_THEMES, type AccentThemeId } from "@/theme/tokens";
+import { HAIRLINE, type AccentThemeId } from "@/theme/tokens";
+import { AccentPicker, Dropdown, ThemeCards } from "@/components/settings/AppearanceControls";
+import { useAccentHex } from "@/lib/hooks/use-accent";
 
 const NAVY = "#091B54";
 const RED = "#D1382E";
@@ -37,8 +39,6 @@ const LANGUAGE_OPTIONS: { id: AppLanguage; label: string }[] = [
   { id: "en", label: "English" },
   { id: "es", label: "Español" },
 ];
-
-const ACCENT_IDS = Object.keys(ACCENT_THEMES) as AccentThemeId[];
 
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -131,27 +131,6 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
   );
 }
 
-/** One tappable accent swatch; selected gets the navy ring. */
-function AccentSwatch({ id, selected, onPress }: { id: AccentThemeId; selected: boolean; onPress: () => void }) {
-  const rgb = ACCENT_THEMES[id].header;
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={ACCENT_THEMES[id].label}
-      accessibilityState={selected ? { selected: true } : {}}
-      style={{
-        width: 26,
-        height: 26,
-        borderRadius: 13,
-        backgroundColor: `rgb(${rgb})`,
-        borderWidth: selected ? 2.5 : 0,
-        borderColor: NAVY,
-      }}
-    />
-  );
-}
-
 /**
  * Settings, restructured to grow (approved mockup): profile card up top, then
  * Appearance / Map / Work / Data / Account sections. Surfaces settings that
@@ -221,6 +200,7 @@ export default function Settings() {
   );
   const [syncBusy, setSyncBusy] = useState(false);
 
+  const accent = useAccentHex();
   const themeOptions = [
     { id: "system" as const, label: t("settings.theme.system") },
     { id: "light" as const, label: t("settings.theme.light") },
@@ -328,21 +308,28 @@ export default function Settings() {
 
       <SectionLabel>{t("settings.appearance")}</SectionLabel>
       <AppCardSurface kind="panel" style={{ paddingHorizontal: 18, paddingVertical: 4 }}>
-        <Row label={t("settings.themeLabel")}>
-          <Segments value={settings.themePreference} options={themeOptions} onChange={settings.setThemePreference} />
-        </Row>
+        <View style={{ paddingVertical: 11 }}>
+          <Text className="text-navy dark:text-white" style={{ fontSize: 13.5, fontWeight: "600", marginBottom: 8 }}>
+            {t("settings.themeLabel")}
+          </Text>
+          <ThemeCards
+            value={settings.themePreference}
+            options={themeOptions}
+            accent={accent}
+            onChange={settings.setThemePreference}
+          />
+        </View>
         <Row label={t("settings.fieldMode")} sub={t("settings.fieldModeSub")}>
           <Toggle value={settings.fieldMode} onChange={settings.setFieldMode} />
         </Row>
-        <Row label={t("settings.accent")} sub={t("settings.accentSub")}>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            {ACCENT_IDS.map((id) => (
-              <AccentSwatch key={id} id={id} selected={settings.accentId === id} onPress={() => settings.setAccent(id)} />
-            ))}
-          </View>
-        </Row>
+        <View style={{ paddingVertical: 11, borderTopWidth: 1, borderTopColor: HAIRLINE }}>
+          <Text className="text-navy dark:text-white" style={{ fontSize: 13.5, fontWeight: "600" }}>
+            {t("settings.accent")}
+          </Text>
+          <AccentPicker value={settings.accentId} onChange={settings.setAccent} />
+        </View>
         <Row label={t("settings.language")}>
-          <Segments value={settings.language} options={LANGUAGE_OPTIONS} onChange={onPickLanguage} />
+          <Dropdown value={settings.language} options={LANGUAGE_OPTIONS} accent={accent} onChange={onPickLanguage} />
         </Row>
       </AppCardSurface>
 

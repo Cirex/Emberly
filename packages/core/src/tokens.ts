@@ -9,31 +9,66 @@
 /** Space-separated RGB channels, for CSS `rgb(var(--x) / <alpha>)`. */
 export type RgbChannels = `${number} ${number} ${number}`;
 
-export type AccentThemeId = "coral" | "blue" | "emerald" | "plum" | "graphite";
+export type AccentThemeId = "olive" | "blue" | "emerald" | "plum" | "ember" | "graphite";
 
 export interface AccentTheme {
   id: AccentThemeId;
-  /** UI label (matches the iOS titles). */
+  /** UI label. Colour names, so they are not translated. */
   label: string;
+  /**
+   * The accent itself, as a hex string.
+   *
+   * Everything that is not a Tailwind class needs this: `tintColor` on the
+   * Emberly mark, Skia paints, icon colours. The channel triples below exist
+   * only because CSS variables must be `rgb(var(--x) / <alpha>)`.
+   */
+  hex: string;
   header: RgbChannels;
+  /** A deeper tone for selected chrome, so a filled state stays legible. */
   selection: RgbChannels;
+  /** A pale tone for numerals sitting on the accent. */
   metricValue: RgbChannels;
 }
 
-/** The 5 selectable accents. Default = coral ("Liquid Glass"). */
+/**
+ * The selectable accents.
+ *
+ * REPLACED the five ported from the Swift app, which were muted chrome tones
+ * rather than accents — the old default, "Liquid Glass", was rgb(110 129 153),
+ * a grey-blue, and set side by side the five were nearly indistinguishable.
+ * That is part of why nobody noticed the picker was wired to nothing.
+ *
+ * Default is olive: the Emberly brand colour, and the colour the mark is
+ * already drawn in, so a fresh install looks exactly as it did before.
+ *
+ * Ids are the persisted value. `blue`, `emerald`, `plum` and `graphite` keep
+ * theirs; the retired `coral` falls through to the default via the lookups
+ * below, which is why they are written defensively.
+ */
 export const ACCENT_THEMES: Record<AccentThemeId, AccentTheme> = {
-  coral: { id: "coral", label: "Liquid Glass", header: "110 129 153", selection: "52 62 77", metricValue: "239 246 255" },
-  blue: { id: "blue", label: "Blue", header: "37 74 130", selection: "30 52 85", metricValue: "227 241 255" },
-  emerald: { id: "emerald", label: "Emerald", header: "31 128 92", selection: "11 72 51", metricValue: "223 250 236" },
-  plum: { id: "plum", label: "Plum", header: "120 64 173", selection: "67 27 111", metricValue: "243 232 255" },
-  graphite: { id: "graphite", label: "Graphite", header: "59 62 72", selection: "27 29 37", metricValue: "237 241 247" },
+  olive: { id: "olive", label: "Olive", hex: "#A2A921", header: "162 169 33", selection: "107 116 17", metricValue: "240 243 214" },
+  blue: { id: "blue", label: "Harbor", hex: "#2563B4", header: "37 99 180", selection: "25 66 120", metricValue: "227 241 255" },
+  emerald: { id: "emerald", label: "Emerald", hex: "#1F805C", header: "31 128 92", selection: "16 84 60", metricValue: "223 250 236" },
+  plum: { id: "plum", label: "Plum", hex: "#7840AD", header: "120 64 173", selection: "78 40 115", metricValue: "243 232 255" },
+  ember: { id: "ember", label: "Ember", hex: "#C2410C", header: "194 65 12", selection: "128 42 8", metricValue: "255 236 222" },
+  graphite: { id: "graphite", label: "Graphite", hex: "#3B3E48", header: "59 62 72", selection: "33 35 42", metricValue: "237 241 247" },
 };
 
-export const DEFAULT_ACCENT: AccentThemeId = "coral";
+export const DEFAULT_ACCENT: AccentThemeId = "olive";
+
+/** The chosen theme, falling back when a device holds a retired id. */
+export function accentTheme(id: AccentThemeId): AccentTheme {
+  return ACCENT_THEMES[id] ?? ACCENT_THEMES[DEFAULT_ACCENT];
+}
+
+/** The accent as a hex string — for tintColor, Skia, and icon colours. */
+export function accentHex(id: AccentThemeId): string {
+  return accentTheme(id).hex;
+}
 
 /** Map an accent theme to the CSS variables consumed by tailwind.config.js. */
 export function accentVars(id: AccentThemeId): Record<string, string> {
-  const t = ACCENT_THEMES[id] ?? ACCENT_THEMES[DEFAULT_ACCENT];
+  const t = accentTheme(id);
   return {
     "--accent-header": t.header,
     "--accent-selection": t.selection,

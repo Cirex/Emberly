@@ -159,6 +159,19 @@ export async function listResource(
   if (resource.tiebreak) {
     query = query.order(resource.tiebreak.column, { ascending: resource.tiebreak.ascending });
   }
+  // ALWAYS last: the primary key, which is unique, so the sort is a TOTAL order.
+  //
+  // Without it, offset paging over a tied sort column is non-deterministic —
+  // Postgres may return tied rows in a different order for each page request, so
+  // a row can appear on two pages while another appears on none. Measured on the
+  // live mirror: work-orders sorts by date_reported, which has only 284 distinct
+  // values across 4,072 rows (99 rows share one date), and paging the whole
+  // table yielded 4,001 DISTINCT ids — 71 work orders silently missing from
+  // every full load, every time.
+  //
+  // It also made the maintenance app's row-count drift check fire on every tick,
+  // turning a cheap delta poll into a full 3.78 MB re-download every 15 seconds.
+  query = query.order(resource.idColumn, { ascending: true });
   query = query.range(offset, offset + limit - 1);
 
   const { data, error, count } = await query;

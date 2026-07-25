@@ -3,11 +3,14 @@
   "version": "1.1.0",
   "main": "expo-router/entry",
   "scripts": {
-    "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "test": "e=0; for f in tests/*.test.ts tests/*.test.js; do [ -e \"$f\" ] || continue; bun test \"$f\" || e=1; done; exit $e",
     "lint": "eslint .",
+    "metadata:lint": "eas metadata:lint",
+    "metadata:pull": "eas metadata:pull",
+    "metadata:push": "eas metadata:push",
+    "start": "expo start",
+    "test": "e=0; for f in tests/*.test.ts tests/*.test.js; do [ -e \"$f\" ] || continue; bun test \"$f\" || e=1; done; exit $e",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

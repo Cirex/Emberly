@@ -34,7 +34,8 @@
   "submit": {
     "production": {
       "ios": {
-        "appleTeamId": "T49DUB6KRJ"
+        "appleTeamId": "T49DUB6KRJ",
+        "metadataPath": "./store.config.js"
       }
     }
   }

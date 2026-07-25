@@ -41,14 +41,14 @@ All four deployables talk to one Supabase project.
    string (URI). This is `SUPABASE_DB_URL`, used **only** to run migrations. It is not part
    of the app runtime env. (Self-hosted/Coolify Postgres often has no TLS on the container —
    if you hit "The server does not support SSL connections", append `?sslmode=disable`.)
-4. **Apply migrations.** Migrations live in `apps/web/lib/supabase/migrations` and are
+4. **Apply migrations.** Migrations live in `apps/web/lib/supabase/deltas` and are
    applied in filename order against a `public.schema_migrations` ledger (each runs once).
    Put `SUPABASE_DB_URL` in `apps/web/.env.production`, then from `apps/web`:
    ```bash
    bun run db:migrate:prod
    ```
-   "No migrations to apply" is the normal steady state (applied files get folded into
-   `schema.sql` and deleted).
+   Deltas are kept on disk after they run, so the ledger — not the directory — decides
+   what is still pending. "Already up to date." is the normal steady state.
 5. **Verify RLS.** Every client-accessible table must have RLS enabled with Storage policies
    that make direct client access safe. The service-role key is the only thing that bypasses
    RLS, and it lives only in the web app and sync worker.

@@ -6,7 +6,7 @@ import { Client } from "pg";
  * Apply Supabase SQL migrations against the database in SUPABASE_DB_URL.
  *
  * Usage:
- *   # every not-yet-applied migration in lib/supabase/migrations, in filename order:
+ *   # every not-yet-applied migration in lib/supabase/deltas, in filename order:
  *   SUPABASE_DB_URL=... bun scripts/apply-supabase-migrations.mjs
  *
  *   # or specific files:
@@ -20,7 +20,16 @@ import { Client } from "pg";
  * error), so re-running is always safe.
  */
 
-const MIGRATIONS_DIR = path.join(import.meta.dir, "..", "lib", "supabase", "migrations");
+/**
+ * Migrations live in `deltas/`, NOT the older `migrations/` — this pointed at
+ * the latter, which has been empty since 2026-07-20, so a bare `db:migrate`
+ * printed "No migrations to apply" no matter what was pending. Every delta was
+ * therefore applied by naming the file explicitly, and four of them
+ * (guest-pass unit bans + expiry, work-order translations, utility run styles)
+ * reached the database without ever getting a ledger row. Reconciled and
+ * repointed on 2026-07-25.
+ */
+const MIGRATIONS_DIR = path.join(import.meta.dir, "..", "lib", "supabase", "deltas");
 
 if (!process.env.SUPABASE_DB_URL) {
   throw new Error(
@@ -38,9 +47,9 @@ const files =
         .sort()
         .map((f) => path.join(MIGRATIONS_DIR, f));
 
-// An empty migrations directory is the normal steady state, not an error: once
-// applied, files are folded into schema.sql and deleted (see
-// migrations/README.md), so there is routinely nothing to apply.
+// Deltas are KEPT after applying (unlike the old migrations/ convention, which
+// deleted them once folded into schema.sql), so the directory is normally
+// non-empty and the ledger — not the filesystem — decides what still runs.
 if (files.length === 0) {
   console.log("No migrations to apply.");
   process.exit(0);

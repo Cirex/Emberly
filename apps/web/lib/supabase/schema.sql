@@ -536,9 +536,12 @@ create table if not exists public.map_annotations (
   -- on the shared 'utility' layer, visible to both staff and security surfaces.
   kind text not null default 'pin'
     constraint map_annotations_kind_check check (kind in ('pin', 'utility_pin', 'utility_line')),
+  -- 'internet' joined the set in deltas/2026-07-25-utility-internet-layer.sql.
+  -- 'electrical' deliberately keeps its name rather than becoming 'power': it is
+  -- a persisted value on existing runs, and renaming buys only a shorter word.
   utility_type text
     constraint map_annotations_utility_type_check
-    check (utility_type is null or utility_type in ('water', 'sewer', 'gas', 'electrical', 'other')),
+    check (utility_type is null or utility_type in ('water', 'sewer', 'gas', 'electrical', 'internet', 'other')),
   -- For kind='utility_line': ordered array of {x, y} objects, each normalized
   -- 0..1 against the map image. Null for pin kinds.
   points jsonb,

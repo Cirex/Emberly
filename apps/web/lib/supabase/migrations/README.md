@@ -16,13 +16,26 @@ Verified against the live database on 2026-07-16: 38 declared tables = 38 live t
 
 On 2026-07-20 the twelve migrations added since then were flattened into `../schema.sql` and this directory emptied again: map annotation layers/icons, lease deep-sync stamp, ledger sequence, map cameras (+ UniFi label/name/synced fields), first-party annotation photos, unit tags, admin ResMan person identity, and the `resident_entry_token_uses` replay ledger. Each was already reflected in `schema.sql` (audited table/column/index-for-object) except the last, which was folded in during this pass.
 
+## This directory is retired — new migrations go in `../deltas`
+
+After the 2026-07-20 flatten, schema changes were written to `../deltas` under a
+`YYYY-MM-DD-description.sql` name, but the runner kept reading *this* directory,
+which has been empty ever since. A bare `bun run db:migrate:prod` therefore
+answered "No migrations to apply" no matter what was pending, and every delta
+had to be applied by naming its file explicitly. Four were applied that way
+without ever landing a ledger row — `2026-07-21-utility-run-styles.sql`,
+`2026-07-23-guest-pass-unit-bans.sql`, `2026-07-24-guest-pass-unit-ban-expiry.sql`,
+`2026-07-24-work-order-translations.sql`. All four are idempotent, so on
+2026-07-25 they were re-run through the runner (no-ops) purely to reconcile the
+ledger, and `MIGRATIONS_DIR` was repointed at `../deltas`.
+
 Workflow for future schema changes:
 
-1. Add a dated migration file here: `YYYYMMDD_description.sql` (idempotent `if exists` / `if not exists` guards preferred).
+1. Add a dated file to `../deltas`: `YYYY-MM-DD-description.sql` (idempotent `if exists` / `if not exists` guards preferred).
 2. Update `../schema.sql` and `types/database.ts` to match.
-3. Apply it. The runner applies every not-yet-applied `*.sql` in this directory (filename order), tracks what ran in a `public.schema_migrations` ledger, and wraps each file in a transaction, so re-running is safe:
+3. Apply it. The runner applies every not-yet-applied `*.sql` in `../deltas` (filename order), tracks what ran in a `public.schema_migrations` ledger, and wraps each file in a transaction, so re-running is safe:
    - Ad-hoc: `SUPABASE_DB_URL=... bun scripts/apply-supabase-migrations.mjs` (or pass specific files).
    - Production: put the direct Postgres URL in a gitignored `.env.production` (see `.env.production.example`) and run `bun run db:migrate:prod`.
-4. Once applied everywhere it needs to be, a migration file may be deleted — `schema.sql` remains the source of truth. The `schema_migrations` ledger keeps the historical record even after the file is gone.
+4. Unlike the old convention above, deltas are **kept** on disk after they run — the ledger, not the filesystem, decides what is still pending. `schema.sql` remains the source of truth for the end state.
 
 To provision a fresh database from scratch, run `schema.sql` directly.

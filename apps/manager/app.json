@@ -14,6 +14,9 @@
       "appleTeamId": "T49DUB6KRJ",
       "entitlements": {
         "aps-environment": "development"
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

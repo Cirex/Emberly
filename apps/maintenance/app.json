@@ -16,7 +16,8 @@
         "NSPhotoLibraryUsageDescription": "EmberlyMaintenance attaches photos from your library to property-map annotations.",
         "NSLocationWhenInUseUsageDescription": "EmberlyMaintenance uses your location to render the property map's day and night appearance accurately.",
         "NSMicrophoneUsageDescription": "EmberlyMaintenance uses the microphone so you can dictate work-order notes instead of typing them.",
-        "NSSpeechRecognitionUsageDescription": "EmberlyMaintenance transcribes your dictated notes on this device. The audio is not sent to Apple or to Emberly."
+        "NSSpeechRecognitionUsageDescription": "EmberlyMaintenance transcribes your dictated notes on this device. The audio is not sent to Apple or to Emberly.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
         "aps-environment": "development"

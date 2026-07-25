@@ -81,5 +81,12 @@
 	<string>Automatic</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<!-- Export compliance. These apps encrypt only via HTTPS and the
+	     platform Keychain, both exempt under the US export regulations,
+	     so no non-exempt encryption is used. Declaring it here stops App
+	     Store Connect asking on every single upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
 </dict>
 </plist>

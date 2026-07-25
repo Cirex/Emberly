@@ -16,7 +16,8 @@
         "NSCameraUsageDescription": "Emberly Security uses the camera to scan resident and guest passes and to capture entry-log photos.",
         "NSPhotoLibraryUsageDescription": "Emberly Security attaches photos from your library to property-map annotations.",
         "NSLocationWhenInUseUsageDescription": "Emberly Security uses your location to show accurate day/night security-camera coverage on the property map.",
-        "NSLocalNetworkUsageDescription": "Emberly Security connects to on-site UniFi Protect cameras over the local network."
+        "NSLocalNetworkUsageDescription": "Emberly Security connects to on-site UniFi Protect cameras over the local network.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

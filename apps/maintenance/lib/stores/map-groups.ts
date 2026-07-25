@@ -1,6 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
 import { defaultMapFilterGroups, type MapFilterGroup } from "@emberly/core";
 
 /**
@@ -55,7 +55,7 @@ export const useMapGroups = create<MapGroupsState>()(
     }),
     {
       name: "emberly-maintenance-map-groups",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
     },
   ),
 );

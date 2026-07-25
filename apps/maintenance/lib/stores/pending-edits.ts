@@ -1,6 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
 import { editWorkOrder, type WorkOrder, type WorkOrderEditPatch } from "@/lib/api/work-orders";
 import type { StaffConfig } from "@/lib/stores/config";
 
@@ -156,7 +156,7 @@ export const usePendingEdits = create<PendingEditsState>()(
     }),
     {
       name: "emberly-maintenance-pending-edits",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
       partialize: (s) => ({ pending: s.pending }),
     },
   ),

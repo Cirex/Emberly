@@ -14,6 +14,7 @@ import { useDerivedSnapshot } from "@/lib/hooks/use-derived-snapshot";
 import { screenHPad } from "@/theme/tokens";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkOrdersView } from "@/lib/stores/work-orders-view";
+import { useNowMs } from "@/lib/hooks/use-now";
 
 /**
  * Make Ready as its own tab: bare score grid under the mode dropdown pill
@@ -39,7 +40,9 @@ export default function MakeReadyScreen() {
     })),
   );
   const snapshot = useDerivedSnapshot("makeReady");
-  const nowMs = Date.now();
+  // Stable within the minute — a fresh Date.now() every render invalidates
+  // every memo downstream of it. See lib/hooks/use-now.
+  const nowMs = useNowMs();
 
   const [mode, setMode] = useState<MakeReadyMode>("turns");
 

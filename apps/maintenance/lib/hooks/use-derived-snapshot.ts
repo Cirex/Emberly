@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { buildSnapshot, type DerivedSnapshot } from "@/lib/derived/snapshot";
 import type { DisplayMode } from "@/lib/derived/types";
+import { unitsVersionOf } from "@/lib/hooks/use-parsed-mirror";
 import { useSettings } from "@/lib/stores/settings";
 import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
@@ -13,19 +14,6 @@ import { useWorkOrdersView } from "@/lib/stores/work-orders-view";
  * calendar day), so re-renders that change nothing reuse the same object.
  */
 
-// The units store swaps its array only when contents changed, so array
-// identity IS the version — this map just turns identity into a number the
-// snapshot cache key can use.
-const unitsVersions = new WeakMap<object, number>();
-let nextUnitsVersion = 1;
-function versionOf(units: object): number {
-  let v = unitsVersions.get(units);
-  if (v === undefined) {
-    v = nextUnitsVersion++;
-    unitsVersions.set(units, v);
-  }
-  return v;
-}
 /**
  * @param modeOverride Pin the snapshot to one display mode regardless of the
  * view store — the Make Ready TAB uses this ("makeReady" stopped being a
@@ -55,7 +43,7 @@ export function useDerivedSnapshot(modeOverride?: DisplayMode): DerivedSnapshot 
         workOrders,
         units,
         dataVersion,
-        unitsVersion: versionOf(units),
+        unitsVersion: unitsVersionOf(units),
         mode,
         sortOption,
         search,

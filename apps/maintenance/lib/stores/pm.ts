@@ -1,6 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
 import { capture, reportSyncFailed, reportSyncSucceeded } from "@/lib/analytics";
 import {
   listPmTemplateRounds,
@@ -184,7 +184,7 @@ export const usePm = create<PmState>()(
     }),
     {
       name: "emberly-maintenance-pm",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
       // Only the data survives restarts; dataVersion only needs to be
       // monotonic per session (mirrors the work-orders store).
       partialize: (s) => ({ templates: s.templates, dataVersion: s.dataVersion }),

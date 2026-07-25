@@ -1,6 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
 
 /**
  * Per-run visibility for the utility layer, persisted per device. Hiding a
@@ -33,7 +33,7 @@ export const useUtilityVisibility = create<UtilityVisibilityState>()(
     }),
     {
       name: "emberly-maintenance-utility-visibility",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
     },
   ),
 );

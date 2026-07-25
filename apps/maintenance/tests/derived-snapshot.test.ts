@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { WorkOrderSchema, type WorkOrder } from "../lib/api/work-orders";
 import { ResmanUnitSchema, type ResmanUnit } from "../lib/api/units";
-import { buildSnapshot, resetSnapshotCaches, type SnapshotInput } from "../lib/derived/snapshot";
+import { buildSnapshot, parseMirror, resetSnapshotCaches, type SnapshotInput } from "../lib/derived/snapshot";
 import { EMPTY_FILTERS } from "../lib/derived/types";
 
 const NOW = new Date("2026-07-15T12:00:00").getTime();
@@ -145,6 +145,38 @@ describe("snapshot", () => {
     );
     // Returning to a mode already built must be a cache hit, near-free.
     expect(backToOpen).toBeLessThan(cold / 2);
+  });
+
+  /**
+   * The parse is the app's single most expensive operation (~154ms for the live
+   * 4,074 rows). My Day used to run its own `parseAll` beside this cache, paying
+   * it a second time on mount and on every sync that changed a row — felt as the
+   * tab refusing to switch. Both screens now come through parseMirror.
+   */
+  test("every screen shares one parse per data generation", () => {
+    resetSnapshotCaches();
+    const rows = syntheticRows(4000);
+    const units = syntheticUnits(360);
+    const key = { workOrders: rows, units, dataVersion: 3, unitsVersion: 3 };
+
+    const first = parseMirror(key);
+    const second = parseMirror({ ...key });
+    // Same object, not merely equal — a second parse would produce new rows.
+    expect(second).toBe(first);
+    expect(second.parsed[0]).toBe(first.parsed[0]);
+
+    // The snapshot builds off the very same parse rather than its own.
+    const snap = buildSnapshot(input({ ...key, mode: "open" }));
+    expect(snap.byUnit).toBe(first.byUnit);
+    expect(snap.unitIndex).toBe(first.unitIndex);
+
+    // byId covers every parsed row and points at the same objects.
+    expect(first.byId.size).toBe(first.parsed.length);
+    expect(first.byId.get(first.parsed[7].id)).toBe(first.parsed[7]);
+
+    // A data change invalidates it — a cache that never misses is a bug.
+    const next = parseMirror({ ...key, dataVersion: 4 });
+    expect(next).not.toBe(first);
   });
 
   test("benchmark: full snapshot over 4k rows under 100ms (informational gate)", () => {

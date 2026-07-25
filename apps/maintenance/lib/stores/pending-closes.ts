@@ -1,6 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
 import { capture } from "@/lib/analytics";
 import { closeWorkOrder } from "@/lib/api/work-orders";
 import type { StaffConfig } from "@/lib/stores/config";
@@ -166,7 +166,7 @@ export const usePendingCloses = create<PendingClosesState>()(
     }),
     {
       name: "emberly-maintenance-pending-closes",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
     },
   ),
 );

@@ -1,7 +1,7 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { ClassificationChip, TechBadge } from "@/components/work-orders/rows";
 import { timelineGapTitle, type OpenWorkOrderGroup, type TimelineEvent } from "@/lib/derived/open-groups";
@@ -425,8 +425,14 @@ const WASH_MID = "07"; // ~2.8%
  * collapses a noisy unit down to band + timeline + chips (rows hidden);
  * `expanded` therefore means "rows shown", the default presentation.
  * ≥768pt keeps the aligned table for the rows.
+ *
+ * Memoized: a card is a gradient, a laid-out timeline rail and every ticket row
+ * in the unit, and the board keeps a screenful mounted. Without this, any parent
+ * render — a sync tick, a filter toggle — re-rendered all of them. The props are
+ * stable by construction: groups come from the derived snapshot, `nowMs` from
+ * the minute clock, and `onToggle` from a memoized callback.
  */
-export function OpenGroupCard({
+export const OpenGroupCard = memo(function OpenGroupCard({
   group,
   expanded,
   onToggle,
@@ -435,7 +441,10 @@ export function OpenGroupCard({
 }: {
   group: OpenWorkOrderGroup;
   expanded: boolean;
-  onToggle: () => void;
+  /** Takes the unit so the parent can pass ONE stable callback for every card —
+   *  a per-row arrow function would change identity each render and defeat the
+   *  memo above. */
+  onToggle: (unitNumber: string) => void;
   nowMs: number;
   pad?: number;
 }) {
@@ -450,7 +459,11 @@ export function OpenGroupCard({
         locations={[0, 0.46, 1]}
         style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
       />
-      <Pressable onPress={onToggle} accessibilityRole="button" accessibilityState={{ expanded }}>
+      <Pressable
+        onPress={() => onToggle(group.unitNumber)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+      >
         <View style={{ paddingLeft: pad - 3.5, paddingRight: pad, paddingTop: 11, paddingBottom: 4 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Text className="text-navy dark:text-white" style={{ fontSize: 16, fontWeight: "800" }}>
@@ -538,4 +551,4 @@ export function OpenGroupCard({
       </View>
     </View>
   );
-}
+});

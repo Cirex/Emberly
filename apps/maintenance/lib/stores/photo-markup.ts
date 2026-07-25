@@ -1,7 +1,7 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
 import type { WorkOrderPhotoPhase } from "@/lib/api/work-order-photos";
 import {
   expirableOriginals,
@@ -110,7 +110,7 @@ export const usePhotoMarkup = create<PhotoMarkupState>()(
     }),
     {
       name: "emberly-maintenance-photo-markup",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
       partialize: (s) => ({ photos: s.photos }),
     },
   ),

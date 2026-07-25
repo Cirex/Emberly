@@ -1,6 +1,7 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
+import { mirrorDiffers } from "@/lib/stores/row-compare";
 import { reportSyncFailed, reportSyncSucceeded } from "@/lib/analytics";
 import { listWorkOrders, type WorkOrder } from "@/lib/api/work-orders";
 import type { StaffConfig } from "@/lib/stores/config";
@@ -110,7 +111,7 @@ async function fullSync(
   config: StaffConfig,
 ): Promise<void> {
   const acc = await fetchAll(config);
-  const changed = JSON.stringify(acc) !== JSON.stringify(get().workOrders);
+  const changed = mirrorDiffers(acc, get().workOrders);
   set((s) => ({
     ...(changed ? { workOrders: acc, dataVersion: s.dataVersion + 1 } : {}),
     deltaCursor: maxUpdatedAt(acc, ""),
@@ -218,7 +219,7 @@ export const useWorkOrders = create<WorkOrdersState>()(
     }),
     {
       name: "emberly-maintenance-work-orders",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
       // Only the data survives restarts; dataVersion restarts at whatever was
       // persisted, which is fine — it only needs to be monotonic per session.
       partialize: (s) => ({ workOrders: s.workOrders, dataVersion: s.dataVersion }),

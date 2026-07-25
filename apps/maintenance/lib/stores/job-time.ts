@@ -1,6 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
 import { emptyEntry, type JobPart, type JobTimeEntry } from "@/lib/derived/job-time";
 
 interface JobTimeState {
@@ -141,7 +141,7 @@ export const useJobTime = create<JobTimeState>()(
     }),
     {
       name: "emberly-maintenance-job-time",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
       partialize: (s) => ({ entries: s.entries }),
     },
   ),

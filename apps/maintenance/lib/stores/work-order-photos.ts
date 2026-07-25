@@ -1,7 +1,7 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Directory, File, Paths } from "expo-file-system";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
 import { uploadWorkOrderPhoto, type WorkOrderPhotoPhase } from "@/lib/api/work-order-photos";
 import {
   enqueuePhoto,
@@ -112,7 +112,7 @@ export const useWorkOrderPhotos = create<WorkOrderPhotosState>()(
     }),
     {
       name: "emberly-maintenance-work-order-photos",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
       partialize: (s) => ({ pending: s.pending }),
     },
   ),

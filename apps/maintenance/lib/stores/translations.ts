@@ -1,6 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
 import type { AppLanguage } from "@/lib/i18n";
 import {
   computeTranslations,
@@ -136,7 +136,7 @@ export const useTranslations = create<TranslationsState>()(
     }),
     {
       name: "emberly-maintenance-translations",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
       partialize: (s) => ({ entries: s.entries, serverSyncedAt: s.serverSyncedAt }),
     },
   ),

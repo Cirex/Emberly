@@ -79,14 +79,58 @@ export interface DerivedSnapshot {
   unitIndex: UnitIndex;
 }
 
-interface ParseCache {
+/**
+ * The level-1 result: the mirror parsed once, plus the indexes every consumer
+ * would otherwise rebuild. Exported because it is NOT private to the snapshot —
+ * My Day needs the same parsed rows, and parsing 4,000 work orders a second time
+ * (measured at 154ms on a desktop, worse on a phone) is the single most
+ * expensive thing this app can do on a tab change.
+ */
+export interface ParsedMirror {
   key: string;
   parsed: ParsedWorkOrder[];
   unitIndex: UnitIndex;
   byUnit: Map<string, ParsedWorkOrder[]>;
+  byId: Map<string, ParsedWorkOrder>;
 }
 
-let parseCache: ParseCache | null = null;
+export interface ParseMirrorInput {
+  workOrders: WorkOrder[];
+  units: ResmanUnit[];
+  dataVersion: number;
+  unitsVersion: number;
+}
+
+let parseCache: ParsedMirror | null = null;
+
+/**
+ * Parse the mirror, or return the cached parse when nothing has changed.
+ *
+ * Keyed on (dataVersion, unitsVersion) — the two counters that move only when
+ * the data actually differs — so every screen calling this within a data
+ * generation shares ONE parse and one set of row objects. Callers must derive
+ * `unitsVersion` from the shared helper in lib/hooks/use-parsed-mirror, or two
+ * numbering schemes would produce different keys for the same array and evict
+ * each other on every render.
+ */
+export function parseMirror(input: ParseMirrorInput): ParsedMirror {
+  const key = `${input.dataVersion}|${input.unitsVersion}`;
+  if (parseCache?.key === key) return parseCache;
+
+  const parsed = parseAll(input.workOrders);
+  const unitIndex = makeUnitIndex(input.units);
+  const byUnit = new Map<string, ParsedWorkOrder[]>();
+  const byId = new Map<string, ParsedWorkOrder>();
+  for (const wo of parsed) {
+    const unit = wo.unitNumber.trim().length > 0 ? wo.unitNumber : "Unassigned Unit";
+    const list = byUnit.get(unit);
+    if (list) list.push(wo);
+    else byUnit.set(unit, [wo]);
+    byId.set(wo.id, wo);
+  }
+  parseCache = { key, parsed, unitIndex, byUnit, byId };
+  return parseCache;
+}
 // A few most-recent snapshots, keyed by the full memo key. It must hold more
 // than one because the Work Orders screen and the Make Ready tab are BOTH
 // mounted in the navigator and call buildSnapshot with different `mode` keys
@@ -97,23 +141,6 @@ const snapshotCache = new Map<string, DerivedSnapshot>();
 
 function filtersKey(f: FilterSets): string {
   return [f.status, f.classification, f.occupancy, f.technician, f.tags].map((a) => a.join("")).join("");
-}
-
-function level1(input: SnapshotInput): ParseCache {
-  const key = `${input.dataVersion}|${input.unitsVersion}`;
-  if (parseCache?.key === key) return parseCache;
-
-  const parsed = parseAll(input.workOrders);
-  const unitIndex = makeUnitIndex(input.units);
-  const byUnit = new Map<string, ParsedWorkOrder[]>();
-  for (const wo of parsed) {
-    const unit = wo.unitNumber.trim().length > 0 ? wo.unitNumber : "Unassigned Unit";
-    const list = byUnit.get(unit);
-    if (list) list.push(wo);
-    else byUnit.set(unit, [wo]);
-  }
-  parseCache = { key, parsed, unitIndex, byUnit };
-  return parseCache;
 }
 
 export function buildSnapshot(input: SnapshotInput): DerivedSnapshot {
@@ -141,7 +168,7 @@ export function buildSnapshot(input: SnapshotInput): DerivedSnapshot {
     return cached;
   }
 
-  const { parsed, unitIndex, byUnit } = level1(input);
+  const { parsed, unitIndex, byUnit } = parseMirror(input);
   const search = input.search.trim().toLowerCase();
   const nowMs = input.nowMs;
 

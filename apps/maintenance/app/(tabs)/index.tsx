@@ -26,7 +26,7 @@ import { MyWeekPanel } from "@/components/my-day/MyWeekPanel";
 import { matchesDisplayMode } from "@/lib/derived/filtering";
 import { greetingKeyFor, techMatches, urgentTrade } from "@/lib/derived/my-path";
 import { buildMyWeek } from "@/lib/derived/my-week";
-import { parseAll } from "@/lib/derived/parse";
+import { useParsedMirror } from "@/lib/hooks/use-parsed-mirror";
 import { TRADE_TINT, tagIconName, tagTint } from "@/lib/derived/tags";
 import { workOrderStatusColor } from "@/lib/derived/status";
 import { abbreviatedDate } from "@/lib/derived/time";
@@ -36,9 +36,9 @@ import { activeLocale } from "@/lib/i18n";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
 import { useMyDay, type MyDayStop } from "@/lib/stores/my-day";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
-import { useWorkOrders } from "@/lib/stores/work-orders";
 import { HAIRLINE, MUTED, NAVY, OLIVE, OLIVE_TEXT, screenHPad } from "@/theme/tokens";
 import { statusLabel } from "@/lib/derived/resman-labels";
+import { useNowMs } from "@/lib/hooks/use-now";
 
 const GREEN = "#33A666";
 const RED = "#D1382E";
@@ -72,20 +72,24 @@ export default function MyDayScreen() {
   const staffName = (admin?.displayName === "Dev Preview" ? "Quintez Harden" : admin?.displayName?.trim()) ?? "";
   const firstName = staffName.split(/\s+/)[0] || "there";
 
-  const workOrders = useWorkOrders((s) => s.workOrders);
-  const dataVersion = useWorkOrders((s) => s.dataVersion);
   const pending = usePendingCloses((s) => s.pending);
   const queueClose = usePendingCloses((s) => s.queueClose);
   const removePending = usePendingCloses((s) => s.remove);
 
   const day = useMyDay();
 
-  const nowMs = Date.now();
+  // Stable within the minute — a fresh Date.now() every render invalidates
+  // every memo downstream of it. See lib/hooks/use-now.
+  const nowMs = useNowMs();
 
-  // Parse the full mirror once per data change: byId serves the recap rows
-  // (whose base rows may have left the open set), openAll drives everything.
-  const parsed = useMemo(() => parseAll(workOrders), [dataVersion]); // eslint-disable-line react-hooks/exhaustive-deps
-  const byId = useMemo(() => new Map(parsed.map((wo) => [wo.id, wo])), [parsed]);
+  // The mirror parsed ONCE for the whole app: byId serves the recap rows (whose
+  // base rows may have left the open set), openAll drives everything.
+  //
+  // This used to be My Day's own `parseAll` — a second full parse of every work
+  // order, ~154ms on a desktop, run on mount and on every sync that changed a
+  // row, while the derived engine held the identical result in its level-1
+  // cache. That duplicate parse was the stall on switching to this tab.
+  const { parsed, byId } = useParsedMirror();
   const openAll = useMemo(() => parsed.filter((wo) => matchesDisplayMode(wo, "open")), [parsed]);
 
   const pendingIds = useMemo(() => new Set(Object.keys(pending)), [pending]);

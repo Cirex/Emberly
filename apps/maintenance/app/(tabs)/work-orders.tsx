@@ -24,6 +24,7 @@ import { isSignedIn, useConfig } from "@/lib/stores/config";
 import { usePm } from "@/lib/stores/pm";
 import { useWorkOrders } from "@/lib/stores/work-orders";
 import { activeFilterCount, useWorkOrdersView } from "@/lib/stores/work-orders-view";
+import { useNowMs } from "@/lib/hooks/use-now";
 
 /** Incremental render page for long lists (smart scroll — no row caps). */
 const RENDER_PAGE = 150;
@@ -32,6 +33,10 @@ const RENDER_PAGE = 150;
 function ZoneGap() {
   return <View style={{ height: 10 }} />;
 }
+
+/** Module scope so the list's keyExtractor identity never changes. */
+const keyOfGroup = (g: { unitNumber: string }) => g.unitNumber;
+const keyOfClosedRow = (r: ClosedWorkOrderRow) => r.id;
 
 /**
  * The Work Orders workspace host, approved D3 rev 2 (artifact 480091ba): a
@@ -79,7 +84,9 @@ export default function WorkOrdersScreen() {
   const token = useConfig((s) => s.token);
   const baseUrl = useConfig((s) => s.baseUrl);
   const techName = useConfig((s) => s.admin?.displayName ?? "");
-  const nowMs = Date.now();
+  // Stable within the minute — a fresh Date.now() every render invalidates
+  // every memo downstream of it. See lib/hooks/use-now.
+  const nowMs = useNowMs();
 
   // Entering Preventive pulls a fresh round (a no-op re-render when the server
   // has nothing new); the sync tick keeps it live afterwards.
@@ -178,10 +185,11 @@ export default function WorkOrdersScreen() {
     </View>
   );
 
-  const contentStyle = {
-    paddingTop: headerH + 8,
-    paddingBottom: insets.bottom + 110,
-  } as const;
+  // Memoized because a fresh style object is a changed prop on the list itself.
+  const contentStyle = useMemo(
+    () => ({ paddingTop: headerH + 8, paddingBottom: insets.bottom + 110 }),
+    [headerH, insets.bottom],
+  );
 
   // Modals ride along every mode.
   const modals = (
@@ -214,6 +222,32 @@ export default function WorkOrdersScreen() {
     [closedVisible, view.sortOption, nowMs],
   );
   const showBands = groupsApplyTo(view.sortOption);
+
+  // ----- Open list props, all stable ------------------------------------
+  // A new `data` array, a new `renderItem` or a new per-row `onToggle` closure
+  // each render tells FlatList that everything changed, so every mounted card
+  // re-renders — gradient, timeline rail and ticket rows included. That is the
+  // work that made a tab change wait.
+  const openVisible = useMemo(
+    () => snapshot.openGroups.slice(0, renderLimit),
+    [snapshot.openGroups, renderLimit],
+  );
+  const toggleUnit = view.toggleUnitExpanded;
+  const expandedUnits = view.expandedUnits;
+  const renderOpenGroup = useCallback(
+    ({ item }: { item: (typeof openVisible)[number] }) => (
+      <OpenGroupCard
+        group={item}
+        // Rows are the default presentation; the persisted set tracks the units
+        // a tech has collapsed down to their summary.
+        expanded={!expandedUnits.includes(item.unitNumber)}
+        onToggle={toggleUnit}
+        nowMs={nowMs}
+        pad={pad}
+      />
+    ),
+    [expandedUnits, toggleUnit, nowMs, pad],
+  );
   const renderClosedRow = useCallback(
     ({ item, section }: { item: ClosedWorkOrderRow; section: { key: string } }) => (
       <ClosedRow row={item} today={section.key === "today"} />
@@ -230,27 +264,21 @@ export default function WorkOrdersScreen() {
     return (
       <View style={{ flex: 1 }}>
         <FlatList
-          data={snapshot.openGroups.slice(0, renderLimit)}
-          keyExtractor={(g) => g.unitNumber}
+          data={openVisible}
+          keyExtractor={keyOfGroup}
           contentContainerStyle={contentStyle}
           windowSize={7}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          updateCellsBatchingPeriod={50}
+          removeClippedSubviews
           ListHeaderComponent={statusLine}
           ListEmptyComponent={emptyState}
           ItemSeparatorComponent={ZoneGap}
           onEndReachedThreshold={0.6}
           onEndReached={() => setRenderLimit((l) => (l < snapshot.openGroups.length ? l + RENDER_PAGE : l))}
           ListFooterComponent={<LoadingMoreFooter visible={renderLimit < snapshot.openGroups.length} />}
-          renderItem={({ item }) => (
-            <OpenGroupCard
-              group={item}
-              // Rows are the default presentation; the persisted set now
-              // tracks the units a tech has collapsed down to their summary.
-              expanded={!view.expandedUnits.includes(item.unitNumber)}
-              onToggle={() => view.toggleUnitExpanded(item.unitNumber)}
-              nowMs={nowMs}
-              pad={pad}
-            />
-          )}
+          renderItem={renderOpenGroup}
         />
         {header}
         {modals}
@@ -269,7 +297,7 @@ export default function WorkOrdersScreen() {
           // render, re-rendering every mounted row — which on a board of
           // thousands is a visible stall that blocks even a tab change.
           sections={closedSections}
-          keyExtractor={(r) => r.id}
+          keyExtractor={keyOfClosedRow}
           renderSectionHeader={renderClosedBand}
           stickySectionHeadersEnabled={showBands}
           contentContainerStyle={contentStyle}

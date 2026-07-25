@@ -16,10 +16,15 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
  */
 
 const store = new Map<string, string>();
+/** Counts what actually reaches the disk — see the persistence test below. */
+let diskWrites = 0;
 mock.module("@react-native-async-storage/async-storage", () => ({
   default: {
     getItem: async (k: string) => store.get(k) ?? null,
-    setItem: async (k: string, v: string) => void store.set(k, v),
+    setItem: async (k: string, v: string) => {
+      diskWrites += 1;
+      store.set(k, v);
+    },
     removeItem: async (k: string) => void store.delete(k),
   },
 }));
@@ -108,6 +113,7 @@ function fullReads(): number {
 
 beforeEach(() => {
   store.clear();
+  diskWrites = 0;
   requests = [];
   table = [];
   failWith = null;
@@ -149,6 +155,38 @@ describe("work orders — delta sync", () => {
     expect(useWorkOrders.getState().dataVersion).toBe(5);
     expect(useWorkOrders.getState().refreshedAt).toBeGreaterThan(0);
     expect(fullReads()).toBe(0);
+  });
+
+
+  test("a quiet tick writes nothing to disk; a real change writes once", async () => {
+    /**
+     * zustand persists on EVERY set(), and the quiet path sets `refreshedAt`.
+     * With the default JSON storage that re-serialized and rewrote the entire
+     * 3.79 MB mirror four times a minute, byte for byte identical — the periodic
+     * stall. The gate in lib/stores/persisted-storage skips it because nothing
+     * in `partialize` moved.
+     */
+    const { useWorkOrders } = await import("@/lib/stores/work-orders");
+    table = [row("a"), row("b")];
+    useWorkOrders.setState({
+      workOrders: asWorkOrders(table.slice()),
+      deltaCursor: "2026-07-24T12:00:00.000Z",
+      dataVersion: 5,
+    });
+    diskWrites = 0;
+
+    await useWorkOrders.getState().refresh(config);
+    await useWorkOrders.getState().refresh(config);
+    await useWorkOrders.getState().refresh(config);
+    expect(useWorkOrders.getState().refreshedAt).toBeGreaterThan(0); // the tick ran
+    expect(diskWrites).toBe(0);
+
+    // A row actually changes: the cache MUST reach the disk, or a relaunch
+    // shows stale work.
+    table = [row("a", { title: "Now with a leak", updated_at: "2026-07-24T13:00:00.000Z" }), row("b")];
+    await useWorkOrders.getState().refresh(config);
+    expect(diskWrites).toBe(1);
+    expect(store.get("emberly-maintenance-work-orders")).toContain("Now with a leak");
   });
 
   test("a changed row is merged onto the cache, not swapped in as the whole list", async () => {

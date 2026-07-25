@@ -1,6 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
 import { PLACED_UNITS } from "@/lib/map-data";
 import { optimizeStops, type CompletedTour, type TourStop } from "@/lib/tour-optimize";
 
@@ -110,7 +110,7 @@ export const useTour = create<TourState>()(
     }),
     {
       name: "emberly-maintenance-tour",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
       // tourMode is a live tool, not a preference — the app never reopens
       // with tap-to-toggle armed.
       partialize: (s) => ({ stops: s.stops, history: s.history }),

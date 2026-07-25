@@ -1,6 +1,7 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
+import { rowsEqual } from "@/lib/stores/row-compare";
 import { reportSyncFailed, reportSyncSucceeded } from "@/lib/analytics";
 import {
   type LeaseStatusFilter,
@@ -116,10 +117,10 @@ export const useUnits = create<UnitsState>()(
           // The state only moves when the data did — a quiet 60s poll must not
           // re-render four screens just to confirm nothing happened.
           const prev = get();
-          if (JSON.stringify(all) !== JSON.stringify(prev.allUnits)) set({ allUnits: all });
+          if (!rowsEqual(all, prev.allUnits)) set({ allUnits: all });
           if (
             prev.filter === filter &&
-            (JSON.stringify(page.data) !== JSON.stringify(prev.units) || page.pagination.count !== prev.total)
+            (!rowsEqual(page.data, prev.units) || page.pagination.count !== prev.total)
           ) {
             set({ units: page.data, total: page.pagination.count });
           }
@@ -145,7 +146,7 @@ export const useUnits = create<UnitsState>()(
     }),
     {
       name: "emberly-maintenance-units",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
       // Only the data survives restarts. Flags are per-session, and search is
       // a momentary input, not a preference.
       partialize: (s) => ({ units: s.units, total: s.total, filter: s.filter, allUnits: s.allUnits }),

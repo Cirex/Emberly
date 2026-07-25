@@ -1,6 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
 import { buildPath, dayKeyOf, isEmergency, rankUnits, techMatches } from "@/lib/derived/my-path";
 import type { ParsedWorkOrder } from "@/lib/derived/types";
 import { PLACED_UNITS } from "@/lib/map-data";
@@ -213,7 +213,7 @@ export const useMyDay = create<MyDayState>()(
     }),
     {
       name: "emberly-maintenance-my-day",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
     },
   ),
 );

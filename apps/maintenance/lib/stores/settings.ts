@@ -1,6 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
 import { capture } from "@/lib/analytics";
 import { changeAppLanguage, type AppLanguage } from "@/lib/i18n";
 import { DEFAULT_ACCENT, type AccentThemeId, type AppThemePreference } from "@/theme/tokens";
@@ -59,7 +59,7 @@ export const useSettings = create<SettingsState>()(
     }),
     {
       name: "emberly-maintenance-settings",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
       // Apply the persisted language to i18next once the store rehydrates —
       // without this, a relaunch would render English until Settings is opened.
       onRehydrateStorage: () => (state) => {

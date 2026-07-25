@@ -1,6 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { persistedStorage } from "@/lib/stores/persisted-storage";
 import type { WorkOrderSortOption } from "@/lib/derived/sort";
 import { axesOf, optionFor, reconcileForMode, sanitizeSortOption } from "@/lib/derived/sort-axes";
 import { EMPTY_FILTERS, type DisplayMode, type FilterSets, type SignalFilter } from "@/lib/derived/types";
@@ -130,7 +130,7 @@ export const useWorkOrdersView = create<WorkOrdersViewState>()(
     }),
     {
       name: "emberly-maintenance-wo-view",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistedStorage(),
       partialize: (s) => ({ displayMode: s.displayMode, sortOption: s.sortOption }),
       /**
        * Validate the stored sort against THIS build's vocabulary. Retiring an

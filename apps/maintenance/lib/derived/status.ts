@@ -63,11 +63,19 @@ export const CLASSIFICATION_COLOR: Record<string, string> = {
   Ruby: "#9C101F",
   Diamond: "#388FC7",
   Legacy: "#9E805C",
-  Lux: "#C79433",
+  // ResMan stores this one upper-case ("LUX"). It was keyed "Lux" here, so every
+  // LUX unit fell through to the muted default and looked unclassified.
+  LUX: "#C79433",
 };
 
+/** Case-insensitive: ResMan's casing is not guaranteed to stay put. */
 export function classificationColor(classification: string): string {
-  return CLASSIFICATION_COLOR[classification] ?? TINT.muted;
+  const direct = CLASSIFICATION_COLOR[classification];
+  if (direct) return direct;
+  const key = Object.keys(CLASSIFICATION_COLOR).find(
+    (k) => k.toLowerCase() === classification.trim().toLowerCase(),
+  );
+  return key ? CLASSIFICATION_COLOR[key] : TINT.muted;
 }
 
 export function occupancyColor(occupancy: string): string {

@@ -116,6 +116,37 @@ describe("snapshot", () => {
     }
   });
 
+  test("benchmark: switching display mode should not rebuild the world", () => {
+    // Open <-> Closed is the most common interaction on this screen, and the
+    // snapshot cache key contains `mode`. Everything expensive — the filtered
+    // sets, every group/row builder, every analytics builder — is mode-
+    // INDEPENDENT, so if a mode switch costs the same as a cold build, all of
+    // that is being thrown away and recomputed for a different selection.
+    resetSnapshotCaches();
+    const rows = syntheticRows(4000);
+    const units = syntheticUnits(360);
+    const base = { workOrders: rows, units, dataVersion: 7, unitsVersion: 7 };
+
+    let t = performance.now();
+    buildSnapshot(input(base));
+    const cold = performance.now() - t;
+
+    t = performance.now();
+    buildSnapshot(input({ ...base, mode: "closed" }));
+    const toClosed = performance.now() - t;
+
+    t = performance.now();
+    buildSnapshot(input({ ...base, mode: "open" }));
+    const backToOpen = performance.now() - t;
+
+    console.log(
+      `mode switch: cold(open)=${cold.toFixed(1)}ms  ->closed=${toClosed.toFixed(1)}ms  ` +
+        `->open(cached)=${backToOpen.toFixed(1)}ms`,
+    );
+    // Returning to a mode already built must be a cache hit, near-free.
+    expect(backToOpen).toBeLessThan(cold / 2);
+  });
+
   test("benchmark: full snapshot over 4k rows under 100ms (informational gate)", () => {
     resetSnapshotCaches();
     const rows = syntheticRows(4000);

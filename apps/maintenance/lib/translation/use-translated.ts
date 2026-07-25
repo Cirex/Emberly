@@ -70,11 +70,14 @@ export function useWorkOrderTranslationSync(): void {
     void (async () => {
       const orders = useWorkOrders.getState().workOrders;
       const priorityIds = useMyDay.getState().stops.flatMap((s) => s.workOrderIds);
+      // EVERY live source, used only to decide what is still referenced.
       const sources = orderedTranslationSources(orders, priorityIds);
       if (sources.length === 0) return;
 
       // Evict translations of prose no longer present, so edited or closed work
-      // orders don't accumulate dead entries.
+      // orders don't accumulate dead entries. This needs the FULL set — reaping
+      // against a subset would throw away good server translations for every
+      // work order that happens not to be visible right now.
       useTranslations.getState().reap(sources);
 
       // 1. Server first — one small request, and nothing to translate locally
@@ -92,10 +95,30 @@ export function useWorkOrderTranslationSync(): void {
       }
       if (cancelled) return;
 
-      // 2. Whatever the server didn't cover — field-authored notes — is
-      //    translated on-device. `translate` skips everything already cached,
-      //    so in the steady state this is a no-op.
-      await useTranslations.getState().translate(language, sources);
+      // 2. On-device, for VISIBLE work only — never the whole corpus.
+      //
+      // This used to be handed `sources`, i.e. every work order's prose: ~4,000
+      // orders x 3 fields is ~12,000 strings pushed at Apple's translator on
+      // every sync. The comment above this block claimed the bulk backfill was
+      // "gone"; it was not, and it is what produced the background
+      // "translation timed out" failures.
+      //
+      // It was also redundant. The sync worker pre-translates that same ResMan
+      // corpus (supabase/sync jobs/translate-work-orders.ts) and step 1 merges
+      // it, so the tail was re-doing server work locally, slowly, on a phone.
+      //
+      // What genuinely needs on-device translation is prose the server has never
+      // seen — a Spanish speaker typing into technician notes — and that lives
+      // on the work order in front of the tech. So the local pass covers the
+      // visible set: today's stops. `translate` still skips anything already
+      // cached, so in the steady state this really is a no-op now.
+      const visibleSources = orderedTranslationSources(
+        orders.filter((o) => priorityIds.includes(o.resman_work_order_id)),
+        priorityIds,
+      );
+      if (visibleSources.length > 0) {
+        await useTranslations.getState().translate(language, visibleSources);
+      }
     })();
     return () => {
       cancelled = true;

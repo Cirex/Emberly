@@ -247,6 +247,16 @@ export default function WorkOrdersScreen() {
           data={closedVisible}
           keyExtractor={(r) => r.id}
           contentContainerStyle={contentStyle}
+          // The open list has carried these since it was built; the closed list
+          // never got them, which is why Closed felt heavier despite holding
+          // simpler rows. RENDER_PAGE is 150, so without a bounded first batch
+          // FlatList mounts far more rows than a screen can show before it
+          // paints anything.
+          windowSize={7}
+          initialNumToRender={12}
+          maxToRenderPerBatch={12}
+          updateCellsBatchingPeriod={50}
+          removeClippedSubviews
           ListHeaderComponent={
             <View>
               {statusLine}

@@ -22,7 +22,23 @@ import { HAIRLINE_STRONG, MUTED, NAVY, OLIVE_TEXT } from "@/theme/tokens";
 
 const STATUS_OPTIONS_OPEN = ["Not Started", "Scheduled", "In Progress"];
 const STATUS_OPTIONS_CLOSED = ["Completed", "Closed", "Canceled"];
-const CLASSIFICATION_OPTIONS = ["Ruby", "Diamond", "Legacy"];
+/**
+ * Preferred display order. NOT the set of options — the chips are built from
+ * whatever the data actually contains, so a classification ResMan adds cannot go
+ * missing. This list was hardcoded to three, which silently hid LUX: 162 closed
+ * work orders were filterable in the data with no chip to reach them.
+ */
+const CLASSIFICATION_ORDER = ["Ruby", "Diamond", "Legacy", "LUX"];
+
+/** Every classification present, preferred ones first, then any newcomer. */
+function classificationOptions(counts: ReadonlyMap<string, number>): string[] {
+  const present = [...counts.keys()].filter((c) => c.trim().length > 0);
+  const ranked = (c: string) => {
+    const i = CLASSIFICATION_ORDER.findIndex((k) => k.toLowerCase() === c.toLowerCase());
+    return i === -1 ? CLASSIFICATION_ORDER.length : i;
+  };
+  return present.sort((a, b) => ranked(a) - ranked(b) || a.localeCompare(b));
+}
 const OCCUPANCY_OPTIONS = ["Occupied", "Vacant", "Eviction", "NTV"];
 
 /** Immutable add/remove toggle for one facet array. */
@@ -266,7 +282,7 @@ export function FilterSheet() {
             {/* Classification ----------------------------------------------- */}
             <SectionLabel text="Classification" />
             <ChipWrapRow>
-              {CLASSIFICATION_OPTIONS.map((classification) => (
+              {classificationOptions(panel.classificationCounts).map((classification) => (
                 <SheetChip
                   key={classification}
                   label={classification}

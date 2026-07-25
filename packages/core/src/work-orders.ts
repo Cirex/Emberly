@@ -273,16 +273,71 @@ export function workOrderAgeDays(wo: ParsedWorkOrder, nowMs: number): number {
 
 // ── Parsing ─────────────────────────────────────────────────────────────────
 
-/** Parse one API row into the engine's view model. Pure; called once per row per dataVersion. */
-export function parseWorkOrder(raw: WorkOrderInput): ParsedWorkOrder {
-  const reportedAt = parseDate(raw.date_reported);
-  const completedAt = parseDate(raw.date_completed);
+/**
+ * The costly half of parsing one row, cached against the ROW OBJECT ITSELF.
+ *
+ * Tag derivation is 99ms of the ~100ms it takes to parse 4,000 live rows — it
+ * normalizes the prose and runs some two hundred phrase probes over it. Nothing
+ * else here is measurable (dates, technician name and search key together come
+ * to about 1.4ms across the whole mirror).
+ *
+ * A WeakMap keyed on the raw row is exact rather than merely clever: same object
+ * ⇒ same bytes ⇒ same tags, with no key to build and no staleness to reason
+ * about, and entries vanish with the rows they describe. It pays off because a
+ * delta sync REUSES the row objects it did not replace (see the merge in the
+ * maintenance work-orders store), so re-parsing after a sync that touched three
+ * rows derives tags for three rows.
+ *
+ * A full re-fetch hands over all-new objects and correctly misses every entry.
+ */
+interface DerivedRowParts {
+  tags: string[];
+  reportedAt: number | null;
+  scheduledAt: number | null;
+  completedAt: number | null;
+  technicianDisplay: string;
+  isMakeReady: boolean;
+  searchKey: string;
+}
+
+const derivedParts = new WeakMap<object, DerivedRowParts>();
+
+function deriveParts(raw: WorkOrderInput): DerivedRowParts {
+  const cached = derivedParts.get(raw);
+  if (cached) return cached;
+
   const technicianDisplay = technicianDisplayName(raw.technician);
   // ResMan leaves tags/callbacks/duplicates empty on every synced row, so we
   // run the ported Swift engine (WorkOrderDuplicateDetector) instead. Tags are
   // per-order; the callback/duplicate signals need the whole set and are filled
   // in parseAll below. Explicit values (fixtures) are honored over the engine.
   const tags = raw.tags.length > 0 ? raw.tags : deriveWorkOrderTags(raw.title, raw.notes, raw.category);
+  const parts: DerivedRowParts = {
+    tags,
+    reportedAt: parseDate(raw.date_reported),
+    scheduledAt: parseDate(raw.date_scheduled),
+    completedAt: parseDate(raw.date_completed),
+    technicianDisplay,
+    isMakeReady: raw.is_make_ready || isMakeReadyCategory(raw.category),
+    searchKey: [raw.number, raw.unit_number, raw.title, raw.notes, technicianDisplay, tags.join(" ")]
+      .join(" ")
+      .toLowerCase(),
+  };
+  derivedParts.set(raw, parts);
+  return parts;
+}
+
+/**
+ * Parse one API row into the engine's view model.
+ *
+ * Returns a FRESH object every call even on a cache hit: `parseAll` writes the
+ * callback/duplicate signals onto these afterwards, and handing back a shared
+ * instance would let a later parse mutate rows an earlier snapshot is still
+ * rendering. Only the derived fields above are shared, and they are immutable.
+ */
+export function parseWorkOrder(raw: WorkOrderInput): ParsedWorkOrder {
+  const { tags, reportedAt, scheduledAt, completedAt, technicianDisplay, isMakeReady, searchKey } =
+    deriveParts(raw);
   return {
     raw,
     id: raw.resman_work_order_id,
@@ -294,18 +349,16 @@ export function parseWorkOrder(raw: WorkOrderInput): ParsedWorkOrder {
     technician: raw.technician,
     technicianDisplay,
     tags,
-    isMakeReady: raw.is_make_ready || isMakeReadyCategory(raw.category),
+    isMakeReady,
     isDuplicate: raw.is_duplicate,
     callbackStatus: raw.callback_status,
     callbackMatchedId: raw.callback_matched_work_order_id,
     reportedAt,
-    scheduledAt: parseDate(raw.date_scheduled),
+    scheduledAt,
     completedAt,
     daysToComplete:
       reportedAt !== null && completedAt !== null ? Math.max(0, daysBetween(reportedAt, completedAt)) : null,
-    searchKey: [raw.number, raw.unit_number, raw.title, raw.notes, technicianDisplay, tags.join(" ")]
-      .join(" ")
-      .toLowerCase(),
+    searchKey,
   };
 }
 
@@ -327,6 +380,9 @@ export function parseAll(rows: WorkOrderInput[]): ParsedWorkOrder[] {
       completionNotes: p.raw.completion_notes,
       reportedAt: p.reportedAt,
       completedAt: p.completedAt,
+      // The row itself is the cache identity for the fingerprint — see
+      // fingerprintFor. A delta sync keeps the objects it did not replace.
+      source: p.raw,
     }));
   const signals = computeWorkOrderSignals(engineOrders);
 

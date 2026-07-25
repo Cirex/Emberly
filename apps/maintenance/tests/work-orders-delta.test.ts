@@ -216,6 +216,41 @@ describe("work orders — delta sync", () => {
     expect(fullReads()).toBe(0);
   });
 
+
+  test("unchanged rows keep their object identity through a merge", async () => {
+    /**
+     * Not a detail: parsing caches its two expensive halves (tag derivation and
+     * the duplicate/callback fingerprint) against the raw row object, so a
+     * re-parse after a delta costs only the rows that actually changed —
+     * measured at 157ms → 30ms across the live mirror. Rebuilding the untouched
+     * rows here (a `.map(r => ({...r}))` slipped into the merge, say) would miss
+     * every cache and quietly hand the whole cost back.
+     */
+    const { useWorkOrders } = await import("@/lib/stores/work-orders");
+    table = [row("a"), row("b"), row("c")];
+    useWorkOrders.setState({
+      workOrders: asWorkOrders(table.slice()),
+      deltaCursor: "2026-07-24T12:00:00.000Z",
+      dataVersion: 1,
+    });
+    const before = useWorkOrders.getState().workOrders;
+
+    table = [
+      row("a"),
+      row("b", { title: "Now a leak", updated_at: "2026-07-24T13:00:00.000Z" }),
+      row("c"),
+    ];
+    await useWorkOrders.getState().refresh(config);
+
+    const after = useWorkOrders.getState().workOrders;
+    const find = (list: readonly unknown[], id: string) =>
+      (list as { resman_work_order_id: string }[]).find((r) => r.resman_work_order_id === id);
+    expect(find(after, "a")).toBe(find(before, "a"));
+    expect(find(after, "c")).toBe(find(before, "c"));
+    // The row that changed must NOT be the old object.
+    expect(find(after, "b")).not.toBe(find(before, "b"));
+  });
+
   test("a new work order arrives through the delta", async () => {
     const { useWorkOrders } = await import("@/lib/stores/work-orders");
     useWorkOrders.setState({

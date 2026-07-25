@@ -191,7 +191,27 @@ describe("snapshot", () => {
     const t1 = performance.now();
     buildSnapshot(input({ workOrders: rows, units, dataVersion: 7, unitsVersion: 7, search: "sink" }));
     const warm = performance.now() - t1;
-    console.log(`snapshot build: cold ${cold.toFixed(1)}ms, warm ${warm.toFixed(1)}ms (4k rows)`);
+    // The delta path: a sync replaced three rows and left the rest alone, so the
+    // parse caches (keyed on the row objects) hit for everything else. This is
+    // the number that matters in steady state — a full cold parse only happens
+    // on launch or a reconcile.
+    resetSnapshotCaches();
+    const afterDelta = rows.slice();
+    for (const i of [3, 1500, 3900]) afterDelta[i] = { ...rows[i], title: "Edited by the sync" };
+    const t2 = performance.now();
+    buildSnapshot(input({ workOrders: afterDelta, units, dataVersion: 8, unitsVersion: 7 }));
+    const delta = performance.now() - t2;
+    console.log(
+      `snapshot build: cold ${cold.toFixed(1)}ms, warm ${warm.toFixed(1)}ms, ` +
+        `after a 3-row delta ${delta.toFixed(1)}ms (4k rows)`,
+    );
+    // A delta rebuild must stay under a cold one. If this ever approaches
+    // `cold`, something started rebuilding row objects and every parse cache is
+    // missing — see the identity test in work-orders-delta. The margin here
+    // understates the real one: these synthetic rows carry eight repeated titles
+    // and no notes, so the text work the caches skip is far cheaper than the
+    // live corpus's (157ms → 30ms measured against the real mirror).
+    expect(delta).toBeLessThan(cold);
     // The console.log above is the real perf signal. These ceilings are only a
     // catastrophic-regression tripwire (e.g. an O(n)→O(n²) slip), deliberately
     // generous — a cold build is normally ~230ms — so a busy CI/dev machine

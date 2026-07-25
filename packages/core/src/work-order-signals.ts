@@ -38,6 +38,13 @@ export interface EngineOrder {
   completionNotes: string; // Swift technicianNotes  (our raw.completion_notes)
   reportedAt: number | null; // epoch ms  (Swift dateReported)
   completedAt: number | null; // epoch ms  (Swift dateCompleted)
+  /**
+   * Optional identity for caching this order's fingerprint — pass the raw API
+   * row. Same object ⇒ same title/description/tags ⇒ same fingerprint, so the
+   * ~50-pass text normalization behind it can be skipped on a re-run. Omit it
+   * and fingerprints are computed fresh, which is only a cost.
+   */
+  source?: object;
 }
 
 /** The per-order signal the batch pass assigns. */
@@ -368,8 +375,27 @@ function fingerprint(title: string, description: string, tags: string[]): WorkOr
   };
 }
 
+/**
+ * Fingerprints keyed on the caller's row identity.
+ *
+ * Fingerprinting is the engine's dominant cost — normalizeText runs some fifty
+ * string passes per order, over roughly three thousand of them. Everything it
+ * reads comes from the row, so an unchanged row keeps its fingerprint. Weak, so
+ * the entries die with the rows.
+ *
+ * Fingerprints are never mutated after construction (the set algebra below
+ * always builds new sets), which is what makes sharing one safe.
+ */
+const fingerprintsBySource = new WeakMap<object, WorkOrderDuplicateFingerprint>();
+
 function fingerprintFor(o: EngineOrder): WorkOrderDuplicateFingerprint {
-  return fingerprint(o.title, o.description, o.tags);
+  const key = o.source;
+  if (key === undefined) return fingerprint(o.title, o.description, o.tags);
+  const cached = fingerprintsBySource.get(key);
+  if (cached) return cached;
+  const computed = fingerprint(o.title, o.description, o.tags);
+  fingerprintsBySource.set(key, computed);
+  return computed;
 }
 
 // Swift daysBetween: abs of Calendar.current dateComponents([.day]). We use UTC

@@ -224,7 +224,16 @@ export function parseCsvRows(csv: string): string[][] {
     } else {
       switch (ch) {
         case '"':
-          quoted = true;
+          // A quote only OPENS a field at its start (RFC 4180). Mid-field it is
+          // a literal — `6" pipe leak` is an inch mark, not the start of a
+          // quoted section. Treating it as an opener made the parser swallow
+          // the entire rest of the file into one field: every row after it
+          // vanished, and because the truncated result was still non-empty,
+          // upsertMirror's delete-missing pass then deleted those units and
+          // work orders (cascading their photos away) as "no longer in the
+          // report".
+          if (field.length === 0) quoted = true;
+          else field += ch;
           break;
         case ",":
           row.push(field);
@@ -243,6 +252,16 @@ export function parseCsvRows(csv: string): string[][] {
       }
     }
     i += 1;
+  }
+
+  // An unterminated quote means the input is malformed or truncated, and the
+  // rows parsed so far are a PREFIX of the real report. Returning them would
+  // look like a successful short scrape and feed delete-missing. Fail loudly
+  // instead — a thrown job is recoverable, a silent partial delete is not.
+  if (quoted) {
+    throw new Error(
+      `CSV parse failed: unterminated quoted field (parsed ${rows.length} row(s) before EOF)`,
+    );
   }
 
   // Flush the trailing field/row (Swift appends unconditionally, then drops all-empty).

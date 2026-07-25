@@ -187,3 +187,38 @@ test("parseCsvDate rejects impossible calendar dates", () => {
   assert.equal(parseCsvDate("2/30/2026"), null);
   assert.equal(parseCsvDate("13/1/2026"), null);
 });
+
+// ── unbalanced-quote regression ────────────────────────────────────────────
+// A lone `"` mid-field (an inch mark, e.g. `6" pipe`) used to be read as the
+// start of a quoted section, swallowing the rest of the file into one field.
+// Every row after it vanished — and because the truncated result was still
+// non-empty, upsertMirror's delete-missing pass then deleted those units and
+// work orders, cascading their completion photos away permanently.
+
+test("a mid-field quote is a literal, not a quote opener", () => {
+  const csv = ["UnitId,Unit,Description", "u1,101,fine", 'u2,102,6" pipe leak', "u3,103,fine", "u4,104,fine"].join("\n");
+  const rows = parseCsvRows(csv);
+  assert.equal(rows.length, 5, "rows after the inch mark must survive");
+  assert.equal(rows[2][2], '6" pipe leak');
+  assert.deepEqual(rows[4], ["u4", "104", "fine"]);
+});
+
+test("a properly quoted field is still parsed as quoted", () => {
+  assert.deepEqual(parseCsvRows('a,b\n"x,y",z')[1], ["x,y", "z"]);
+});
+
+test("a quoted field may still contain newlines", () => {
+  const rows = parseCsvRows('a,b\n"line1\nline2",z');
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1][0], "line1\nline2");
+});
+
+test("escaped double-quotes inside a quoted field still work", () => {
+  assert.equal(parseCsvRows('a\n"say ""hi"""')[1][0], 'say "hi"');
+});
+
+test("an unterminated quoted field throws rather than returning a truncated prefix", () => {
+  // Silently returning the prefix is the catastrophic case: it looks like a
+  // successful short scrape and feeds delete-missing.
+  assert.throws(() => parseCsvRows('a,b\n"never closed,z\nmore,rows'), /unterminated quoted field/);
+});

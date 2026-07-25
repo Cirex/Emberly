@@ -138,3 +138,57 @@ test("upsertMirror still throws when every row in a chunk fails (systemic)", asy
     /failed for all/,
   );
 });
+
+// ── delete-missing floor guard ─────────────────────────────────────────────
+// never-delete-on-empty only catches a TOTALLY failed scrape. A PARTIAL one —
+// a truncated CSV, a report that changed shape — returns a plausible handful of
+// rows, and every other row in scope was then deleted as "missing". Deleting a
+// work order cascades its completion photos away permanently, so the guard
+// refuses an implausible bulk delete rather than trusting the scrape.
+
+/** n existing keys, of which the scrape returns only `returned`. */
+function partialScrape(existing, returned) {
+  const keys = Array.from({ length: existing }, (_, i) => `k${i}`);
+  const rows = keys.slice(0, returned).map((k) => ({ id: k }));
+  return { keys, rows };
+}
+
+test("delete-missing is REFUSED when a scrape would delete most of the table", async () => {
+  // 100 rows in scope, scrape returned 3 — the truncated-CSV signature.
+  const { keys, rows } = partialScrape(100, 3);
+  const { client, calls } = fakeClient(keys);
+  const out = await upsertMirror(client, "resman_work_orders", rows, {
+    conflictColumn: "id",
+    deleteMissing: true,
+  });
+  assert.equal(out.deleteMissingSkipped, true);
+  assert.equal(out.deletedStale, 0);
+  assert.equal(calls.deletes.length, 0, "nothing may be deleted");
+  assert.equal(out.upserted, 3, "the rows it did return are still written");
+});
+
+test("delete-missing still runs for a plausible removal", async () => {
+  // 100 in scope, scrape returned 90 — ten genuinely closed/removed rows.
+  const { keys, rows } = partialScrape(100, 90);
+  const { client, calls } = fakeClient(keys);
+  const out = await upsertMirror(client, "resman_work_orders", rows, {
+    conflictColumn: "id",
+    deleteMissing: true,
+  });
+  assert.ok(!out.deleteMissingSkipped);
+  assert.equal(out.deletedStale, 10);
+  assert.equal(calls.deletes.length, 1);
+});
+
+test("a small table can still be reshaped freely (guard has a row floor)", async () => {
+  // 10 in scope, scrape returned 1. Below the min-rows floor, so allowed —
+  // seeding and small lookup tables must stay workable.
+  const { keys, rows } = partialScrape(10, 1);
+  const { client } = fakeClient(keys);
+  const out = await upsertMirror(client, "resman_units", rows, {
+    conflictColumn: "id",
+    deleteMissing: true,
+  });
+  assert.ok(!out.deleteMissingSkipped);
+  assert.equal(out.deletedStale, 9);
+});

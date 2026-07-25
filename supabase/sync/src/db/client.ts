@@ -25,6 +25,14 @@ const DELETE_BATCH = 200;
 const WRITE_CONCURRENCY = 4;
 /** PostgREST caps an unbounded select at 1000 rows; page the key read at this size. */
 const KEY_PAGE = 1000;
+/**
+ * Delete-missing safety valve. A pass that would remove more than this fraction
+ * of the rows in scope is refused as an implausible scrape rather than a real
+ * bulk removal. Only applies once the table holds at least MIN_ROWS, so a small
+ * or freshly-seeded table can still be reshaped freely.
+ */
+const DELETE_MISSING_MAX_FRACTION = 0.35;
+const DELETE_MISSING_MIN_ROWS = 25;
 
 /** Run `fn` over `items` with at most `limit` concurrent invocations. */
 export async function inParallel<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
@@ -52,6 +60,8 @@ export interface UpsertOutcome {
   deletedStale: number;
   /** True when `rows` was empty and the whole operation was skipped. */
   skippedEmpty: boolean;
+  /** True when delete-missing was refused by the floor guard (partial scrape). */
+  deleteMissingSkipped?: boolean;
 }
 
 /**
@@ -159,6 +169,30 @@ export async function upsertMirror(
     }
 
     const stale = existingKeys.filter((key) => !present.has(key));
+
+    // Floor guard. The empty check above only catches a TOTALLY failed scrape;
+    // a PARTIAL one — a truncated CSV, a report that silently changed shape —
+    // returns a plausible-looking handful of rows and every other row in scope
+    // is then deleted as "missing". That is not hypothetical: an unterminated
+    // quote in one description used to swallow the rest of the file, and
+    // deleting a work order cascades its completion photos away permanently.
+    //
+    // So refuse to delete more than DELETE_MISSING_MAX_FRACTION of the rows in
+    // scope in a single pass. A genuine bulk removal still happens, just across
+    // consecutive runs — and the caller sees `deleteMissingSkipped` rather than
+    // a silent no-op.
+    if (
+      existingKeys.length >= DELETE_MISSING_MIN_ROWS &&
+      stale.length > existingKeys.length * DELETE_MISSING_MAX_FRACTION
+    ) {
+      console.warn(
+        `[upsertMirror] ${table}: REFUSING delete-missing — ${stale.length} of ` +
+          `${existingKeys.length} rows in scope would be deleted (scrape returned ` +
+          `${deduped.length}). This looks like a truncated scrape, not a real removal.`,
+      );
+      return { upserted, deletedStale: 0, skippedEmpty: false, deleteMissingSkipped: true };
+    }
+
     const deleteChunks = chunked(stale, DELETE_BATCH);
     await inParallel(deleteChunks, WRITE_CONCURRENCY, async (chunk) => {
       let deleteQuery = client.from(table).delete().in(keyColumn, chunk);

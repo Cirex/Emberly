@@ -41,7 +41,8 @@
           }
         }
       ],
-      "@sentry/react-native/expo"
+      "@sentry/react-native/expo",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

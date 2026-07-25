@@ -26,9 +26,16 @@ export async function POST(
   if (!auth.ok) return auth.response;
 
   let note = "";
+  let completedAt: string | null = null;
   try {
-    const body = (await request.json()) as { note?: unknown };
+    const body = (await request.json()) as { note?: unknown; completedAt?: unknown };
     if (typeof body.note === "string") note = body.note.slice(0, 2000);
+    // When the tech stamped the completion date themselves it rides along, so
+    // a job finished Friday and closed out Monday records Friday. Anything
+    // unparseable is dropped rather than 400'd — the close still matters.
+    if (typeof body.completedAt === "string" && !Number.isNaN(Date.parse(body.completedAt))) {
+      completedAt = new Date(body.completedAt).toISOString();
+    }
   } catch {
     /* empty body is fine */
   }
@@ -43,12 +50,14 @@ export async function POST(
     );
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    // TODO(resman-write): queue the actual ResMan close + overlay row here.
+    // TODO(resman-write): queue the actual ResMan close + overlay row here,
+    // stamping date_completed from `completedAt` when present and now() when not.
     // Never log `note` — it is free text that can carry unit/resident details
     // (AGENTS.md: keep request bodies out of logs). Record only that a note was
-    // present, not its contents.
+    // present, not its contents. A date is not free text, so it can be logged.
     console.info(
-      `[resman-api work-orders close] STUB queued close for ${id}${note ? " (with note)" : ""}`,
+      `[resman-api work-orders close] STUB queued close for ${id}${note ? " (with note)" : ""}` +
+        `${completedAt ? ` (completed ${completedAt})` : ""}`,
     );
     return NextResponse.json({ ok: true, queued: true, stub: true });
   } catch (error) {

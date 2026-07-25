@@ -39,6 +39,7 @@ import {
   type PlacedUnit,
 } from "@/lib/map-data";
 import type { MapAnnotation } from "@/lib/stores/annotations";
+import { placeTooltip, TIP_W, type TooltipPlacement } from "@/lib/map/tooltip-placement";
 import type { LineStyle, LineWeight, UtilityPoint } from "@/lib/api/annotations";
 import {
   LINE_WEIGHT_FACTOR,
@@ -136,124 +137,6 @@ const TOUR_UNIT_CENTER = new Map(PLACED_UNITS.map((u) => [u.number, u]));
 export interface TourBadgeStop {
   unitNumber: string;
   isDone: boolean;
-}
-
-/** Tooltip card footprint used for placement (content sizes itself within).
-    Width matches the Swift card (286 content + padding). */
-const TIP_W = 250;
-const TIP_H = 205;
-const TIP_GAP = 12;
-const TIP_PAD = 8;
-
-
-interface TooltipPlacement {
-  left: number;
-  top: number;
-  sx: number;
-  sy: number;
-  mx: number;
-  my: number;
-  hasElbow: boolean;
-  ex: number;
-  ey: number;
-}
-
-/**
- * Swift's tooltipPlacement(), verbatim in spirit: 12 candidate positions
- * (4 axial, 4 corner-offset, 4 true-45° rays) sorted by available space,
- * first that fully fits wins, else the least-overflowing one — and always
- * clamped inside the viewport, so the card can never leave the screen
- * however small it is. The connector exits the card edge facing the unit,
- * with an L-elbow unless the two are nearly axis-aligned.
- */
-function placeTooltip(
-  ux: number,
-  uy: number,
-  uw: number,
-  uh: number,
-  vw: number,
-  vh: number,
-): TooltipPlacement {
-  "worklet";
-  const halfW = TIP_W / 2;
-  const halfH = TIP_H / 2;
-  const gap = 16;
-  const pad = TIP_PAD;
-  const minX = pad;
-  const minY = pad;
-  const maxX = vw - pad;
-  const maxY = vh - pad;
-  const cx = ux + uw / 2;
-  const cy = uy + uh / 2;
-
-  const spaceRight = maxX - (ux + uw);
-  const spaceLeft = ux - minX;
-  const spaceBelow = maxY - (uy + uh);
-  const spaceAbove = uy - minY;
-  const d45 = (Math.max(uw, uh) * 0.5 + gap) / Math.SQRT2;
-
-  const candidates: { x: number; y: number; space: number }[] = [
-    { x: ux + uw + gap + halfW, y: cy, space: spaceRight },
-    { x: ux - gap - halfW, y: cy, space: spaceLeft },
-    { x: cx, y: uy + uh + gap + halfH, space: spaceBelow },
-    { x: cx, y: uy - gap - halfH, space: spaceAbove },
-    { x: ux + uw + gap + halfW, y: uy + uh + gap + halfH, space: spaceRight + spaceBelow },
-    { x: ux - gap - halfW, y: uy + uh + gap + halfH, space: spaceLeft + spaceBelow },
-    { x: ux + uw + gap + halfW, y: uy - gap - halfH, space: spaceRight + spaceAbove },
-    { x: ux - gap - halfW, y: uy - gap - halfH, space: spaceLeft + spaceAbove },
-    { x: cx + d45 + halfW, y: cy + d45 + halfH, space: spaceRight + spaceBelow },
-    { x: cx - d45 - halfW, y: cy + d45 + halfH, space: spaceLeft + spaceBelow },
-    { x: cx + d45 + halfW, y: cy - d45 - halfH, space: spaceRight + spaceAbove },
-    { x: cx - d45 - halfW, y: cy - d45 - halfH, space: spaceLeft + spaceAbove },
-  ].sort((a, b) => b.space - a.space);
-
-  const overflow = (x: number, y: number) => {
-    const ox = Math.max(0, minX - (x - halfW)) + Math.max(0, x + halfW - maxX);
-    const oy = Math.max(0, minY - (y - halfH)) + Math.max(0, y + halfH - maxY);
-    return ox + oy;
-  };
-
-  let best = candidates[0];
-  let bestOverflow = overflow(best.x, best.y);
-  for (const c of candidates) {
-    const o = overflow(c.x, c.y);
-    if (o === 0) {
-      best = c;
-      bestOverflow = 0;
-      break;
-    }
-    if (o < bestOverflow) {
-      best = c;
-      bestOverflow = o;
-    }
-  }
-
-  const centerX = Math.min(Math.max(best.x, minX + halfW), Math.max(minX + halfW, maxX - halfW));
-  const centerY = Math.min(Math.max(best.y, minY + halfH), Math.max(minY + halfH, maxY - halfH));
-
-  // Connector: exit the card edge that faces the unit most directly.
-  const dx = cx - centerX;
-  const dy = cy - centerY;
-  const exitHorizontal = Math.abs(dx) / TIP_W >= Math.abs(dy) / TIP_H;
-  const sx = exitHorizontal ? (dx >= 0 ? centerX + halfW : centerX - halfW) : centerX;
-  const sy = exitHorizontal ? centerY : dy >= 0 ? centerY + halfH : centerY - halfH;
-
-  const straightTol = 8;
-  const aligned = Math.abs(sx - cx) < straightTol || Math.abs(sy - cy) < straightTol;
-  const mx = exitHorizontal ? cx : sx;
-  const my = exitHorizontal ? sy : cy;
-
-  return {
-    left: centerX - halfW,
-    top: centerY - halfH,
-    sx,
-    sy,
-    mx,
-    my,
-    hasElbow: !aligned,
-    ex: cx,
-    ey: cy,
-  };
 }
 
 export type PlaceMode = "none" | "annotate" | "utility";

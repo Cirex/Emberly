@@ -72,11 +72,27 @@ function ackIfUnchanged(
   });
 }
 
+/** Same instant, whatever format each side spells it in. */
+function sameMoment(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (a == null || a === "") return b == null || b === "";
+  if (b == null || b === "") return false;
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  // Unparseable on either side falls back to an exact string match rather than
+  // reporting two NaNs equal, which would retire an edit that never landed.
+  return Number.isNaN(ta) || Number.isNaN(tb) ? a === b : ta === tb;
+}
+
 /** True when the base row already carries every value the patch sets. */
 function absorbed(row: WorkOrder, patch: WorkOrderEditPatch): boolean {
   if (patch.technician !== undefined && row.technician !== patch.technician) return false;
   if (patch.description !== undefined && row.notes !== patch.description) return false;
   if (patch.completionNotes !== undefined && row.completion_notes !== patch.completionNotes) {
+    return false;
+  }
+  // ResMan may echo the date back in a different format than we sent, so this
+  // compares instants — a string match would keep the overlay alive forever.
+  if (patch.scheduledAt !== undefined && !sameMoment(row.date_scheduled, patch.scheduledAt)) {
     return false;
   }
   return true;

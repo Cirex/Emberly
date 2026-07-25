@@ -18,6 +18,13 @@ export interface PendingClose {
   workOrderId: string;
   note: string;
   queuedAt: number;
+  /**
+   * When the work was finished, epoch ms — set when the technician stamped a
+   * completion date themselves rather than closing on the spot. Undefined means
+   * "whenever the server records it", which is what every close did before the
+   * date picker existed, so old persisted entries read correctly.
+   */
+  completedAt?: number;
   /** True once the server accepted (even as a stub); false = local-only, retry. */
   acked: boolean;
   /**
@@ -35,8 +42,14 @@ const STALE_MS = 7 * 24 * 60 * 60 * 1000;
 interface PendingClosesState {
   pending: Record<string, PendingClose>;
   /** Optimistically mark closed and tell the server. Resolves ok even when the
-   *  server is unreachable — the entry just stays un-acked for a later retry. */
-  queueClose: (workOrderId: string, note: string, config: StaffConfig) => Promise<void>;
+   *  server is unreachable — the entry just stays un-acked for a later retry.
+   *  `completedAt` (epoch ms) backdates the completion; omit for "now". */
+  queueClose: (
+    workOrderId: string,
+    note: string,
+    config: StaffConfig,
+    completedAt?: number,
+  ) => Promise<void>;
   /** Retry any un-acked entries (called from the sync tick). */
   flush: (config: StaffConfig) => Promise<void>;
   /** Drop entries the mirror has caught up with (base row closed) or stale ones. */
@@ -45,25 +58,26 @@ interface PendingClosesState {
 }
 
 /**
- * Mark an entry accepted, but ONLY if it still holds the note that was sent.
+ * Mark an entry accepted, but ONLY if it still holds the close that was sent.
  * Returns whether the ack landed.
  *
  * The write is awaited, and the technician can re-close with a corrected note
- * while it is in flight — `queueClose` overwrites the entry and resets `acked`.
- * Acking blindly marked that NEWER note as accepted by a request that never
- * carried it, and since `flush` only retries un-acked entries, the corrected
- * note was silently dropped forever.
+ * or completion date while it is in flight — `queueClose` overwrites the entry
+ * and resets `acked`. Acking blindly marked that NEWER close as accepted by a
+ * request that never carried it, and since `flush` only retries un-acked
+ * entries, the correction was silently dropped forever.
  */
 function ackIfUnchanged(
   set: (fn: (s: PendingClosesState) => Partial<PendingClosesState>) => void,
   workOrderId: string,
   sentNote: string,
+  sentCompletedAt: number | undefined,
   attempts?: number,
 ): boolean {
   let acked = false;
   set((s) => {
     const cur = s.pending[workOrderId];
-    if (!cur || cur.note !== sentNote) return s;
+    if (!cur || cur.note !== sentNote || cur.completedAt !== sentCompletedAt) return s;
     acked = true;
     return {
       pending: {
@@ -75,6 +89,12 @@ function ackIfUnchanged(
   return acked;
 }
 
+/** Epoch ms to the ISO string the wire wants; undefined stays undefined so the
+ *  body omits the field entirely and the server keeps deciding. */
+function isoOrUndefined(ms: number | undefined): string | undefined {
+  return ms === undefined ? undefined : new Date(ms).toISOString();
+}
+
 /** Module-scoped so it guards the ONE store, not a per-call closure. */
 let flushing = false;
 
@@ -83,16 +103,23 @@ export const usePendingCloses = create<PendingClosesState>()(
     (set, get) => ({
       pending: {},
 
-      queueClose: async (workOrderId, note, config) => {
+      queueClose: async (workOrderId, note, config, completedAt) => {
         set((s) => ({
           pending: {
             ...s.pending,
-            [workOrderId]: { workOrderId, note, queuedAt: Date.now(), acked: false, attempts: 1 },
+            [workOrderId]: {
+              workOrderId,
+              note,
+              completedAt,
+              queuedAt: Date.now(),
+              acked: false,
+              attempts: 1,
+            },
           },
         }));
         try {
-          await closeWorkOrder(workOrderId, note, config);
-          ackIfUnchanged(set, workOrderId, note);
+          await closeWorkOrder(workOrderId, note, config, isoOrUndefined(completedAt));
+          ackIfUnchanged(set, workOrderId, note, completedAt);
         } catch {
           // Keep it un-acked; flush() retries on the next sync tick.
         }
@@ -114,8 +141,19 @@ export const usePendingCloses = create<PendingClosesState>()(
             // has already made (missing = the immediate try in queueClose).
             const attempts = (entry.attempts ?? 1) + 1;
             try {
-              await closeWorkOrder(entry.workOrderId, entry.note, config);
-              const acked = ackIfUnchanged(set, entry.workOrderId, entry.note, attempts);
+              await closeWorkOrder(
+                entry.workOrderId,
+                entry.note,
+                config,
+                isoOrUndefined(entry.completedAt),
+              );
+              const acked = ackIfUnchanged(
+                set,
+                entry.workOrderId,
+                entry.note,
+                entry.completedAt,
+                attempts,
+              );
               // Only report a close that this request actually completed. If
               // the note changed while the request was in flight, the entry
               // stays queued and the event belongs to the later attempt.

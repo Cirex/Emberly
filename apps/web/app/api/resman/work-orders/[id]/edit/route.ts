@@ -26,13 +26,24 @@ export async function POST(
   const auth = await requireResmanApiKey(request);
   if (!auth.ok) return auth.response;
 
-  const patch: { technician?: string; description?: string; completionNotes?: string } = {};
+  const patch: {
+    technician?: string;
+    description?: string;
+    completionNotes?: string;
+    scheduledAt?: string | null;
+  } = {};
   try {
     const body = (await request.json()) as Record<string, unknown>;
     if (typeof body.technician === "string") patch.technician = body.technician.slice(0, 200);
     if (typeof body.description === "string") patch.description = body.description.slice(0, 8000);
     if (typeof body.completionNotes === "string") {
       patch.completionNotes = body.completionNotes.slice(0, 8000);
+    }
+    // The booked visit. `null` is a real value here — it clears the booking —
+    // so it is accepted distinctly from "absent", which means "leave it alone".
+    if (body.scheduledAt === null) patch.scheduledAt = null;
+    else if (typeof body.scheduledAt === "string" && !Number.isNaN(Date.parse(body.scheduledAt))) {
+      patch.scheduledAt = new Date(body.scheduledAt).toISOString();
     }
   } catch {
     /* fall through to the empty-patch check */

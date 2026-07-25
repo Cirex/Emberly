@@ -103,6 +103,16 @@ export interface WorkOrderEditPatch {
   technician?: string;
   description?: string;
   completionNotes?: string;
+  /**
+   * When the visit is booked, as ISO 8601 — the shape `date_scheduled` already
+   * has in the mirror, so the overlay can be compared to the base row without
+   * reformatting. `null` clears the booking.
+   *
+   * The completion date is deliberately NOT here: stamping it closes the work
+   * order, which is the close path's job (see `closeWorkOrder`), not a field
+   * edit's.
+   */
+  scheduledAt?: string | null;
 }
 
 /**
@@ -134,18 +144,24 @@ export async function editWorkOrder(
  * Ask the server to close a work order. The server side is a STUB today —
  * it validates and answers { queued: true } without touching ResMan (see the
  * route's TODO). The app treats a queued close as "Closed · pending ResMan".
+ *
+ * `completedAt` (ISO 8601) is when the work was actually finished, which is
+ * not always now: a tech closing out Friday's job on Monday morning needs the
+ * record to say Friday. Omitted means "the server decides", preserving the
+ * behaviour of every caller that just marks a job complete on the spot.
  */
 export async function closeWorkOrder(
   id: string,
   note: string,
   config: StaffConfig,
+  completedAt?: string,
 ): Promise<CloseResponse> {
   const res = await fetch(
     `${config.baseUrl}/api/resman/work-orders/${encodeURIComponent(id)}/close`,
     {
       method: "POST",
       headers: { Authorization: `Bearer ${config.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(note ? { note } : {}),
+      body: JSON.stringify({ ...(note ? { note } : {}), ...(completedAt ? { completedAt } : {}) }),
     },
   );
   if (res.status === 404) throw new Error("Work order not found");

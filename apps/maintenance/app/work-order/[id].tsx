@@ -5,10 +5,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { capture } from "@/lib/analytics";
 import { CloseWorkOrderSheet } from "@/components/work-orders/CloseWorkOrderSheet";
+import { DateTimeSheet } from "@/components/work-orders/DateTimeSheet";
 import { MarkdownEditorSheet } from "@/components/work-orders/MarkdownEditorSheet";
 import { MarkdownLite } from "@/components/work-orders/markdown";
 import { TechBadge } from "@/components/work-orders/rows";
@@ -16,7 +17,7 @@ import { normalizedOccupancyFilterValue } from "@/lib/derived/filtering";
 import { technicianDisplayName } from "@/lib/derived/parse";
 import { workOrderStatusColor } from "@/lib/derived/status";
 import { tagIconName, tagTint } from "@/lib/derived/tags";
-import { abbreviatedDate, calendarDaysBetween } from "@/lib/derived/time";
+import { abbreviatedDate, calendarDaysBetween, DAY_MS } from "@/lib/derived/time";
 import type { ParsedWorkOrder } from "@/lib/derived/types";
 import { useDerivedSnapshot } from "@/lib/hooks/use-derived-snapshot";
 import { useConfig } from "@/lib/stores/config";
@@ -71,6 +72,8 @@ export default function WorkOrderDetail() {
   );
   // Close confirmation sheet (Mark complete + optional completion photos).
   const [closeSheetOpen, setCloseSheetOpen] = useState(false);
+  // Which journey date the technician is picking, if any.
+  const [pickingDate, setPickingDate] = useState<null | "scheduled" | "completed">(null);
 
   const wo = findWorkOrder(snapshot.byUnit, id);
 
@@ -169,9 +172,62 @@ export default function WorkOrderDetail() {
     .sort((a, b) => (b.reportedAt ?? -Infinity) - (a.reportedAt ?? -Infinity) || 0);
   const numberById = new Map(unitOrders.map((w) => [w.id, w.number]));
 
+  // Journey dates the technician can edit, with the local overlays on top: a
+  // queued close carries its own completion date, and a pending edit its own
+  // scheduled date, until the sync mirror absorbs them.
+  const closeEntry = pending[wo.id];
+  // `undefined` means no local edit, so the base row shows; `null` means the
+  // technician cleared the date and must NOT fall back to the row's value.
+  const scheduledOverlay = parsedOverlayDate(overlay?.scheduledAt);
+  const scheduledAtShown = scheduledOverlay === undefined ? wo.scheduledAt : scheduledOverlay;
+  const completedAtShown = closeEntry?.completedAt ?? wo.completedAt;
+  // A close the technician stamped locally that ResMan has not confirmed yet —
+  // the only close this screen is entitled to take back.
+  const closeIsLocalOnly = closeEntry !== undefined && wo.completedAt === null;
+
   const isOpen = wo.completedAt === null && !/^(completed|closed|canceled)$/i.test(wo.status);
-  const pendingClose = pending[wo.id] !== undefined;
+  const pendingClose = closeEntry !== undefined;
   const canClose = isOpen && !pendingClose;
+
+  /**
+   * Closing without technician notes leaves no record of what was done, so the
+   * technician is warned — and then trusted. They may be closing a job whose
+   * notes live in a photo, or finishing someone else's ticket; a hard block
+   * would just teach them to type a space. Both close doors share this, so the
+   * warning can't be sidestepped by using the other one.
+   */
+  const withNotesWarning = (proceed: () => void) => {
+    const notes = (overlay?.completionNotes ?? wo.raw.completion_notes ?? "").trim();
+    if (notes.length > 0) {
+      proceed();
+      return;
+    }
+    capture("close_without_notes_warned", { workOrderId: wo.id });
+    Alert.alert(
+      t("workOrders.dates.noNotesTitle"),
+      t("workOrders.dates.noNotesBody", { number: wo.number }),
+      [
+        { text: t("workOrders.dates.cancel"), style: "cancel" },
+        { text: t("workOrders.dates.addNotes"), onPress: () => setEditing("completionNotes") },
+        {
+          text: t("workOrders.dates.closeAnyway"),
+          style: "destructive",
+          onPress: proceed,
+        },
+      ],
+    );
+  };
+
+  /** Stamp a completion date, which IS the close — status follows the date. */
+  const onPickCompleted = (ms: number) => {
+    setPickingDate(null);
+    withNotesWarning(() => {
+      useJobTime.getState().close(wo.id);
+      void queueClose(wo.id, "", { baseUrl, token }, ms);
+      // No PII: internal id + the door the close came through.
+      capture("work_order_completed", { workOrderId: wo.id, status: wo.status, via: "date" });
+    });
+  };
 
   const onShowOnMap = () => {
     capture("show_on_map_used");
@@ -183,30 +239,36 @@ export default function WorkOrderDetail() {
     setCloseSheetOpen(false);
     const config = { baseUrl, token };
     const workOrderId = wo.id;
-    // Queue the photos locally, then the close (which fires its own immediate
-    // attempt), then kick a photo flush so the uploads ride right behind the
-    // close instead of waiting a full sync tick. Any failure just leaves the
-    // queues for the next tick — closing stays offline-safe.
-    void (async () => {
-      const photoStore = useWorkOrderPhotos.getState();
-      for (const uri of photoUris) {
-        try {
-          await photoStore.enqueue(workOrderId, uri, "completion");
-        } catch {
-          // Copying the picked file failed — skip this photo, keep closing.
+    const finish = () => {
+      // Queue the photos locally, then the close (which fires its own immediate
+      // attempt), then kick a photo flush so the uploads ride right behind the
+      // close instead of waiting a full sync tick. Any failure just leaves the
+      // queues for the next tick — closing stays offline-safe.
+      void (async () => {
+        const photoStore = useWorkOrderPhotos.getState();
+        for (const uri of photoUris) {
+          try {
+            await photoStore.enqueue(workOrderId, uri, "completion");
+          } catch {
+            // Copying the picked file failed — skip this photo, keep closing.
+          }
         }
-      }
-      // The clock stops and the record is stamped, not pruned: time and
-      // parts have nowhere to go until closed-WO submission exists, so the
-      // device holds the only copy.
-      useJobTime.getState().close(workOrderId);
-      await queueClose(workOrderId, "", config);
-      if (photoUris.length > 0) await useWorkOrderPhotos.getState().flush(config);
-    })();
-    // No PII: internal work-order id + prior status category only.
-    if (photoUris.length === 0) capture("completion_photo_skipped", { workOrderId });
-    capture("work_order_completed", { workOrderId, status: wo.status });
-    router.back();
+        // The clock stops and the record is stamped, not pruned: time and
+        // parts have nowhere to go until closed-WO submission exists, so the
+        // device holds the only copy.
+        useJobTime.getState().close(workOrderId);
+        await queueClose(workOrderId, "", config);
+        if (photoUris.length > 0) await useWorkOrderPhotos.getState().flush(config);
+      })();
+      // No PII: internal work-order id + prior status category only.
+      if (photoUris.length === 0) capture("completion_photo_skipped", { workOrderId });
+      capture("work_order_completed", { workOrderId, status: wo.status });
+      router.back();
+    };
+    // Attached photos are themselves a record of the work, so a close that
+    // carries them doesn't get the empty-notes warning.
+    if (photoUris.length > 0) finish();
+    else withNotesWarning(finish);
   };
 
   return (
@@ -349,9 +411,18 @@ export default function WorkOrderDetail() {
           hairline={hairline}
           first
           trailing={
-            wo.completedAt !== null && wo.daysToComplete !== null ? (
-              <AgePill text={`Closed in ${wo.daysToComplete} days`} color={GREEN} />
-            ) : wo.reportedAt !== null && wo.completedAt === null ? (
+            completedAtShown !== null && wo.reportedAt !== null ? (
+              // daysToComplete is null until the mirror carries both dates, so
+              // a close stamped on this device computes it the same way the
+              // engine does rather than showing nothing.
+              <AgePill
+                text={`Closed in ${
+                  wo.daysToComplete ??
+                  Math.max(0, Math.floor((completedAtShown - wo.reportedAt) / DAY_MS))
+                } days`}
+                color={GREEN}
+              />
+            ) : wo.reportedAt !== null ? (
               <AgePill
                 text={`Open ${calendarDaysBetween(wo.reportedAt, nowMs)} days`}
                 color={RED}
@@ -359,7 +430,16 @@ export default function WorkOrderDetail() {
             ) : null
           }
         >
-          <Journey wo={wo} nowMs={nowMs} dark={dark} paper={paper} />
+          <Journey
+            wo={wo}
+            scheduledAt={scheduledAtShown}
+            completedAt={completedAtShown}
+            nowMs={nowMs}
+            dark={dark}
+            paper={paper}
+            onPressScheduled={() => setPickingDate("scheduled")}
+            onPressCompleted={() => setPickingDate("completed")}
+          />
         </Section>
 
         {/* Time & parts — device-local until closed-WO submission exists. */}
@@ -623,6 +703,52 @@ export default function WorkOrderDetail() {
         onClose={() => setCloseSheetOpen(false)}
       />
 
+      {/* Scheduled visit — a plain field edit, no status consequences. */}
+      <DateTimeSheet
+        visible={pickingDate === "scheduled"}
+        title={t("workOrders.dates.scheduledTitle")}
+        subtitle={t("workOrders.dates.scheduledSubtitle", {
+          number: wo.number,
+          unit: wo.unitNumber || "—",
+        })}
+        value={scheduledAtShown}
+        dark={dark}
+        allowClear={scheduledAtShown !== null}
+        onPick={(ms) => {
+          setPickingDate(null);
+          void queueEdit(
+            wo.id,
+            { scheduledAt: new Date(ms).toISOString() },
+            { baseUrl, token },
+          );
+        }}
+        onClear={() => {
+          setPickingDate(null);
+          void queueEdit(wo.id, { scheduledAt: null }, { baseUrl, token });
+        }}
+        onClose={() => setPickingDate(null)}
+      />
+
+      {/* Completion date — stamping one closes the work order. */}
+      <DateTimeSheet
+        visible={pickingDate === "completed"}
+        title={t("workOrders.dates.completedTitle")}
+        subtitle={t("workOrders.dates.completedSubtitle", { number: wo.number })}
+        value={completedAtShown}
+        dark={dark}
+        confirmLabel={t("workOrders.dates.confirmClose")}
+        // Only a close this device queued can be taken back. Once ResMan has
+        // it, reopening is ResMan's decision, not the app's.
+        allowClear={closeIsLocalOnly}
+        clearLabel={t("workOrders.dates.cancelClose")}
+        onPick={onPickCompleted}
+        onClear={() => {
+          setPickingDate(null);
+          usePendingCloses.getState().remove(wo.id);
+        }}
+        onClose={() => setPickingDate(null)}
+      />
+
       {/* Technician picker */}
       <TechnicianPicker
         visible={editing === "technician"}
@@ -664,6 +790,20 @@ export default function WorkOrderDetail() {
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * A pending-edit date as epoch ms, distinguishing the three states the overlay
+ * can be in: absent (`undefined` — no local edit, defer to the base row),
+ * explicitly cleared (`null`), or set. An unparseable string is treated as no
+ * edit rather than as a cleared date, so a malformed overlay can't blank out a
+ * date the mirror actually has.
+ */
+function parsedOverlayDate(value: string | null | undefined): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? undefined : ms;
+}
 
 function findWorkOrder(
   byUnit: Map<string, ParsedWorkOrder[]>,
@@ -970,19 +1110,35 @@ const NODE = 16;
 
 function Journey({
   wo,
+  scheduledAt,
+  completedAt,
   nowMs,
   dark,
   paper,
+  onPressScheduled,
+  onPressCompleted,
 }: {
   wo: ParsedWorkOrder;
+  /** Journey dates with the local overlays applied, not the raw parsed row. */
+  scheduledAt: number | null;
+  completedAt: number | null;
   nowMs: number;
   dark: boolean;
   paper: string;
+  onPressScheduled: () => void;
+  onPressCompleted: () => void;
 }) {
-  const stops: { label: string; ms: number | null; unsetText: string }[] = [
+  // Reported is ResMan's record of when the resident called it in — not the
+  // technician's to rewrite, so it is the one stop that doesn't respond.
+  const stops: {
+    label: string;
+    ms: number | null;
+    unsetText: string;
+    onPress?: () => void;
+  }[] = [
     { label: "Reported", ms: wo.reportedAt, unsetText: "—" },
-    { label: "Scheduled", ms: wo.scheduledAt, unsetText: "Set date" },
-    { label: "Completed", ms: wo.completedAt, unsetText: "—" },
+    { label: "Scheduled", ms: scheduledAt, unsetText: "Set date", onPress: onPressScheduled },
+    { label: "Completed", ms: completedAt, unsetText: "Set date", onPress: onPressCompleted },
   ];
   return (
     <View style={{ flexDirection: "row", marginTop: 2 }}>
@@ -991,8 +1147,20 @@ function Journey({
         const last = i === stops.length - 1;
         // The segment LEAVING this node is "done" only when both ends exist.
         const segmentDone = filled && stops[i + 1]?.ms !== null;
+        const Stop = s.onPress ? Pressable : View;
         return (
-          <View key={s.label} style={{ flex: last ? 0 : 1, minWidth: last ? 74 : undefined }}>
+          <Stop
+            key={s.label}
+            onPress={s.onPress}
+            accessibilityRole={s.onPress ? "button" : undefined}
+            accessibilityLabel={
+              s.onPress
+                ? `${s.label}: ${filled ? abbreviatedDate(s.ms, nowMs) : "not set"}. Tap to change.`
+                : undefined
+            }
+            hitSlop={s.onPress ? { top: 6, bottom: 10 } : undefined}
+            style={{ flex: last ? 0 : 1, minWidth: last ? 74 : undefined }}
+          >
             <View style={{ flexDirection: "row", alignItems: "center", height: NODE }}>
               <View
                 style={{
@@ -1052,18 +1220,35 @@ function Journey({
             >
               {s.label.toUpperCase()}
             </Text>
-            <Text
-              style={{
-                fontSize: 12.5,
-                fontWeight: filled ? "700" : "600",
-                color: filled ? (dark ? "#FFFFFF" : NAVY) : MUTED,
-                marginTop: 2,
-                fontVariant: ["tabular-nums"],
-              }}
-            >
-              {filled ? abbreviatedDate(s.ms, nowMs) : s.unsetText}
-            </Text>
-          </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 3, marginTop: 2 }}>
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: filled ? "700" : "600",
+                  // An editable stop that is still empty reads as an invitation
+                  // (accent) rather than as missing data (grey).
+                  color: filled
+                    ? dark
+                      ? "#FFFFFF"
+                      : NAVY
+                    : s.onPress
+                      ? OLIVE_TEXT
+                      : MUTED,
+                  fontVariant: ["tabular-nums"],
+                }}
+              >
+                {filled ? abbreviatedDate(s.ms, nowMs) : s.unsetText}
+              </Text>
+              {s.onPress ? (
+                <Ionicons
+                  name="chevron-down"
+                  size={10}
+                  color={filled ? MUTED : OLIVE_TEXT}
+                  style={{ marginTop: 1 }}
+                />
+              ) : null}
+            </View>
+          </Stop>
         );
       })}
     </View>

@@ -15,6 +15,7 @@
  */
 import { NextResponse } from "next/server";
 import { type AccessTokenSubject, authenticateAccessToken } from "./access-tokens";
+import { appRoleScopes, tokenForbiddenForResource } from "./app-role-capabilities";
 import { requestSource } from "./http";
 import { checkRateLimit } from "./rate-limit";
 import { authenticateScanner, hasScannerCredential } from "./scanner-auth";
@@ -32,43 +33,6 @@ export type ResmanApiAuthResult =
   | { ok: true; kind: "token"; subject: AccessTokenSubject }
   | { ok: true; kind: "scanner" }
   | { ok: false; response: NextResponse };
-
-/**
- * Field-device tokens (the maintenance + security apps mint an `eapi_` token via
- * /api/admin/auth/app-token with a SCOPED role) may read only the operational
- * surface their app needs. Back-office roles (staff, super_admin, …) have no
- * entry here and are unrestricted by role — limited only by their explicit
- * `scopes`. This is the read-side complement to the scanner `scannerVisible`
- * allowlist: without it, a leaked maintenance token could pull the financial
- * ledger (`transactions`), the resident roster (`residents`/`leases`), and MLGW
- * billing, none of which the maintenance app has any business reading.
- */
-const FIELD_DEVICE_RESOURCE_ALLOWLIST: Record<string, ReadonlySet<string>> = {
-  security_manager: new Set(["units", "work-orders"]),
-};
-
-/** True when this token's role is a scoped field-device role (not back-office). */
-export function isFieldDeviceRole(role: string): boolean {
-  return role in FIELD_DEVICE_RESOURCE_ALLOWLIST;
-}
-
-/**
- * Whether an authenticated token is forbidden from a resource. `resource` is the
- * name matched against the token's `scopes`; `capability` (defaults to
- * `resource`) is matched against the role allowlist, letting a PII-heavy bespoke
- * route (e.g. the guard-only unit detail pane) be denied to field devices while
- * still counting against the `units` scope for back-office tokens.
- */
-export function tokenForbiddenForResource(
-  subject: AccessTokenSubject,
-  resource: string,
-  capability: string = resource,
-): boolean {
-  const roleAllow = FIELD_DEVICE_RESOURCE_ALLOWLIST[subject.role];
-  if (roleAllow && !roleAllow.has(capability)) return true;
-  if (subject.scopes.length > 0 && !subject.scopes.includes(resource)) return true;
-  return false;
-}
 
 /** Extract an `eapi_` API token from the Authorization/x-resman-api-key header. */
 function apiToken(request: Request): string | null {
@@ -112,3 +76,45 @@ export async function requireResmanApiKey(request: Request): Promise<ResmanApiAu
   }
   return { ok: false, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
 }
+
+export type StaffTokenResult =
+  /** `kind` is always "token" — it stays on the shape so a result can still be
+   *  handed to the actor helpers that accept a ResmanApiAuthResult. */
+  | { ok: true; kind: "token"; subject: AccessTokenSubject }
+  | { ok: false; response: NextResponse };
+
+/**
+ * Authenticate a STAFF-ONLY route: one of the bespoke back-office surfaces
+ * (`/api/resman/manager/*`, `/api/resman/pm-tasks`) that the generic resource
+ * router — and therefore its `scannerVisible` / scope authorization — never
+ * touches.
+ *
+ * These routes historically checked only `auth.kind === "scanner"`. That reads
+ * as "staff only", but it is not: a scoped app token is `kind: "token"`, so the
+ * maintenance app's own credential sailed straight through to the rent ledger,
+ * the delinquency list, lease terms, MLGW billing and the resident roster with
+ * birthdates. Anyone holding a tech's phone held the back office.
+ *
+ * `capability` is checked against BOTH gates:
+ *   - the role's capability set, so a scoped app role reaches only its own app's
+ *     surface;
+ *   - the token's explicit `scopes`, so a deliberately narrowed back-office
+ *     token stays narrowed here too (empty `scopes` means unrestricted).
+ */
+export async function requireStaffToken(
+  request: Request,
+  capability: string,
+): Promise<StaffTokenResult> {
+  const auth = await requireResmanApiKey(request);
+  if (!auth.ok) return auth;
+  // A scanner is a gate device on a wall: a shared, physically-reachable
+  // credential with no staff identity behind it.
+  if (auth.kind === "scanner" || tokenForbiddenForResource(auth.subject, capability)) {
+    return { ok: false, response: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  }
+  return { ok: true, kind: "token", subject: auth.subject };
+}
+
+// The authorization policy lives in its own pure module; re-exported so every
+// caller keeps importing authentication and authorization from one place.
+export { appRoleScopes, tokenForbiddenForResource };

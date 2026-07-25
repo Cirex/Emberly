@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireResmanApiKey } from "@/lib/resman-api-auth";
+import { requireStaffToken } from "@/lib/resman-api-auth";
 import { fetchLedgerSummaryEntries, summarizeLedgerEntries } from "@/lib/manager-ledger";
 import { createUntypedAdminClient } from "@/lib/supabase/admin";
 
@@ -14,11 +14,8 @@ export const dynamic = "force-dynamic";
  * in JS over a paged, column-slim select capped at 50k rows. Staff-token only.
  */
 export async function GET(request: Request): Promise<NextResponse> {
-  const auth = await requireResmanApiKey(request);
+  const auth = await requireStaffToken(request, "manager:ledger");
   if (!auth.ok) return auth.response;
-  if (auth.kind === "scanner") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   try {
     const client = createUntypedAdminClient();

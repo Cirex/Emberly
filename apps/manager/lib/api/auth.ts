@@ -37,6 +37,10 @@ export async function signInWithResman(input: {
         username: input.username,
         password: input.password,
         device: input.device ?? "",
+        // Names the app so the server mints the manager role. The two apps
+        // share this endpoint but not their surfaces — without this the token
+        // comes back scoped to maintenance and every manager screen 403s.
+        app: "manager",
       }),
     });
   } catch {

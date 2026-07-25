@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireResmanApiKey } from "@/lib/resman-api-auth";
+import { requireStaffToken } from "@/lib/resman-api-auth";
 import { listPmTaskGroups } from "@/lib/pm-tasks";
 import { createUntypedAdminClient } from "@/lib/supabase/admin";
 
@@ -21,11 +21,8 @@ export const dynamic = "force-dynamic";
 const ROUND_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 export async function GET(request: Request): Promise<NextResponse> {
-  const auth = await requireResmanApiKey(request);
+  const auth = await requireStaffToken(request, "work-orders");
   if (!auth.ok) return auth.response;
-  if (auth.kind === "scanner") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const roundParam = new URL(request.url).searchParams.get("round") ?? "current";
   if (roundParam !== "current" && !ROUND_RE.test(roundParam)) {

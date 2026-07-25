@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireResmanApiKey } from "@/lib/resman-api-auth";
+import { requireStaffToken } from "@/lib/resman-api-auth";
 import {
   createInsuranceAction,
   INSURANCE_ACTION_KINDS,
@@ -27,11 +27,8 @@ const CreateSchema = z.object({
 });
 
 export async function POST(request: Request): Promise<NextResponse> {
-  const auth = await requireResmanApiKey(request);
+  const auth = await requireStaffToken(request, "manager:insurance");
   if (!auth.ok) return auth.response;
-  if (auth.kind === "scanner") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const parsed = CreateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {

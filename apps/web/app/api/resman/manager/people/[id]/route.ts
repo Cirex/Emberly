@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isFieldDeviceRole, requireResmanApiKey } from "@/lib/resman-api-auth";
+import { requireStaffToken } from "@/lib/resman-api-auth";
 import {
   getPersonProfile,
   peopleAuditActor,
@@ -29,11 +29,8 @@ type RouteParams = { params: Promise<{ id: string }> };
  * Staff-token only.
  */
 export async function GET(request: Request, { params }: RouteParams): Promise<NextResponse> {
-  const auth = await requireResmanApiKey(request);
+  const auth = await requireStaffToken(request, "manager:people");
   if (!auth.ok) return auth.response;
-  if (auth.kind === "scanner" || isFieldDeviceRole(auth.subject.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   try {
     const { id } = await params;

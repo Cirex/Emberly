@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireResmanApiKey } from "@/lib/resman-api-auth";
+import { requireStaffToken } from "@/lib/resman-api-auth";
 import { RENEWAL_RESOLUTION_STATUSES, resolveRenewalOffer } from "@/lib/renewal-offers";
 import { createUntypedAdminClient } from "@/lib/supabase/admin";
 
@@ -23,11 +23,8 @@ const ResolveSchema = z.object({
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: RouteParams): Promise<NextResponse> {
-  const auth = await requireResmanApiKey(request);
+  const auth = await requireStaffToken(request, "manager:renewals");
   if (!auth.ok) return auth.response;
-  if (auth.kind === "scanner") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const parsed = ResolveSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {

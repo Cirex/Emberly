@@ -1,6 +1,8 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { mock } = require("bun:test");
+const { NextResponse } = require("next/server");
+const { tokenForbiddenForResource } = require("../lib/app-role-capabilities");
 
 // Same bun:test mock.module harness as tests/manager-api.test.js — this suite
 // runs in its own process (the package.json `test` script runs each file
@@ -14,7 +16,16 @@ const state = {
 
 mock.module("@/lib/resman-api-auth", () => ({
   requireResmanApiKey: async () => state.auth,
-  isFieldDeviceRole: (role) => role === "security_manager",
+  // Only AUTHENTICATION is stubbed. The allow/deny decision runs the real
+  // policy from lib/app-role-capabilities.ts, so a route wired to the wrong
+  // capability fails here rather than quietly passing a stubbed check.
+  requireStaffToken: async (_request, capability) => {
+    if (!state.auth.ok) return state.auth;
+    if (state.auth.kind === "scanner" || tokenForbiddenForResource(state.auth.subject, capability)) {
+      return { ok: false, response: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+    }
+    return state.auth;
+  },
 }));
 
 mock.module("@/lib/supabase/admin", () => ({

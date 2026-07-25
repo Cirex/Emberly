@@ -37,6 +37,9 @@ export async function signInWithResman(input: {
         username: input.username,
         password: input.password,
         device: input.device ?? "",
+        // Names the app so the server mints the maintenance role — work orders
+        // and units, never the back-office manager surface.
+        app: "maintenance",
       }),
     });
   } catch {

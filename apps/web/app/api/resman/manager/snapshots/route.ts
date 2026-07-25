@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireResmanApiKey } from "@/lib/resman-api-auth";
+import { requireStaffToken } from "@/lib/resman-api-auth";
 import { clampSnapshotMonths, listManagerSnapshots } from "@/lib/manager-snapshots";
 import { createUntypedAdminClient } from "@/lib/supabase/admin";
 
@@ -14,11 +14,8 @@ export const dynamic = "force-dynamic";
  * scanners are gate devices and property KPIs are none of their business.
  */
 export async function GET(request: Request): Promise<NextResponse> {
-  const auth = await requireResmanApiKey(request);
+  const auth = await requireStaffToken(request, "manager:snapshots");
   if (!auth.ok) return auth.response;
-  if (auth.kind === "scanner") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   try {
     const months = clampSnapshotMonths(new URL(request.url).searchParams.get("months"));

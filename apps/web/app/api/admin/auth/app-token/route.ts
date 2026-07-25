@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { mintAccessToken } from "@/lib/access-tokens";
 import { authenticateResmanAdmin } from "@/lib/admin-users";
 import { requestSource } from "@/lib/http";
+import { appRoleScopes } from "@/lib/resman-api-auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createUntypedAdminClient } from "@/lib/supabase/admin";
 
 /**
  * POST /api/admin/auth/app-token
  *
- * Staff sign-in for the native apps (EmberlyMaintenance). Validates ResMan
+ * Staff sign-in for the native apps (EmberlyMaintenance, EmberlyManager —
+ * `app` in the body says which, defaulting to maintenance). Validates ResMan
  * credentials exactly like /api/admin/auth, but instead of a browser session
  * cookie it mints a per-user `eapi_` access token (kind='api_resman',
  * subject_type='admin_user') and returns the plaintext once. The app stores it
@@ -29,10 +31,11 @@ export async function POST(request: NextRequest) {
   }
 
   const str = (v: unknown) => (typeof v === "string" ? v : "");
-  const { username, password, device } = {
+  const { username, password, device, app } = {
     username: str((body as Record<string, unknown>)?.username).trim(),
     password: str((body as Record<string, unknown>)?.password),
     device: str((body as Record<string, unknown>)?.device).trim().slice(0, 64),
+    app: str((body as Record<string, unknown>)?.app).trim(),
   };
   const source = requestSource(request);
 
@@ -66,22 +69,30 @@ export async function POST(request: NextRequest) {
 
   const admin = result.admin;
   const client = createUntypedAdminClient();
-  // A maintenance device gets a SCOPED role, never the person's back-office
-  // role — it can read work orders/units and write map annotations + unit tags
-  // (the security_manager surface), but never the super_admin routes. The staff
-  // member's name rides on the label so the token is identifiable in the admin
-  // access-token tooling.
+  // A device gets a SCOPED role, never the person's back-office role — never
+  // the super_admin routes, and never a surface belonging to a DIFFERENT app.
+  // The two native apps ask for very different things: EmberlyMaintenance wants
+  // work orders and units; EmberlyManager wants the rent ledger, lease terms,
+  // MLGW billing and the resident roster. Minting one role for both meant a
+  // tech's phone carried a credential for the whole back office, so the app
+  // names itself here and gets only its own capabilities.
+  //
+  // `app` is absent on installs that predate this field; they are all
+  // maintenance builds, so that stays the default.
+  const isManager = app === "manager";
+  const role = isManager ? "property_manager" : "security_manager";
+  const appLabel = isManager ? "app:manager" : "app:maintenance";
   const who = admin.displayName?.trim() || username;
   const minted = await mintAccessToken(client, {
     kind: "api_resman",
     subjectType: "admin_user",
     subjectId: admin.adminId,
-    label: device ? `app:maintenance · ${who} · ${device}` : `app:maintenance · ${who}`,
-    role: "security_manager",
-    // Pin the token to exactly the resources the maintenance app reads. The
-    // security_manager role is also enforced server-side (resman-api-auth), so
-    // this is defense in depth — and makes the token self-describing.
-    scopes: ["units", "work-orders"],
+    label: device ? `${appLabel} · ${who} · ${device}` : `${appLabel} · ${who}`,
+    role,
+    // Pin the token to exactly the capabilities its role allows. The role is
+    // also enforced server-side (resman-api-auth), so this is defense in depth
+    // — and makes the token self-describing in the admin token tooling.
+    scopes: appRoleScopes(role),
   });
 
   return NextResponse.json({
@@ -90,7 +101,7 @@ export async function POST(request: NextRequest) {
     admin: {
       adminId: admin.adminId,
       // The token's effective (scoped) role, not the person's back-office role.
-      role: "security_manager",
+      role,
       displayName: admin.displayName,
       personId: result.personId,
     },

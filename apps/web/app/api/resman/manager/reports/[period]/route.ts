@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchOwnerReportFile, isValidReportPeriod } from "@/lib/manager-reports";
-import { requireResmanApiKey } from "@/lib/resman-api-auth";
+import { requireStaffToken } from "@/lib/resman-api-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,11 +16,8 @@ export const dynamic = "force-dynamic";
 type RouteParams = { params: Promise<{ period: string }> };
 
 export async function GET(request: Request, { params }: RouteParams): Promise<NextResponse> {
-  const auth = await requireResmanApiKey(request);
+  const auth = await requireStaffToken(request, "manager:reports");
   if (!auth.ok) return auth.response;
-  if (auth.kind === "scanner") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   try {
     const { period } = await params;

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireResmanApiKey } from "@/lib/resman-api-auth";
+import { requireStaffToken } from "@/lib/resman-api-auth";
 import { setMlgwReviewed } from "@/lib/manager-mlgw";
 import { createUntypedAdminClient } from "@/lib/supabase/admin";
 
@@ -21,11 +21,8 @@ const ReviewSchema = z.object({
 });
 
 export async function POST(request: Request): Promise<NextResponse> {
-  const auth = await requireResmanApiKey(request);
+  const auth = await requireStaffToken(request, "manager:mlgw");
   if (!auth.ok) return auth.response;
-  if (auth.kind === "scanner") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const parsed = ReviewSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {

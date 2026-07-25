@@ -26,6 +26,7 @@ const ASYNC_GUARDS = [
   "requireAdmin",
   "requireAdminOrScanner",
   "requireResmanApiKey",
+  "requireStaffToken",
 ];
 
 function routeFiles(dir) {

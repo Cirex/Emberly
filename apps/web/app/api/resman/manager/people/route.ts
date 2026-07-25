@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isFieldDeviceRole, requireResmanApiKey } from "@/lib/resman-api-auth";
+import { requireStaffToken } from "@/lib/resman-api-auth";
 import { listPeopleIndex } from "@/lib/manager-people";
 import { createUntypedAdminClient } from "@/lib/supabase/admin";
 
@@ -20,11 +20,8 @@ export const dynamic = "force-dynamic";
  * (maintenance, security) have no business holding the resident roster.
  */
 export async function GET(request: Request): Promise<NextResponse> {
-  const auth = await requireResmanApiKey(request);
+  const auth = await requireStaffToken(request, "manager:people");
   if (!auth.ok) return auth.response;
-  if (auth.kind === "scanner" || isFieldDeviceRole(auth.subject.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   try {
     const client = createUntypedAdminClient();

@@ -282,6 +282,17 @@ export async function syncWorkOrders(params: SyncWorkOrdersParams): Promise<Sync
   // detectable afterwards (null = read failed → skip notifications).
   const existingIds = await loadExistingWorkOrderIds(supabase, propertyId, log);
 
+  // One stamp for the whole pass, written to every row.
+  //
+  // `synced_at` used to be insert-only (a column default), which left
+  // max(updated_at) as the de-facto "when did work-orders last sync" signal —
+  // it worked only because the unconditional trigger bumped every row. The
+  // change-detecting trigger deliberately takes that away, so provenance moves
+  // to the column named for it: synced_at = "the scraper saw this row",
+  // updated_at = "this row changed". The trigger excludes synced_at from its
+  // comparison, so stamping it here cannot defeat the change detection.
+  const scrapedAt = new Date().toISOString();
+
   const woRows: Array<Record<string, unknown>> = [];
   let linkedUnits = 0;
   for (const row of dataRows) {
@@ -289,6 +300,7 @@ export async function syncWorkOrders(params: SyncWorkOrdersParams): Promise<Sync
     if (!mapped) continue;
     if (mapped.resman_unit_id !== null) linkedUnits += 1;
     mapped.raw = Object.fromEntries(rows[0].map((h, i) => [h, row[i] ?? ""]));
+    mapped.synced_at = scrapedAt;
     woRows.push(mapped);
   }
 

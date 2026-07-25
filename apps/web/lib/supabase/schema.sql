@@ -35,6 +35,30 @@ begin
 end;
 $$ language plpgsql;
 
+/*
+ * Change-detecting variant, for MIRROR tables whose sync re-upserts every row on
+ * every pass (upsertMirror — that is what makes it idempotent). With the
+ * unconditional function above, such a table's updated_at means "the scraper
+ * last ran", not "this row changed", so nothing can ask what moved since it last
+ * looked: a `updated_at > x` filter returns the whole table.
+ *
+ * Ignores updated_at (computed here) and synced_at (provenance — the sync stamps
+ * it every pass on purpose, so max(synced_at) stays the "last scrape" signal
+ * while updated_at answers "what actually changed").
+ */
+create or replace function public.touch_updated_at_on_change()
+returns trigger as $$
+begin
+  if to_jsonb(new) - 'updated_at' - 'synced_at'
+     = to_jsonb(old) - 'updated_at' - 'synced_at' then
+    new.updated_at = old.updated_at;
+    return new;
+  end if;
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
 create trigger residents_updated_at
   before update on residents
   for each row execute function update_updated_at_column();
@@ -1140,10 +1164,17 @@ create index if not exists resman_work_orders_status_idx on public.resman_work_o
 create index if not exists resman_work_orders_callback_status_idx on public.resman_work_orders (callback_status)
   where callback_status in ('possible','confirmed');
 
+-- Supports the maintenance app's delta read (?updated_since=), which is
+-- property-scoped.
+create index if not exists resman_work_orders_property_updated_at_idx
+  on public.resman_work_orders (resman_property_id, updated_at desc);
+
+-- Change-detecting, NOT the shared unconditional trigger: this is a mirror
+-- table, re-upserted in full every sync pass.
 drop trigger if exists resman_work_orders_updated_at on public.resman_work_orders;
 create trigger resman_work_orders_updated_at
   before update on public.resman_work_orders
-  for each row execute function public.update_updated_at_column();
+  for each row execute function public.touch_updated_at_on_change();
 
 alter table public.resman_work_orders enable row level security;
 

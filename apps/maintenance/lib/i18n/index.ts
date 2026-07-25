@@ -124,6 +124,7 @@ const en = {
     timeline: { movedIn: "Moved in {{date}}" },
     untitled: "Untitled work order",
     loadingMore: "Loading more…",
+    stillLoading: "Still counting the rest of the board…",
     sort: {
       title: "Sort by",
       field: {
@@ -685,6 +686,7 @@ const es: typeof en = {
     timeline: { movedIn: "Mudanza {{date}}" },
     untitled: "Orden sin título",
     loadingMore: "Cargando más…",
+    stillLoading: "Contando el resto del tablero…",
     sort: {
       title: "Ordenar por",
       field: {

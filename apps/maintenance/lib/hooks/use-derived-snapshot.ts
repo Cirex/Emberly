@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { buildSnapshot, type DerivedSnapshot } from "@/lib/derived/snapshot";
 import type { DisplayMode } from "@/lib/derived/types";
-import { unitsVersionOf } from "@/lib/hooks/use-parsed-mirror";
+import { useParsedMirror, unitsVersionOf } from "@/lib/hooks/use-parsed-mirror";
 import { useSettings } from "@/lib/stores/settings";
 import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
@@ -35,23 +35,31 @@ export function useDerivedSnapshot(modeOverride?: DisplayMode): DerivedSnapshot 
   const openFilters = useWorkOrdersView((s) => s.openFilters);
   const closedFilters = useWorkOrdersView((s) => s.closedFilters);
   const signalFilter = useWorkOrdersView((s) => s.signalFilter);
+  // The SAME staged mirror the screens read, so the board and the snapshot can
+  // never disagree about how much of the corpus is parsed. It also means the
+  // boards paint from open work on launch and widen a beat later, instead of
+  // holding the first frame for 706ms.
+  const mirror = useParsedMirror();
 
   return useMemo(
     () =>
-      buildSnapshot({
-        language,
-        workOrders,
-        units,
-        dataVersion,
-        unitsVersion: unitsVersionOf(units),
-        mode,
-        sortOption,
-        search,
-        openFilters,
-        closedFilters,
-        signalFilter,
-        nowMs: Date.now(),
-      }),
-    [language, workOrders, units, dataVersion, mode, sortOption, search, openFilters, closedFilters, signalFilter],
+      buildSnapshot(
+        {
+          language,
+          workOrders,
+          units,
+          dataVersion,
+          unitsVersion: unitsVersionOf(units),
+          mode,
+          sortOption,
+          search,
+          openFilters,
+          closedFilters,
+          signalFilter,
+          nowMs: Date.now(),
+        },
+        mirror,
+      ),
+    [language, workOrders, units, dataVersion, mode, sortOption, search, openFilters, closedFilters, signalFilter, mirror],
   );
 }

@@ -14,6 +14,7 @@ import { buildClosedInsights, type ClosedInsights } from "./closed-insights";
 import { buildScoreCards, type ScoreCard } from "./score-cards";
 import type { WorkOrderSortOption } from "./sort";
 import { buildMonthlyTechnicianSummary, buildWeeklyTechnicianSummary, type TechnicianSummary } from "./technician-summary";
+import { WORK_ORDER_CLOSED_STATUSES } from "@emberly/core";
 import {
   makeUnitIndex,
   type DisplayMode,
@@ -80,6 +81,12 @@ export interface DerivedSnapshot {
   /** Same-unit index for "Related Work Orders" on the detail screen. */
   byUnit: Map<string, ParsedWorkOrder[]>;
   unitIndex: UnitIndex;
+  /**
+   * False while this was built from the open-only launch parse. Anything that
+   * counts CLOSED work is short until the wide parse lands, so a screen showing
+   * those must say it is still counting rather than report a confident zero.
+   */
+  complete: boolean;
 }
 
 /**
@@ -95,6 +102,12 @@ export interface ParsedMirror {
   unitIndex: UnitIndex;
   byUnit: Map<string, ParsedWorkOrder[]>;
   byId: Map<string, ParsedWorkOrder>;
+  /**
+   * False while this holds only the OPEN rows. Screens that can show something
+   * useful from open work alone (My Day, the open board) are already right;
+   * anything counting closed work must wait or say it is still counting.
+   */
+  complete: boolean;
 }
 
 export interface ParseMirrorInput {
@@ -104,7 +117,39 @@ export interface ParseMirrorInput {
   unitsVersion: number;
 }
 
-let parseCache: ParsedMirror | null = null;
+/**
+ * How much of the mirror to parse.
+ *
+ * Measured on device: parsing all 4,074 rows takes 706ms, and it is 72% of My
+ * Day's 982ms first mount. But My Day only ever shows OPEN work — 387 rows,
+ * under a tenth of the corpus — so nine tenths of that second buys the launch
+ * screen nothing. "open" parses just those; "all" does the rest afterwards.
+ */
+export type ParseScope = "open" | "all";
+
+const CLOSED_STATUSES = new Set(WORK_ORDER_CLOSED_STATUSES.map((s) => s.toLowerCase()));
+
+/**
+ * Rows that could belong on an open board, tested on the RAW row so the filter
+ * costs nothing. Deliberately a superset: anything with an unrecognised status
+ * stays in, because a row nobody can classify should still be visible.
+ */
+function openRowsOf(rows: WorkOrder[]): WorkOrder[] {
+  return rows.filter((row) => !CLOSED_STATUSES.has((row.status ?? "").trim().toLowerCase()));
+}
+
+/** One slot per scope: the staged parse holds both at once by design. */
+const parseCaches = new Map<ParseScope, ParsedMirror>();
+
+/** The identity of a data generation, shared by both scopes. */
+export function mirrorKeyOf(input: ParseMirrorInput): string {
+  return `${input.dataVersion}|${input.unitsVersion}`;
+}
+
+/** Whether the FULL parse for this generation is already done and cached. */
+export function hasCompleteMirror(key: string): boolean {
+  return parseCaches.get("all")?.key === key;
+}
 
 /**
  * Parse the mirror, or return the cached parse when nothing has changed.
@@ -116,18 +161,18 @@ let parseCache: ParsedMirror | null = null;
  * numbering schemes would produce different keys for the same array and evict
  * each other on every render.
  */
-export function parseMirror(input: ParseMirrorInput): ParsedMirror {
-  const key = `${input.dataVersion}|${input.unitsVersion}`;
-  if (parseCache?.key === key) return parseCache;
+export function parseMirror(input: ParseMirrorInput, scope: ParseScope = "all"): ParsedMirror {
+  const key = mirrorKeyOf(input);
+  const cached = parseCaches.get(scope);
+  if (cached?.key === key) return cached;
+  // Never hand back the narrow parse when the full one is already done.
+  if (scope === "open" && hasCompleteMirror(key)) return parseCaches.get("all")!;
 
-  // A cache MISS is the expensive path, and the device trace shows My Day's
-  // first mount at ~997ms — most of which is presumed to be this. Presumed is
-  // not measured, so it says so out loud in dev.
-  //
   // `typeof` guarded: __DEV__ is a React Native global, and this module is
   // imported by the derived-engine tests, which run in plain bun.
   const startedAt = DEV ? Date.now() : 0;
-  const parsed = parseAll(input.workOrders);
+  const rows = scope === "open" ? openRowsOf(input.workOrders) : input.workOrders;
+  const parsed = parseAll(rows);
   const unitIndex = makeUnitIndex(input.units);
   const byUnit = new Map<string, ParsedWorkOrder[]>();
   const byId = new Map<string, ParsedWorkOrder>();
@@ -138,11 +183,12 @@ export function parseMirror(input: ParseMirrorInput): ParsedMirror {
     else byUnit.set(unit, [wo]);
     byId.set(wo.id, wo);
   }
-  parseCache = { key, parsed, unitIndex, byUnit, byId };
+  const mirror: ParsedMirror = { key, parsed, unitIndex, byUnit, byId, complete: scope === "all" };
+  parseCaches.set(scope, mirror);
   if (DEV) {
-    console.log(`[perf] parseMirror ${Date.now() - startedAt}ms for ${parsed.length} rows`);
+    console.log(`[perf] parseMirror(${scope}) ${Date.now() - startedAt}ms for ${parsed.length} rows`);
   }
-  return parseCache;
+  return mirror;
 }
 // A few most-recent snapshots, keyed by the full memo key. It must hold more
 // than one because the Work Orders screen and the Make Ready tab are BOTH
@@ -156,7 +202,7 @@ function filtersKey(f: FilterSets): string {
   return [f.status, f.classification, f.occupancy, f.technician, f.tags].map((a) => a.join("")).join("");
 }
 
-export function buildSnapshot(input: SnapshotInput): DerivedSnapshot {
+export function buildSnapshot(input: SnapshotInput, mirror?: ParsedMirror): DerivedSnapshot {
   // The snapshot depends on the calendar day (aging, week windows), not the
   // millisecond — key on the day so the memo survives within a session but a
   // date rollover recomputes.
@@ -172,6 +218,10 @@ export function buildSnapshot(input: SnapshotInput): DerivedSnapshot {
     filtersKey(input.closedFilters),
     input.signalFilter,
     dayKey,
+    // Without this a snapshot built from the OPEN-only parse would be cached
+    // under the same key as the full one, and the rest of the corpus would
+    // never reach the screen.
+    mirror && !mirror.complete ? "open" : "all",
   ].join("|");
   const cached = snapshotCache.get(key);
   if (cached) {
@@ -181,7 +231,7 @@ export function buildSnapshot(input: SnapshotInput): DerivedSnapshot {
     return cached;
   }
 
-  const { parsed, unitIndex, byUnit } = parseMirror(input);
+  const { parsed, unitIndex, byUnit } = mirror ?? parseMirror(input);
   const search = input.search.trim().toLowerCase();
   const nowMs = input.nowMs;
 
@@ -263,6 +313,7 @@ export function buildSnapshot(input: SnapshotInput): DerivedSnapshot {
     closedInsights,
     byUnit,
     unitIndex,
+    complete: mirror ? mirror.complete : true,
   };
   snapshotCache.set(key, snapshot);
   // Evict the oldest once over capacity (insertion order = LRU order).
@@ -276,6 +327,6 @@ export function buildSnapshot(input: SnapshotInput): DerivedSnapshot {
 
 /** Test hook: clear both cache levels. */
 export function resetSnapshotCaches(): void {
-  parseCache = null;
+  parseCaches.clear();
   snapshotCache.clear();
 }

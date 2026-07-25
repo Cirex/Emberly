@@ -175,7 +175,16 @@ export default function WorkOrdersScreen() {
       </View>
     ) : null;
 
-  const emptyState = (
+  // The launch parse covers OPEN work only, so for a beat after a cold start
+  // the closed board genuinely has nothing to show. Saying "nothing here" then
+  // would be a confident lie — it is still counting.
+  const emptyState = !snapshot.complete ? (
+    <View style={{ alignItems: "center", paddingVertical: 48, gap: 6, paddingHorizontal: pad }}>
+      <Text className="text-muted dark:text-white/60" style={{ fontSize: 12.5, textAlign: "center" }}>
+        {t("workOrders.stillLoading")}
+      </Text>
+    </View>
+  ) : (
     <View style={{ alignItems: "center", paddingVertical: 48, gap: 6, paddingHorizontal: pad }}>
       <Text className="text-navy dark:text-white" style={{ fontSize: 16, fontWeight: "700" }}>
         Nothing here

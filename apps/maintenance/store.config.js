@@ -17,6 +17,9 @@
  *   ASC_REVIEW_EMAIL, ASC_REVIEW_PHONE, ASC_REVIEW_FIRST_NAME, ASC_REVIEW_LAST_NAME
  *   ASC_DEMO_USERNAME, ASC_DEMO_PASSWORD   (a dedicated review account, never a
  *                                           real staff member's ResMan login)
+ *   ASC_SUPPORT_URL, ASC_PRIVACY_POLICY_URL (must RESOLVE — Apple rejects a dead
+ *                                           privacy-policy link)
+ *   ASC_MARKETING_URL                       (optional)
  */
 
 /** Fail at push time rather than silently shipping an empty review section. */
@@ -63,9 +66,16 @@ module.exports = {
           "apartments",
         ],
         releaseNotes: "Faster work-order sync and reliability fixes.",
-        supportUrl: "https://emberly.app/support",
-        marketingUrl: "https://emberly.app",
-        privacyPolicyUrl: "https://emberly.app/privacy",
+        // Read from the environment, NOT hardcoded. Apple requires a working
+        // privacy-policy URL and rejects a dead one, and neither page exists
+        // yet — apps/web has no /privacy or /support route. The production
+        // origin is https://emberly.krkn.app (packages/core PRODUCTION_ORIGIN),
+        // so these will likely be pages there, but they have to exist before
+        // this is pushed. Forcing them through required() means a push cannot
+        // quietly send Apple a 404.
+        supportUrl: required("ASC_SUPPORT_URL"),
+        marketingUrl: process.env.ASC_MARKETING_URL || undefined,
+        privacyPolicyUrl: required("ASC_PRIVACY_POLICY_URL"),
       },
     },
     categories: ["BUSINESS", "PRODUCTIVITY"],
@@ -105,14 +115,22 @@ module.exports = {
       demoRequired: true,
       demoUsername: required("ASC_DEMO_USERNAME"),
       demoPassword: required("ASC_DEMO_PASSWORD"),
+      // Kept to what is verifiable. An earlier draft of this file told Apple
+      // that location was used to order the technician's route by proximity —
+      // the app does not use location AT ALL (expo-location is never imported).
+      // A false claim about data handling in review notes is not a small thing,
+      // so nothing goes in here that cannot be pointed at in the code.
       notes: [
-        "This is an internal tool for property maintenance staff. Every screen requires",
-        "a sign-in; the demo account above is provisioned for review and shows a sample",
-        "property with work orders, units and a map.",
+        "This is an internal tool for property maintenance staff at a single property",
+        "management company. Every screen is behind a sign-in, so the demo account above",
+        "is required to see anything past the login screen.",
         "",
-        "Push notifications deliver emergency work-order dispatch to on-call technicians.",
-        "Location is used only to order the technician's route by proximity on the property",
-        "map; it is never recorded or transmitted.",
+        "Push notifications are used for one thing: dispatching emergency work orders to",
+        "on-call technicians.",
+        "",
+        "Camera and photo library are used to attach before/after photos to a work order.",
+        "Microphone and speech recognition are used only for dictating completion notes;",
+        "transcription is on-device.",
       ].join("\n"),
     },
   },

@@ -1,54 +1,208 @@
 import { useRouter } from "expo-router";
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
-import { ClassificationChip, WorkOrderRow } from "@/components/work-orders/rows";
 import type { ClosedWorkOrderRow } from "@/lib/derived/closed-rows";
+import { statusLabel } from "@/lib/derived/resman-labels";
+import { tagTint } from "@/lib/derived/tags";
 import { MUTED } from "@/theme/tokens";
+import { useTranslated } from "@/lib/translation/use-translated";
 
 /**
- * One closed work order in the structured two-line language: ID · status ·
- * unit + classification · completed date + days-to-close, then the full title.
+ * A closed work order, per the 2026-07-21 design pass.
+ *
+ * The row LEADS WITH THE CLOSING TECHNICIAN'S INITIALS. It used to lead with the
+ * work-order number and a status chip; the design moved the person to the front
+ * because every row here is closed — status is the least interesting thing about
+ * it — and in a stable per-tech tint, runs of work scan by person at a glance.
+ *
+ * NO STRIKETHROUGH. My Day strikes done stops because it contrasts them against
+ * pending ones. On a board that is 100% closed, strikethrough is pure friction.
+ *
+ * NO SYNC LINE. "Closed by … · syncing to ResMan" belongs to My Day's
+ * pending-close recap, where work is still in flight. Everything here is already
+ * in ResMan; repeating it thousands of times is noise.
  */
+
+const CALLBACK = "#D4537E";
+
 /**
- * Memoized: the closed board can hold thousands of rows, and any parent
- * re-render (a sync tick bumping dataVersion, a filter change) would otherwise
- * re-render every mounted row. `row` objects come from the derived snapshot and
- * are referentially stable while the snapshot is, so this is a real cutoff.
+ * A stable colour per technician, so the same person reads the same on every
+ * visit. HASHED from the name rather than assigned by list position — position
+ * shifts as work closes, and a colour that moves is worse than no colour.
  */
-export const ClosedRow = memo(function ClosedRow({ row }: { row: ClosedWorkOrderRow }) {
-  const router = useRouter();
+const TECH_TINTS = ["#767B24", "#2563B4", "#0E7D7D", "#8348B5", "#B05E14", "#9C101F"];
+function techTint(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  return TECH_TINTS[Math.abs(hash) % TECH_TINTS.length];
+}
+
+/** Chip shared by the trade tag, the days-to-close figure and the callback mark. */
+function Tag({ label, color }: { label: string; color: string }) {
   return (
-    <Pressable onPress={() => router.push(`/work-order/${row.id}`)}>
-      <WorkOrderRow
-        number={row.number}
-        status={row.status}
-        title={row.title}
-        middle={
-          <>
-            <Text className="text-muted dark:text-white/60" numberOfLines={1} style={{ fontSize: 11.5 }}>
-              {row.unitNumber}
-            </Text>
-            <ClassificationChip classification={row.classification} />
-          </>
-        }
-        trailing={
-          row.daysToComplete >= 0 ? `${row.dateCompletedText} · ${row.daysToCompleteText}d` : row.dateCompletedText
-        }
-      />
+    <View
+      style={{
+        paddingHorizontal: 8,
+        paddingVertical: 2.5,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: `${color}40`,
+        backgroundColor: `${color}12`,
+      }}
+    >
+      <Text style={{ fontSize: 9, fontWeight: "700", color }}>{label}</Text>
+    </View>
+  );
+}
+
+/**
+ * Memoized: the board can hold thousands of rows, and any parent re-render (a
+ * sync tick bumping dataVersion, a filter change) would otherwise re-render
+ * every mounted one. Rows come from the derived snapshot and are referentially
+ * stable while it is, so this is a real cutoff.
+ */
+export const ClosedRow = memo(function ClosedRow({
+  row,
+  today = false,
+}: {
+  row: ClosedWorkOrderRow;
+  /** Today's rows carry a faint green wash — My Day's "fresh" treatment. */
+  today?: boolean;
+}) {
+  const router = useRouter();
+  const { t } = useTranslation();
+  const tr = useTranslated();
+  const tint = techTint(row.technicianDisplay);
+  // Canceled work is not a closure. Flag it rather than let it read as done.
+  const canceled = /^cancell?ed$/i.test(row.status);
+
+  return (
+    <Pressable
+      onPress={() => router.push(`/work-order/${row.id}`)}
+      accessibilityRole="button"
+      accessibilityLabel={`${row.unitNumber} · ${row.title}`}
+      style={{
+        flexDirection: "row",
+        gap: 10,
+        paddingHorizontal: 18,
+        paddingVertical: 11,
+        alignItems: "flex-start",
+        borderTopWidth: 1,
+        borderTopColor: "rgba(9,27,84,0.08)",
+        backgroundColor: today ? "rgba(51,166,102,0.05)" : "transparent",
+      }}
+    >
+      <View
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: 13,
+          marginTop: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          borderWidth: 1,
+          borderColor: `${tint}59`,
+          backgroundColor: `${tint}24`,
+        }}
+      >
+        <Text style={{ fontSize: 9.5, fontWeight: "800", color: tint }}>
+          {row.technicianInitials || "—"}
+        </Text>
+      </View>
+
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text
+          className="text-navy dark:text-white"
+          numberOfLines={2}
+          style={{ fontSize: 13, fontWeight: "700", lineHeight: 17.5 }}
+        >
+          <Text style={{ fontWeight: "800" }}>{row.unitNumber}</Text>
+          {" · "}
+          {tr(row.title).shown || t("workOrders.untitled")}
+        </Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
+          {canceled ? <Tag label={statusLabel(t, row.status)} color={CALLBACK} /> : null}
+          {row.tradeTag ? <Tag label={row.tradeTag} color={tagTint(row.tradeTag)} /> : null}
+          {row.isCallback ? <Tag label={t("workOrders.closed.callback")} color={CALLBACK} /> : null}
+          {row.daysToCloseLabel ? <Tag label={row.daysToCloseLabel} color={MUTED} /> : null}
+        </View>
+      </View>
+
+      <View style={{ alignItems: "flex-end", gap: 3 }}>
+        <Text
+          style={{
+            fontSize: 11,
+            fontWeight: "700",
+            color: "#4C556F",
+            fontVariant: ["tabular-nums"],
+          }}
+        >
+          {row.dateCompletedText}
+        </Text>
+        <Text style={{ fontSize: 9, color: MUTED, fontVariant: ["tabular-nums"] }}>
+          #{row.number}
+        </Text>
+      </View>
     </Pressable>
+  );
+});
+
+/** Timeline band header — "TODAY · 2". */
+export const ClosedBand = memo(function ClosedBand({
+  label,
+  count,
+}: {
+  label: string;
+  count: number;
+}) {
+  return (
+    <View
+      style={{
+        paddingHorizontal: 18,
+        paddingTop: 14,
+        paddingBottom: 5,
+        backgroundColor: "rgba(246,244,238,0.96)",
+      }}
+    >
+      <Text
+        style={{
+          fontSize: 10,
+          fontWeight: "700",
+          letterSpacing: 1,
+          color: MUTED,
+          fontVariant: ["tabular-nums"],
+        }}
+      >
+        {label.toUpperCase()}
+        {count > 0 ? ` · ${count.toLocaleString()}` : ""}
+      </Text>
+    </View>
   );
 });
 
 /** Quiet incremental-render footer — the smart-scroll affordance. */
 export function LoadingMoreFooter({ visible }: { visible: boolean }) {
+  const { t } = useTranslation();
   if (!visible) return null;
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 14 }}>
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 6,
+        paddingVertical: 14,
+      }}
+    >
       {[0.9, 0.55, 0.3].map((opacity, i) => (
-        <View key={i} style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: MUTED, opacity }} />
+        <View
+          key={i}
+          style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: MUTED, opacity }}
+        />
       ))}
       <Text className="text-muted" style={{ fontSize: 10.5, fontWeight: "600" }}>
-        Loading more…
+        {t("workOrders.loadingMore")}
       </Text>
     </View>
   );

@@ -108,6 +108,19 @@ const en = {
      * language — a date is newest/oldest, an id is low→high — because
      * "Date Completed: Ascending" is a sentence someone has to decode.
      */
+    /** Closed-board timeline bands and row chips (2026-07-21 design pass). */
+    closed: {
+      band: {
+        today: "Today",
+        thisWeek: "This week",
+        earlierThisMonth: "Earlier this month",
+        older: "Older",
+        undated: "No close date",
+      },
+      callback: "Callback",
+    },
+    untitled: "Untitled work order",
+    loadingMore: "Loading more…",
     sort: {
       title: "Sort by",
       field: {
@@ -657,6 +670,18 @@ const es: typeof en = {
   },
   resman: RESMAN_LABELS.es,
   workOrders: {
+    closed: {
+      band: {
+        today: "Hoy",
+        thisWeek: "Esta semana",
+        earlierThisMonth: "Antes este mes",
+        older: "Anteriores",
+        undated: "Sin fecha de cierre",
+      },
+      callback: "Reincidencia",
+    },
+    untitled: "Orden sin título",
+    loadingMore: "Cargando más…",
     sort: {
       title: "Ordenar por",
       field: {

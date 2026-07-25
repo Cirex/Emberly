@@ -28,6 +28,45 @@ export interface ClosedWorkOrderRow {
   /** "—" when missing, else the grouped number string. */
   daysToCompleteText: string;
   technicianDisplay: string;
+  /** Initials for the leading avatar. "" when unassigned. */
+  technicianInitials: string;
+  /**
+   * The trade this work order is about, for the row's tag.
+   *
+   * Taken from the app's DERIVED tags, not from ResMan's `category`. The design
+   * called for a category tag, but the live field is dominated by "Online Work
+   * Order" — 818 of 2,885 closed rows — which names a submission channel, not a
+   * trade, and would tag 28% of the board with nothing useful. The derived tags
+   * are the curated trade vocabulary the rest of the app already tints.
+   */
+  tradeTag: string;
+  /** "Same day" / "1 day" / "3 days" / "" when either date is missing. */
+  daysToCloseLabel: string;
+  /** A closure that later drew a callback signal — the quality counterweight. */
+  isCallback: boolean;
+}
+
+/** Up to two initials. "Unassigned" and blanks yield "" — no empty circle. */
+function initialsOf(display: string): string {
+  const name = display.trim();
+  if (name.length === 0 || /^unassigned$/i.test(name)) return "";
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+/**
+ * How long it took, in the words the design uses. Zero is "Same day" rather
+ * than "0 days" — the distinction a technician actually cares about.
+ * Empty string when either date is missing, so the row simply omits the chip.
+ */
+function daysToCloseLabel(days: number | null): string {
+  if (days === null || days < 0) return "";
+  if (days === 0) return "Same day";
+  return days === 1 ? "1 day" : `${days.toLocaleString()} days`;
 }
 
 export function buildClosedRows(input: {
@@ -53,6 +92,10 @@ export function buildClosedRows(input: {
       daysToComplete: wo.daysToComplete ?? -1,
       daysToCompleteText: wo.daysToComplete === null ? "—" : wo.daysToComplete.toLocaleString(),
       technicianDisplay: wo.technicianDisplay,
+      technicianInitials: initialsOf(wo.technicianDisplay),
+      tradeTag: wo.tags[0] ?? "",
+      daysToCloseLabel: daysToCloseLabel(wo.daysToComplete),
+      isCallback: wo.callbackStatus === "possible" || wo.callbackStatus === "confirmed",
     };
   });
 

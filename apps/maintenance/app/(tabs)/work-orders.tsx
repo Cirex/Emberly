@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FlatList, Text, View, useWindowDimensions } from "react-native";
+import { FlatList, SectionList, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useShallow } from "zustand/react/shallow";
 import { capture } from "@/lib/analytics";
 import { FilterSheet } from "@/components/work-orders/FilterSheet";
 import { GlassHeader } from "@/components/work-orders/GlassHeader";
 import { AnalyticsOverlayHost } from "@/components/work-orders/analytics/OverlayHost";
-import { ClosedRow, LoadingMoreFooter } from "@/components/work-orders/closed/ClosedRow";
+import { ClosedBand, ClosedRow, LoadingMoreFooter } from "@/components/work-orders/closed/ClosedRow";
+import {
+  buildClosedSections,
+  groupsApplyTo,
+  singleClosedSection,
+} from "@/lib/derived/closed-sections";
 import type { ClosedWorkOrderRow } from "@/lib/derived/closed-rows";
 import { HotSpots } from "@/components/work-orders/hot-spots/HotSpots";
 import { OpenGroupCard } from "@/components/work-orders/open/OpenBoard";
@@ -196,9 +201,29 @@ export default function WorkOrdersScreen() {
     () => snapshot.closedRows.slice(0, renderLimit),
     [snapshot.closedRows, renderLimit],
   );
+  /**
+   * Timeline bands, but ONLY when the ordering makes them true. Sorted by unit
+   * or id, a "Today" header would sit above whichever rows happened to land
+   * there — so a non-date sort renders as one unlabelled run instead.
+   */
+  const closedSections = useMemo(
+    () =>
+      groupsApplyTo(view.sortOption)
+        ? buildClosedSections(closedVisible, nowMs)
+        : singleClosedSection(closedVisible),
+    [closedVisible, view.sortOption, nowMs],
+  );
+  const showBands = groupsApplyTo(view.sortOption);
   const renderClosedRow = useCallback(
-    ({ item }: { item: ClosedWorkOrderRow }) => <ClosedRow row={item} />,
+    ({ item, section }: { item: ClosedWorkOrderRow; section: { key: string } }) => (
+      <ClosedRow row={item} today={section.key === "today"} />
+    ),
     [],
+  );
+  const renderClosedBand = useCallback(
+    ({ section }: { section: { labelKey: string; count: number } }) =>
+      showBands ? <ClosedBand label={t(`workOrders.closed.band.${section.labelKey}`)} count={section.count} /> : null,
+    [showBands, t],
   );
 
   if (view.displayMode === "open") {
@@ -238,14 +263,15 @@ export default function WorkOrdersScreen() {
     const rows = snapshot.closedRows;
     return (
       <View style={{ flex: 1 }}>
-        <FlatList
-          // `closedVisible`/`renderClosedRow` are memoized above. Slicing or
-          // building the renderer inline here would hand FlatList a new
-          // reference on every parent render, re-rendering every mounted row —
-          // which on a board of thousands is a visible stall that blocks even a
-          // tab change.
-          data={closedVisible}
+        <SectionList
+          // `closedSections`/`renderClosedRow` are memoized above. Building
+          // either inline would hand the list a new reference on every parent
+          // render, re-rendering every mounted row — which on a board of
+          // thousands is a visible stall that blocks even a tab change.
+          sections={closedSections}
           keyExtractor={(r) => r.id}
+          renderSectionHeader={renderClosedBand}
+          stickySectionHeadersEnabled={showBands}
           contentContainerStyle={contentStyle}
           // The open list has carried these since it was built; the closed list
           // never got them, which is why Closed felt heavier despite holding
@@ -257,12 +283,10 @@ export default function WorkOrdersScreen() {
           maxToRenderPerBatch={12}
           updateCellsBatchingPeriod={50}
           removeClippedSubviews
-          ListHeaderComponent={
-            <View>
-              {statusLine}
-              <ColumnHeader labels={["ID", "Status", "Unit", "Completed"]} />
-            </View>
-          }
+          // The column header is gone with the table: rows now lead with the
+          // closing technician and carry their own labelled chips, so a
+          // "ID · Status · Unit · Completed" ruler describes nothing on screen.
+          ListHeaderComponent={<View>{statusLine}</View>}
           ListEmptyComponent={emptyState}
           onEndReachedThreshold={0.6}
           onEndReached={() => setRenderLimit((l) => (l < rows.length ? l + RENDER_PAGE : l))}

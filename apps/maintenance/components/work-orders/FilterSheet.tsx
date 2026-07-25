@@ -3,7 +3,14 @@ import { BlurView } from "expo-blur";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TechBadge } from "@/components/work-orders/rows";
-import { SORT_LABELS, sortOptionsFor } from "@/lib/derived/sort";
+import { useTranslation } from "react-i18next";
+import {
+  axesOf,
+  directionKeys,
+  fieldKey,
+  optionFor,
+  sortFieldsFor,
+} from "@/lib/derived/sort-axes";
 import { classificationColor } from "@/lib/derived/status";
 import { tagIconName } from "@/lib/derived/tags";
 import type { FilterSets } from "@/lib/derived/types";
@@ -95,6 +102,105 @@ function SheetChip({
   );
 }
 
+/**
+ * iOS-style segmented control for the sort FIELD. One row, equal segments — the
+ * shape a single-choice control should have had all along.
+ */
+function SegmentedRow({ children }: { children: React.ReactNode }) {
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        backgroundColor: "rgba(9,27,84,0.055)",
+        borderRadius: 12,
+        padding: 3,
+        gap: 2,
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
+function Segment({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={selected ? { selected: true } : {}}
+      style={{
+        flex: 1,
+        alignItems: "center",
+        paddingVertical: 7,
+        paddingHorizontal: 4,
+        borderRadius: 9,
+        backgroundColor: selected ? "#FFFFFF" : "transparent",
+      }}
+    >
+      <Text
+        numberOfLines={1}
+        style={{
+          fontSize: 11.5,
+          fontWeight: "700",
+          color: selected ? NAVY : MUTED,
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * Direction, labelled in the field's own language — Newest/Oldest for a date,
+ * Low → High for an id. Never "Ascending", which a technician has to decode.
+ */
+function DirectionButton({
+  label,
+  arrow,
+  selected,
+  onPress,
+}: {
+  label: string;
+  arrow: "arrow-up" | "arrow-down";
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={selected ? { selected: true } : {}}
+      style={{
+        flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 6,
+        paddingVertical: 9,
+        borderRadius: 11,
+        backgroundColor: selected ? "rgba(162,169,33,0.9)" : "rgba(9,27,84,0.055)",
+      }}
+    >
+      <Ionicons name={arrow} size={13} color={selected ? "#FFFFFF" : MUTED} />
+      <Text
+        numberOfLines={1}
+        style={{ fontSize: 12, fontWeight: "700", color: selected ? "#FFFFFF" : MUTED }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 function SectionLabel({ text }: { text: string }) {
   return (
     <Text
@@ -136,6 +242,9 @@ export function FilterSheet() {
   const snapshot = useDerivedSnapshot();
 
   const modeKey: "open" | "closed" = view.displayMode === "closed" ? "closed" : "open";
+  const { t } = useTranslation();
+  // The stored option decomposed for the two controls below.
+  const activeAxes = axesOf(view.sortOption);
   const filters = modeKey === "closed" ? view.closedFilters : view.openFilters;
   const activeCount = activeFilterCount(view);
   const panel = snapshot.panel;
@@ -216,20 +325,35 @@ export function FilterSheet() {
               </Pressable>
             </View>
 
-            {/* Sort by ------------------------------------------------------ */}
-            <SectionLabel text="Sort by" />
-            <ChipWrapRow>
-              {/* The sheet only opens on the open/closed facet modes; modeKey
-                  folds every other board mode onto "open" for the sort list. */}
-              {sortOptionsFor(modeKey).map((option) => (
-                <SheetChip
-                  key={option}
-                  label={SORT_LABELS[option]}
-                  selected={view.sortOption === option}
-                  onPress={() => view.setSortOption(option)}
+            {/* Sort by ------------------------------------------------------
+                Two axes, not twelve pills. The flat list wrapped to four rows
+                for a single choice, and three of the fields had only one
+                direction available at all. `modeKey` folds every other board
+                mode onto "open" for the field list. */}
+            <SectionLabel text={t("workOrders.sort.title")} />
+            <SegmentedRow>
+              {sortFieldsFor(modeKey).map((field) => (
+                <Segment
+                  key={field}
+                  label={t(`workOrders.sort.field.${fieldKey(field)}`)}
+                  selected={activeAxes.field === field}
+                  onPress={() => view.setSortOption(optionFor(field, activeAxes.direction))}
                 />
               ))}
-            </ChipWrapRow>
+            </SegmentedRow>
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 9 }}>
+              {(["desc", "asc"] as const).map((direction) => (
+                <DirectionButton
+                  key={direction}
+                  label={t(
+                    `workOrders.sort.direction.${directionKeys(activeAxes.field)[direction]}`,
+                  )}
+                  arrow={direction === "desc" ? "arrow-down" : "arrow-up"}
+                  selected={activeAxes.direction === direction}
+                  onPress={() => view.setSortOption(optionFor(activeAxes.field, direction))}
+                />
+              ))}
+            </View>
 
             {/* Signals (open mode) — single-select; tapping the active one
                 clears back to "all". Lived in the control bar until rev 6. */}

@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { WorkOrderSortOption } from "@/lib/derived/sort";
+import { axesOf, optionFor, reconcileForMode } from "@/lib/derived/sort-axes";
 import { EMPTY_FILTERS, type DisplayMode, type FilterSets, type SignalFilter } from "@/lib/derived/types";
 export type { SignalFilter };
 
@@ -81,10 +82,21 @@ export const useWorkOrdersView = create<WorkOrdersViewState>()(
       filterSheetOpen: false,
 
       setDisplayMode: (displayMode) => {
-        // Switching into closed forces the completed-date sort, mirroring the
-        // Swift behavior; switching out restores the open default.
-        const sortOption: WorkOrderSortOption =
-          displayMode === "closed" ? "dateCompletedDescending" : "dateReportedDescending";
+        // Each board still opens on its natural FIELD — completed-date for
+        // closed, reported-date otherwise, mirroring the Swift behaviour — but
+        // the DIRECTION the technician chose is carried across.
+        //
+        // The old code hard-reset both. That made sense when the two were fused
+        // into one pill; now that direction is its own control, silently
+        // flipping it back on a tab change is just losing the user's input.
+        const field = displayMode === "closed" ? "dateCompleted" : "dateReported";
+        // `preventive` is a board mode with no sortable list of its own, so it
+        // reconciles against the open vocabulary.
+        const sortMode: DisplayMode = displayMode === "closed" ? "closed" : "open";
+        const sortOption: WorkOrderSortOption = reconcileForMode(
+          optionFor(field, axesOf(get().sortOption).direction),
+          sortMode,
+        );
         set({ displayMode, sortOption, selectedHotSpotUnit: null });
       },
       setSortOption: (sortOption) => set({ sortOption }),

@@ -103,6 +103,32 @@ const en = {
    */
   resman: RESMAN_LABELS.en,
   workOrders: {
+    /**
+     * Sort presented as field + direction. Direction reads in the field's own
+     * language — a date is newest/oldest, an id is low→high — because
+     * "Date Completed: Ascending" is a sentence someone has to decode.
+     */
+    sort: {
+      title: "Sort by",
+      field: {
+        dateCompleted: "Completed",
+        dateReported: "Reported",
+        id: "ID",
+        status: "Status",
+        unit: "Unit",
+        recentMoveIn: "Move-in",
+      },
+      direction: {
+        newestFirst: "Newest first",
+        oldestFirst: "Oldest first",
+        newestResidents: "Newest residents",
+        longestTenured: "Longest tenured",
+        aToZ: "A → Z",
+        zToA: "Z → A",
+        lowToHigh: "Low → High",
+        highToLow: "High → Low",
+      },
+    },
     modes: { open: "Open", closed: "Closed", preventive: "Preventive", hotSpots: "Hot Spots" },
     modeMenuA11y: "Viewing {{mode}}; change mode",
     insightsA11y: "Closed insights",
@@ -631,6 +657,27 @@ const es: typeof en = {
   },
   resman: RESMAN_LABELS.es,
   workOrders: {
+    sort: {
+      title: "Ordenar por",
+      field: {
+        dateCompleted: "Completada",
+        dateReported: "Reportada",
+        id: "ID",
+        status: "Estado",
+        unit: "Unidad",
+        recentMoveIn: "Ingreso",
+      },
+      direction: {
+        newestFirst: "Más recientes",
+        oldestFirst: "Más antiguas",
+        newestResidents: "Residentes nuevos",
+        longestTenured: "Mayor antigüedad",
+        aToZ: "A → Z",
+        zToA: "Z → A",
+        lowToHigh: "Menor → Mayor",
+        highToLow: "Mayor → Menor",
+      },
+    },
     modes: { open: "Abiertas", closed: "Cerradas", preventive: "Preventivo", hotSpots: "Puntos críticos" },
     modeMenuA11y: "Viendo {{mode}}; cambiar modo",
     insightsA11y: "Estadísticas de cerradas",

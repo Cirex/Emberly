@@ -252,6 +252,22 @@ export function sortOpenGroups(
     case "unitAscending":
       sorted.sort((a, b) => compareNumericStrings(a.unitNumber, b.unitNumber));
       break;
+    case "unitDescending":
+      sorted.sort((a, b) => compareNumericStrings(b.unitNumber, a.unitNumber));
+      break;
+    case "recentMoveInAscending":
+      // Longest-tenured first. `recentMoveInSort` uses -Infinity for units with
+      // no move-in data, which would otherwise sort them FIRST here — treat the
+      // sentinel as unknown and push it to the end.
+      sorted.sort((a, b) => {
+        const av = a.recentMoveInSort === -Infinity ? Infinity : a.recentMoveInSort;
+        const bv = b.recentMoveInSort === -Infinity ? Infinity : b.recentMoveInSort;
+        return compareNumbers(av, bv);
+      });
+      break;
+    case "dateCompletedAscending":
+      sorted.sort((a, b) => compareNumbers(a.latestDateMs ?? Infinity, b.latestDateMs ?? Infinity));
+      break;
     case "dateCompletedDescending":
     case "dateReportedDescending":
       sorted.sort((a, b) => compareNumbers(b.latestDateMs ?? -Infinity, a.latestDateMs ?? -Infinity));

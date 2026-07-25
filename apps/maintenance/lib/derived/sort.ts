@@ -7,18 +7,34 @@ import type { DisplayMode, ParsedWorkOrder, UnitIndex } from "./types";
  * types → filtering → sort → open-groups → closed-rows).
  */
 
+/**
+ * The persisted sort value. Stays a flat union because it is written to disk —
+ * the UI presents it as a FIELD plus a DIRECTION (see sort-axes.ts), which is
+ * a presentation concern, not a storage one.
+ *
+ * The matrix used to have holes: date-completed had no ascending, unit had no
+ * descending, move-in had no ascending. Every field now has both, so the
+ * direction control is never disabled and "oldest completed first" — the way you
+ * find work that sat — is reachable.
+ */
 export type WorkOrderSortOption =
   | "dateCompletedDescending"
+  | "dateCompletedAscending"
   | "dateReportedDescending"
   | "dateReportedAscending"
   | "recentMoveInDescending"
+  | "recentMoveInAscending"
   | "idAscending"
   | "idDescending"
   | "statusAscending"
   | "statusDescending"
-  | "unitAscending";
+  | "unitAscending"
+  | "unitDescending";
 
 export const SORT_LABELS: Record<WorkOrderSortOption, string> = {
+  dateCompletedAscending: "Date Completed: Oldest",
+  recentMoveInAscending: "Longest Tenured",
+  unitDescending: "Unit: Descending",
   dateCompletedDescending: "Date Completed: Newest",
   dateReportedDescending: "Date Reported: Newest",
   dateReportedAscending: "Date Reported: Oldest",
@@ -32,6 +48,9 @@ export const SORT_LABELS: Record<WorkOrderSortOption, string> = {
 
 const ALL_SORT_OPTIONS: WorkOrderSortOption[] = [
   "dateCompletedDescending",
+  "dateCompletedAscending",
+  "recentMoveInAscending",
+  "unitDescending",
   "dateReportedDescending",
   "dateReportedAscending",
   "recentMoveInDescending",
@@ -45,7 +64,9 @@ const ALL_SORT_OPTIONS: WorkOrderSortOption[] = [
 /** Move-in sorting only means something on the open board's unit groups. */
 export function sortOptionsFor(mode: DisplayMode): WorkOrderSortOption[] {
   if (mode === "open") return [...ALL_SORT_OPTIONS];
-  return ALL_SORT_OPTIONS.filter((option) => option !== "recentMoveInDescending");
+  return ALL_SORT_OPTIONS.filter(
+    (option) => option !== "recentMoveInDescending" && option !== "recentMoveInAscending",
+  );
 }
 
 /**
@@ -111,6 +132,17 @@ export function sortOpenWorkOrders(
     case "unitAscending":
       sorted.sort((a, b) => compareNumericStrings(a.unitNumber, b.unitNumber) || byReportedDesc(a, b));
       break;
+    case "unitDescending":
+      sorted.sort((a, b) => compareNumericStrings(b.unitNumber, a.unitNumber) || byReportedDesc(a, b));
+      break;
+    case "recentMoveInAscending":
+      sorted.sort(
+        (a, b) =>
+          compareNumbers(recentMoveInSort(a, unitIndex), recentMoveInSort(b, unitIndex)) ||
+          byReportedDesc(a, b),
+      );
+      break;
+    case "dateCompletedAscending":
     case "dateCompletedDescending":
     case "dateReportedDescending":
       // The open board has no completed dates, so both fall back to reported-newest.

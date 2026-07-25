@@ -81,6 +81,14 @@ export function buildClosedRows(input: {
     case "unitAscending":
       rows.sort((a, b) => compareNumericStrings(a.unitNumber, b.unitNumber));
       break;
+    case "unitDescending":
+      rows.sort((a, b) => compareNumericStrings(b.unitNumber, a.unitNumber));
+      break;
+    case "dateCompletedAscending":
+      // Oldest closed first — how you find the work that sat. Undated rows go
+      // LAST here (+Infinity), the mirror of the descending case below.
+      rows.sort((a, b) => compareNumbers(a.dateCompletedMs ?? Infinity, b.dateCompletedMs ?? Infinity));
+      break;
     case "dateCompletedDescending":
       rows.sort((a, b) => compareNumbers(b.dateCompletedMs ?? -Infinity, a.dateCompletedMs ?? -Infinity));
       break;

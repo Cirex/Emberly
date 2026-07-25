@@ -411,12 +411,17 @@ describe("buildClosedRows", () => {
 });
 
 describe("sortOptionsFor", () => {
-  test("recentMoveInDescending is offered only on the open board", () => {
+  test("move-in sorting is offered only on the open board, both directions", () => {
+    // 6 fields x 2 directions. The matrix used to have holes (no oldest-
+    // completed, no unit-descending, no ascending move-in), which is why the
+    // filter sheet could not offer a direction control at all.
+    expect(sortOptionsFor("open")).toHaveLength(12);
     expect(sortOptionsFor("open")).toContain("recentMoveInDescending");
-    expect(sortOptionsFor("open")).toHaveLength(9);
+    expect(sortOptionsFor("open")).toContain("recentMoveInAscending");
     for (const mode of ["closed", "makeReady", "hotSpots"] as const) {
       expect(sortOptionsFor(mode)).not.toContain("recentMoveInDescending");
-      expect(sortOptionsFor(mode)).toHaveLength(8);
+      expect(sortOptionsFor(mode)).not.toContain("recentMoveInAscending");
+      expect(sortOptionsFor(mode)).toHaveLength(10);
     }
   });
 });

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import { useRef, useState } from "react";
+import { useRef, useState, memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,7 +25,14 @@ const MODES: { id: WorkOrdersBoardMode; labelKey: string; icon: string }[] = [
  * and the three-stat score strip with context lines. The list scrolls beneath
  * and blurs through. Reports its measured height so the list can pad itself.
  */
-export function GlassHeader({
+/**
+ * Memoized: the device trace put this at 26–28ms on every board update, and it
+ * changes only when the mode, the counts or the score cards do — not when a row
+ * somewhere in the list moves. Every prop the screen passes is stabilized
+ * (see the useCallbacks at the call site), so this is a real cutoff rather than
+ * a memo that never hits.
+ */
+export const GlassHeader = memo(function GlassHeader({
   mode,
   onMode,
   count,
@@ -311,4 +318,4 @@ export function GlassHeader({
       </Modal>
     </View>
   );
-}
+});

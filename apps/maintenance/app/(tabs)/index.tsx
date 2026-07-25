@@ -4,7 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
 import { useTranslation } from "react-i18next";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import {
   FlatList,
   Image,
@@ -46,6 +46,9 @@ const BAND = "rgba(9,27,84,0.05)";
 const UP_NEXT = "#2563B4";
 
 const FLOWER = require("@/assets/logo-flower.png");
+
+/** Module scope so the list's keyExtractor identity never changes. */
+const keyOfWorkOrder = (wo: ParsedWorkOrder) => wo.id;
 
 
 /**
@@ -133,11 +136,11 @@ export default function MyDayScreen() {
   // Undo toast for swipe actions.
   const [toast, setToast] = useState<{ label: string; undo: () => void } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showToast = (label: string, undo: () => void) => {
+  const showToast = useCallback((label: string, undo: () => void) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ label, undo });
     toastTimer.current = setTimeout(() => setToast(null), 5000);
-  };
+  }, []);
 
   const config = { baseUrl: useConfig.getState().baseUrl, token };
 
@@ -151,7 +154,7 @@ export default function MyDayScreen() {
     });
   };
 
-  const addToPath = (wo: ParsedWorkOrder) => {
+  const addToPath = useCallback((wo: ParsedWorkOrder) => {
     const unit = wo.unitNumber.trim();
     const ids = mine.filter((m) => m.unitNumber.trim() === unit).map((m) => m.id);
     day.addUnit(unit, ids.length > 0 ? ids : [wo.id]);
@@ -160,9 +163,20 @@ export default function MyDayScreen() {
       const added = useMyDay.getState().stops.find((s) => s.unitNumber === unit && s.addedBy === "manual");
       if (added) day.removeStop(added.id);
     });
-  };
+  }, [mine, day, showToast, t]);
 
   const openInMap = () => router.push({ pathname: "/(tabs)/property-map", params: { path: "1" } });
+
+  // The row takes the work order and calls back with it, so ONE renderer serves
+  // every row — a per-row arrow function would change identity each render and
+  // defeat the memo on QueueRow.
+  const openWorkOrder = useCallback((wo: ParsedWorkOrder) => router.push(`/work-order/${wo.id}`), [router]);
+  const renderQueueRow = useCallback(
+    ({ item }: { item: ParsedWorkOrder }) => (
+      <QueueRow wo={item} pad={pad} nowMs={nowMs} onOpen={openWorkOrder} onAdd={addToPath} />
+    ),
+    [pad, nowMs, openWorkOrder, addToPath],
+  );
 
   // ── My Day ⇄ My Week pager
   const pagerRef = useRef<ScrollView>(null);
@@ -395,7 +409,7 @@ export default function MyDayScreen() {
         <View style={{ width }}>
           <FlatList
             data={queue}
-            keyExtractor={(wo) => wo.id}
+            keyExtractor={keyOfWorkOrder}
             contentContainerStyle={{
               paddingTop: insets.top + 10,
               paddingBottom: insets.bottom + 110,
@@ -415,15 +429,7 @@ export default function MyDayScreen() {
                 {t("myDay.queueEmpty")}
               </Text>
             }
-            renderItem={({ item }) => (
-              <QueueRow
-                wo={item}
-                pad={pad}
-                nowMs={nowMs}
-                onOpen={() => router.push(`/work-order/${item.id}`)}
-                onAdd={() => addToPath(item)}
-              />
-            )}
+            renderItem={renderQueueRow}
           />
         </View>
         <View style={{ width }}>
@@ -823,7 +829,13 @@ function ChipTag({ label, color, bg, icon }: { label: string; color: string; bg?
   );
 }
 
-function QueueRow({
+/**
+ * Memoized: a queue row is a swipeable with two action panes and translated
+ * prose, and any My Day render — a store tick, a path edit — re-rendered every
+ * mounted one. The callbacks take the work order so the list can pass ONE
+ * stable renderer for all of them.
+ */
+const QueueRow = memo(function QueueRow({
   wo,
   pad,
   nowMs,
@@ -833,8 +845,8 @@ function QueueRow({
   wo: ParsedWorkOrder;
   pad: number;
   nowMs: number;
-  onOpen: () => void;
-  onAdd: () => void;
+  onOpen: (wo: ParsedWorkOrder) => void;
+  onAdd: (wo: ParsedWorkOrder) => void;
 }) {
   const { t } = useTranslation();
   // Lists showed raw ResMan prose, so a full translation cache changed nothing
@@ -853,12 +865,12 @@ function QueueRow({
       onSwipeableOpen={(direction) => {
         if (direction === "left") {
           swipeRef.current?.close();
-          onAdd();
+          onAdd(wo);
         }
       }}
     >
       <Pressable
-        onPress={onOpen}
+        onPress={() => onOpen(wo)}
         accessibilityRole="button"
         style={{
           paddingHorizontal: pad,
@@ -894,4 +906,4 @@ function QueueRow({
       </Pressable>
     </ReanimatedSwipeable>
   );
-}
+});

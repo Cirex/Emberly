@@ -138,25 +138,38 @@ export default function WorkOrdersScreen() {
 
   const facetMode = view.displayMode === "open" || view.displayMode === "closed";
 
+  // Stable handlers, so the memo on GlassHeader is a real cutoff instead of a
+  // decoration: a fresh arrow function per render would fail the comparison
+  // every time and the header would keep costing its measured 26-28ms.
+  const setDisplayMode = view.setDisplayMode;
+  const setActiveOverlay = view.setActiveOverlay;
+  const setFilterSheetOpen = view.setFilterSheetOpen;
+  const onMode = useCallback(
+    (m: Parameters<typeof setDisplayMode>[0]) => {
+      // The dropdown only, so the stale-mode migration effect above can't fire it.
+      capture("board_mode_switched", { mode: m });
+      setDisplayMode(m);
+    },
+    [setDisplayMode],
+  );
+  const onOpenFilters = useCallback(() => setFilterSheetOpen(true), [setFilterSheetOpen]);
+  const onOpenInsights = useCallback(() => {
+    capture("insights_viewed");
+    setActiveOverlay("closedInsights");
+  }, [setActiveOverlay]);
+
   const header = (
     <TraceRender id="wo:header">
       <GlassHeader
         mode={view.displayMode}
-        onMode={(m) => {
-          // The dropdown only, so the stale-mode migration effect above can't fire it.
-          capture("board_mode_switched", { mode: m });
-          view.setDisplayMode(m);
-        }}
+        onMode={onMode}
         count={pillCount}
         cards={cards}
-        onAction={(a) => view.setActiveOverlay(a)}
+        onAction={setActiveOverlay}
         showFilters={facetMode}
         filterCount={filterCount}
-        onOpenFilters={() => view.setFilterSheetOpen(true)}
-        onOpenInsights={() => {
-          capture("insights_viewed");
-          view.setActiveOverlay("closedInsights");
-        }}
+        onOpenFilters={onOpenFilters}
+        onOpenInsights={onOpenInsights}
         onHeight={setHeaderH}
       />
     </TraceRender>

@@ -23,6 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFieldMode } from "@/lib/stores/settings";
 import { useMapSearch } from "@/lib/stores/map-search";
 import { useWorkOrdersView } from "@/lib/stores/work-orders-view";
+import { markTabPress } from "@/lib/perf/render-trace";
 
 const ICONS: Record<string, ComponentIcon> = {
   index: "compass",
@@ -326,6 +327,10 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
                 const label = typeof options.title === "string" ? options.title : route.name;
 
                 const onPress = () => {
+                  // Starts the clock for the render trace, so a slow commit can
+                  // be reported as "Nms after tapping Map" rather than in
+                  // isolation. Compiled out of release builds.
+                  markTabPress(route.name);
                   const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
                   if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
                 };

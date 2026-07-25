@@ -17,6 +17,7 @@ import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
 import { useWorkOrderTranslationSync } from "@/lib/translation/use-translated";
 import { isScreenshotMode } from "@/lib/screenshot-mode";
+import { TraceRender } from "@/lib/perf/render-trace";
 
 /**
  * Poll interval. Short on purpose: the work-order refresh asks only for what
@@ -160,6 +161,13 @@ export default function TabsLayout() {
   return (
     <Tabs
       tabBar={(props) => <FloatingTabBar {...props} />}
+      // Wraps every scene in a React Profiler (dev only) so a slow tab switch
+      // names the screen and the milliseconds instead of being a feeling. The
+      // wrapper sits OUTSIDE SceneView, so it changes nothing about how
+      // navigation memoizes the screens themselves.
+      screenLayout={({ route, children }) => (
+        <TraceRender id={route.name}>{children}</TraceRender>
+      )}
       screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: "transparent" },

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "EmberlyMaintenance",
+    "name": "Emberly Maintenance",
     "slug": "emberly-maintenance",
     "version": "1.1.0",
     "scheme": "com.emberly.maintenance",
@@ -13,10 +13,10 @@
       "bundleIdentifier": "com.emberly.maintenance",
       "appleTeamId": "T49DUB6KRJ",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "EmberlyMaintenance attaches photos from your library to property-map annotations.",
-        "NSLocationWhenInUseUsageDescription": "EmberlyMaintenance uses your location to render the property map's day and night appearance accurately.",
-        "NSMicrophoneUsageDescription": "EmberlyMaintenance uses the microphone so you can dictate work-order notes instead of typing them.",
-        "NSSpeechRecognitionUsageDescription": "EmberlyMaintenance transcribes your dictated notes on this device. The audio is not sent to Apple or to Emberly.",
+        "NSPhotoLibraryUsageDescription": "Emberly Maintenance attaches photos from your library to property-map annotations.",
+        "NSLocationWhenInUseUsageDescription": "Emberly Maintenance uses your location to render the property map's day and night appearance accurately.",
+        "NSMicrophoneUsageDescription": "Emberly Maintenance uses the microphone so you can dictate work-order notes instead of typing them.",
+        "NSSpeechRecognitionUsageDescription": "Emberly Maintenance transcribes your dictated notes on this device. The audio is not sent to Apple or to Emberly.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {

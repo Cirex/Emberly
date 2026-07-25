@@ -171,6 +171,26 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: "transparent" },
+        /**
+         * Suspend a screen's rendering while it is off-screen.
+         *
+         * Measured on device: one sync tick re-rendered ALL FOUR screens back to
+         * back — My Day 166ms, Work Orders 245ms, Make Ready 269ms, Map 37ms —
+         * 717ms of work, of which ~680ms was for screens the technician could
+         * not see. Every screen subscribes to the work-order store, so a change
+         * anywhere renders everywhere. When that burst lands on the frame you
+         * tap a tab, the tap is what feels broken.
+         *
+         * NOT because switching tabs re-renders the background: it does not.
+         * React Navigation memoizes each scene on stable navigation/route
+         * identities. The waste is store-driven, and it goes on whether or not
+         * anyone is switching tabs.
+         *
+         * The trade is that a blurred screen catches up when you return to it —
+         * but as ONE render with the current state, not one per tick it slept
+         * through.
+         */
+        freezeOnBlur: true,
       }}
     >
       <Tabs.Screen name="index" options={{ title: t("tabs.myDay") }} />

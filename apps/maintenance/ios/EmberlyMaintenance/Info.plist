@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>EmberlyMaintenance</string>
+	<string>Emberly Maintenance</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -59,21 +59,21 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your Face ID biometric data.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>EmberlyMaintenance connects to on-site UniFi Protect cameras over the local network.</string>
+	<string>Emberly Maintenance connects to on-site UniFi Protect cameras over the local network.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your location</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your location</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>EmberlyMaintenance uses your location to show accurate day/night camera coverage on the property map.</string>
+	<string>Emberly Maintenance uses your location to show accurate day/night camera coverage on the property map.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>EmberlyMaintenance uses the microphone so you can dictate work-order notes instead of typing them.</string>
+	<string>Emberly Maintenance uses the microphone so you can dictate work-order notes instead of typing them.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to detect your current motion activity</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>EmberlyMaintenance transcribes your dictated notes on this device. The audio is not sent to Apple or to Emberly.</string>
+	<string>Emberly Maintenance transcribes your dictated notes on this device. The audio is not sent to Apple or to Emberly.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>EmberlyMaintenance attaches photos from your library to property-map annotations.</string>
+	<string>Emberly Maintenance attaches photos from your library to property-map annotations.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>

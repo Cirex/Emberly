@@ -26,6 +26,41 @@ mock.module("@react-native-async-storage/async-storage", () => ({
   },
 }));
 
+/**
+ * Seed and read the persisted copy through THE STORE'S OWN storage adapter,
+ * never through the Map above.
+ *
+ * `mock.module` writes to a process-global registry and the module cache is
+ * shared across test files, so in a full-suite run the AsyncStorage instance a
+ * store captured at import time is whichever mock was live when the FIRST file
+ * imported it — not necessarily this one. Asserting on the local Map then checks
+ * a backing store the purge never wrote to, and a passing guarantee reads as
+ * broken. `persist.getOptions().storage` is by definition the same object
+ * `clearStorage()` calls removeItem on.
+ */
+interface PersistedStore {
+  persist: {
+    getOptions: () => {
+      name?: string;
+      storage?: {
+        getItem: (name: string) => Promise<unknown> | unknown;
+        setItem: (name: string, value: unknown) => Promise<unknown> | unknown;
+      };
+    };
+  };
+}
+
+async function seed(store: PersistedStore, state: unknown): Promise<void> {
+  const { name, storage } = store.persist.getOptions();
+  await storage!.setItem(name!, { state, version: 0 });
+}
+
+/** The persisted payload as text, so a resident's name can be searched for. */
+async function persistedText(store: PersistedStore): Promise<string> {
+  const { name, storage } = store.persist.getOptions();
+  return JSON.stringify((await storage!.getItem(name!)) ?? "");
+}
+
 mock.module("@/lib/analytics", () => ({
   capture: () => {},
   identify: () => {},
@@ -93,18 +128,17 @@ describe("sign-out purge", () => {
       ] as never,
       refreshedAt: 1,
     });
-    store.set(
-      "emberly-maintenance-work-orders",
-      JSON.stringify({
-        state: { workOrders: [{ id: "wo-1", description: "Leak under Ms. Alvarez's sink" }] },
-        version: 0,
-      }),
-    );
+    await seed(useWorkOrders as never, {
+      workOrders: [{ id: "wo-1", description: "Leak under Ms. Alvarez's sink" }],
+    });
+    // The seed has to be visible before the purge, or the assertion below would
+    // pass against an empty store and prove nothing.
+    expect(await persistedText(useWorkOrders as never)).toContain("Alvarez");
 
     await clearSessionData();
 
     expect(useWorkOrders.getState().workOrders).toEqual([]);
-    expect(store.get("emberly-maintenance-work-orders") ?? "").not.toContain("Alvarez");
+    expect(await persistedText(useWorkOrders as never)).not.toContain("Alvarez");
   });
 
   test("the outbox is NOT purged — queued work outlives a sign-out", async () => {

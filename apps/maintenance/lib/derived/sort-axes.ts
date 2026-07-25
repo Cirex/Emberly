@@ -18,7 +18,7 @@ import { sortOptionsFor, type WorkOrderSortOption } from "./sort";
  * Pure: no React, no i18n. Labels are keys the caller translates.
  */
 
-export type SortField = "dateCompleted" | "dateReported" | "recentMoveIn" | "id" | "status" | "unit";
+export type SortField = "dateCompleted" | "dateReported" | "recentMoveIn" | "status" | "unit";
 export type SortDirection = "asc" | "desc";
 
 /** Every option, decomposed. The single source of truth for both directions. */
@@ -29,8 +29,6 @@ const AXES: Record<WorkOrderSortOption, { field: SortField; direction: SortDirec
   dateReportedAscending: { field: "dateReported", direction: "asc" },
   recentMoveInDescending: { field: "recentMoveIn", direction: "desc" },
   recentMoveInAscending: { field: "recentMoveIn", direction: "asc" },
-  idDescending: { field: "id", direction: "desc" },
-  idAscending: { field: "id", direction: "asc" },
   statusDescending: { field: "status", direction: "desc" },
   statusAscending: { field: "status", direction: "asc" },
   unitDescending: { field: "unit", direction: "desc" },
@@ -38,7 +36,7 @@ const AXES: Record<WorkOrderSortOption, { field: SortField; direction: SortDirec
 };
 
 /** Display order of the field control. */
-const FIELD_ORDER: SortField[] = ["dateCompleted", "dateReported", "id", "status", "unit", "recentMoveIn"];
+const FIELD_ORDER: SortField[] = ["dateCompleted", "dateReported", "status", "unit", "recentMoveIn"];
 
 export function axesOf(option: WorkOrderSortOption): { field: SortField; direction: SortDirection } {
   return AXES[option];
@@ -76,7 +74,6 @@ export function directionKeys(field: SortField): { asc: string; desc: string } {
       return { desc: "newestResidents", asc: "longestTenured" };
     case "status":
       return { asc: "aToZ", desc: "zToA" };
-    case "id":
     case "unit":
       return { asc: "lowToHigh", desc: "highToLow" };
   }
@@ -99,6 +96,25 @@ export function reconcileForMode(
   const { direction } = AXES[option];
   const fallback = sortFieldsFor(mode)[0] ?? "dateReported";
   return optionFor(fallback, direction);
+}
+
+/**
+ * Reconcile a value read back from disk.
+ *
+ * The sort option is persisted, so a device can hold an option this build no
+ * longer has — an id sort, or a completion sort on the open board, both retired
+ * because neither ordered anything a technician could use. `axesOf` would return
+ * undefined for those and the filter sheet would crash reading `.field`, so
+ * anything unrecognised is dropped to the board's own default rather than
+ * trusted. Direction survives when the value merely moved out of the mode.
+ */
+export function sanitizeSortOption(value: unknown, mode: DisplayMode): WorkOrderSortOption {
+  if (typeof value !== "string" || !(value in AXES)) {
+    // The board's natural default, newest first — NOT sortOptionsFor(mode)[0],
+    // whose order is the ported Swift enum's and means nothing.
+    return optionFor(sortFieldsFor(mode)[0] ?? "dateReported", "desc");
+  }
+  return reconcileForMode(value as WorkOrderSortOption, mode);
 }
 
 export { AXES as SORT_AXES, FIELD_ORDER as SORT_FIELD_ORDER };

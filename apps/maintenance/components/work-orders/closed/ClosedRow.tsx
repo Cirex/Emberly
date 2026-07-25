@@ -11,10 +11,14 @@ import { useTranslated } from "@/lib/translation/use-translated";
 /**
  * A closed work order, per the 2026-07-21 design pass.
  *
- * The row LEADS WITH THE CLOSING TECHNICIAN'S INITIALS. It used to lead with the
- * work-order number and a status chip; the design moved the person to the front
- * because every row here is closed — status is the least interesting thing about
- * it — and in a stable per-tech tint, runs of work scan by person at a glance.
+ * COLUMN ORDER MATCHES THE OPEN BOARD'S TICKET ROWS: number + date lead, the
+ * technician's initials trail. The design pass had these reversed, which read
+ * fine in isolation but meant the two boards put the same two facts on opposite
+ * sides of the row — so moving between tabs re-taught your eye where to look.
+ * The initials keep their stable per-tech tint; only the side changed.
+ *
+ * NO STATUS CHIP. Every row here is closed, so status is the least interesting
+ * thing about it — the exception (canceled) is chipped inline instead.
  *
  * NO STRIKETHROUGH. My Day strikes done stops because it contrasts them against
  * pending ones. On a board that is 100% closed, strikethrough is pure friction.
@@ -93,21 +97,27 @@ export const ClosedRow = memo(function ClosedRow({
         backgroundColor: today ? "rgba(51,166,102,0.05)" : "transparent",
       }}
     >
-      <View
-        style={{
-          width: 26,
-          height: 26,
-          borderRadius: 13,
-          marginTop: 1,
-          alignItems: "center",
-          justifyContent: "center",
-          borderWidth: 1,
-          borderColor: `${tint}59`,
-          backgroundColor: `${tint}24`,
-        }}
-      >
-        <Text style={{ fontSize: 9.5, fontWeight: "800", color: tint }}>
-          {row.technicianInitials || "—"}
+      {/* Leading meta column, fixed width so numbers and dates line up down the
+          list rather than ragging against the titles. Open's ticket rows use
+          the same stack: number first, date beneath. */}
+      <View style={{ width: 58, flexShrink: 0 }}>
+        <Text
+          className="text-muted dark:text-white/50"
+          style={{ fontSize: 10, fontWeight: "800", fontVariant: ["tabular-nums"] }}
+        >
+          #{row.number}
+        </Text>
+        <Text
+          className="text-slate dark:text-white/60"
+          style={{
+            fontSize: 9.5,
+            fontWeight: "700",
+            marginTop: 1,
+            opacity: 0.85,
+            fontVariant: ["tabular-nums"],
+          }}
+        >
+          {row.dateCompletedText}
         </Text>
       </View>
 
@@ -129,20 +139,29 @@ export const ClosedRow = memo(function ClosedRow({
         </View>
       </View>
 
-      <View style={{ alignItems: "flex-end", gap: 3 }}>
-        <Text
-          style={{
-            fontSize: 11,
-            fontWeight: "700",
-            color: "#4C556F",
-            fontVariant: ["tabular-nums"],
-          }}
-        >
-          {row.dateCompletedText}
-        </Text>
-        <Text style={{ fontSize: 9, color: MUTED, fontVariant: ["tabular-nums"] }}>
-          #{row.number}
-        </Text>
+      {/* Trailing slot keeps its width when there is no technician, so the right
+          edge stays a straight line. Unassigned work draws no circle — an
+          em-dash in a tinted badge says less than nothing. */}
+      <View style={{ width: 26, flexShrink: 0, marginTop: 1 }}>
+        {row.technicianInitials ? (
+          <View
+            accessibilityLabel={row.technicianDisplay}
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 13,
+              alignItems: "center",
+              justifyContent: "center",
+              borderWidth: 1,
+              borderColor: `${tint}59`,
+              backgroundColor: `${tint}24`,
+            }}
+          >
+            <Text style={{ fontSize: 9.5, fontWeight: "800", color: tint }}>
+              {row.technicianInitials}
+            </Text>
+          </View>
+        ) : null}
       </View>
     </Pressable>
   );

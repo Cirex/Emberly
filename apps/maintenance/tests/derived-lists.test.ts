@@ -319,9 +319,55 @@ describe("buildOpenGroups", () => {
       [wo({ unit_number: "101", date_reported: "2026-07-08T09:00:00" })],
       index,
     );
-    expect(group.moveIn).toEqual({ dayMs: new Date("2026-07-06T00:00:00").getTime(), daysAgo: 12 });
+    expect(group.moveIn).toEqual({
+      dayMs: new Date("2026-07-06T00:00:00").getTime(),
+      daysAgo: 12,
+      position: 0,
+    });
     expect(group.firstIssueAfterMoveIn).toEqual({ eventIndex: 0, elapsedDays: 2 });
     expect(group.timeline[0].isFirstIssueAfterMoveIn).toBe(true);
+  });
+
+  test("the rail starts at the move-in when the move-in came first", () => {
+    // The ordinary case: resident moves in (Jul 6), reports a problem after
+    // (Jul 8). A domain anchored on the first WORK ORDER put the move-in at a
+    // negative position, which clamped onto the first dot — drawn, invisible,
+    // and with a zero-width bridge to the issue it is supposed to connect to.
+    const index = unitIndexOf(
+      facts({ unitNumber: "101", moveInAt: new Date("2026-07-06T00:00:00").getTime() }),
+    );
+    const [group] = groupsOf(
+      [wo({ unit_number: "101", date_reported: "2026-07-08T09:00:00" })],
+      index,
+    );
+    expect(group.railStartMs).toBe(new Date("2026-07-06T00:00:00").getTime());
+    expect(group.railEndMs).toBe(new Date("2026-07-18T00:00:00").getTime()); // today
+    // Move-in anchors the left end; the issue sits inside the rail, not on it.
+    expect(group.moveIn!.position).toBe(0);
+    expect(group.timeline[0].position).toBeCloseTo(2 / 12, 5);
+    expect(group.timeline[0].position).toBeGreaterThan(group.moveIn!.position);
+  });
+
+  test("a move-in AFTER the first issue leaves the domain alone", () => {
+    // Turn work opened before the new resident arrived: the rail still starts at
+    // the work, and the marker plots inside it.
+    const index = unitIndexOf(
+      facts({ unitNumber: "101", moveInAt: new Date("2026-07-10T00:00:00").getTime() }),
+    );
+    const [group] = groupsOf(
+      [wo({ unit_number: "101", date_reported: "2026-07-04T09:00:00" })],
+      index,
+    );
+    expect(group.railStartMs).toBe(new Date("2026-07-04T00:00:00").getTime());
+    expect(group.timeline[0].position).toBe(0);
+    expect(group.moveIn!.position).toBeCloseTo(6 / 14, 5);
+  });
+
+  test("no move-in leaves the domain at the first event", () => {
+    const [group] = groupsOf([wo({ date_reported: "2026-07-08T09:00:00" })]);
+    expect(group.moveIn).toBe(null);
+    expect(group.railStartMs).toBe(new Date("2026-07-08T00:00:00").getTime());
+    expect(group.timeline[0].position).toBe(0);
   });
 
   test("stale move-ins (>30 days ago) get no marker", () => {
@@ -381,7 +427,7 @@ describe("buildClosedRows", () => {
   test("daysToComplete is -1 / em-dash when either date is missing", () => {
     const rows = buildClosedRows({
       workOrders,
-      option: "idAscending",
+      option: "unitAscending",
       unitIndex: EMPTY_INDEX,
       nowMs: NOW,
     });
@@ -402,8 +448,6 @@ describe("buildClosedRows", () => {
     expect(numbersFor("dateReportedDescending")).toEqual(["100", "3", "9", "20"]);
     expect(numbersFor("recentMoveInDescending")).toEqual(["100", "3", "9", "20"]); // falls back to reported
     expect(numbersFor("dateReportedAscending")).toEqual(["9", "3", "100", "20"]); // missing reported last
-    expect(numbersFor("idAscending")).toEqual(["3", "9", "20", "100"]); // numeric, not lexical
-    expect(numbersFor("idDescending")).toEqual(["100", "20", "9", "3"]);
     expect(numbersFor("statusAscending")).toEqual(["20", "3", "9", "100"]); // Canceled<Cancelled<Closed<Completed
     expect(numbersFor("statusDescending")).toEqual(["100", "9", "3", "20"]);
     expect(numbersFor("unitAscending")).toEqual(["100", "3", "9", "20"]); // units 2,5,12,101
@@ -412,16 +456,29 @@ describe("buildClosedRows", () => {
 
 describe("sortOptionsFor", () => {
   test("move-in sorting is offered only on the open board, both directions", () => {
-    // 6 fields x 2 directions. The matrix used to have holes (no oldest-
-    // completed, no unit-descending, no ascending move-in), which is why the
-    // filter sheet could not offer a direction control at all.
-    expect(sortOptionsFor("open")).toHaveLength(12);
     expect(sortOptionsFor("open")).toContain("recentMoveInDescending");
     expect(sortOptionsFor("open")).toContain("recentMoveInAscending");
     for (const mode of ["closed", "makeReady", "hotSpots"] as const) {
       expect(sortOptionsFor(mode)).not.toContain("recentMoveInDescending");
       expect(sortOptionsFor(mode)).not.toContain("recentMoveInAscending");
-      expect(sortOptionsFor(mode)).toHaveLength(10);
     }
+  });
+
+  test("completion sorting is offered only on the closed board", () => {
+    // Open work has no completion date, so every row would share the missing-
+    // date sentinel: a control that looks like it sorts and does not.
+    expect(sortOptionsFor("closed")).toContain("dateCompletedDescending");
+    expect(sortOptionsFor("closed")).toContain("dateCompletedAscending");
+    for (const mode of ["open", "makeReady", "hotSpots"] as const) {
+      expect(sortOptionsFor(mode)).not.toContain("dateCompletedDescending");
+      expect(sortOptionsFor(mode)).not.toContain("dateCompletedAscending");
+    }
+  });
+
+  test("each board offers four fields, or three where neither extra applies", () => {
+    // 2 directions each. Retiring id sorting took a field off every board.
+    expect(sortOptionsFor("open")).toHaveLength(8);
+    expect(sortOptionsFor("closed")).toHaveLength(8);
+    expect(sortOptionsFor("makeReady")).toHaveLength(6);
   });
 });

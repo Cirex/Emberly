@@ -49,8 +49,26 @@ export interface OpenWorkOrderGroup {
   /** Events beyond the 6-dot cap. */
   timelineOverflow: number;
   railTint: "blocked" | "attention" | "warning" | "secondary";
-  /** Present only when the move-in is real, past, and ≤ 30 days old. */
-  moveIn: { dayMs: number; daysAgo: number } | null;
+  /**
+   * The rail's time domain — every `position` on this group maps into it.
+   *
+   * The START is the earlier of the first event and the move-in, NOT simply the
+   * first event: a resident normally moves in and THEN reports problems, so a
+   * domain anchored on the first work order cannot place the move-in at all. It
+   * used to clamp to 0, stacking the marker on the first dot with a zero-width
+   * bridge — the marker was drawn, invisibly, in exactly the case it is for.
+   *
+   * Published here rather than recomputed in the view, which had its own copy of
+   * this arithmetic and so could disagree with the dots it was positioning.
+   */
+  railStartMs: number;
+  railEndMs: number;
+  /**
+   * Present only when the move-in is real, past, and ≤ 30 days old — beyond that
+   * a single old move-in would stretch the domain until every dot collapsed
+   * against the right edge. `position` is 0…1 along the rail.
+   */
+  moveIn: { dayMs: number; daysAgo: number; position: number } | null;
   firstIssueAfterMoveIn: { eventIndex: number; elapsedDays: number } | null;
 }
 
@@ -118,6 +136,16 @@ export function buildOpenGroups(input: {
       if (bucket) bucket.push(wo);
       else byDay.set(day, [wo]);
     }
+    // Move-in first: it can widen the rail's domain, so the positions below
+    // depend on it. Only a real, past move-in inside the 30-day window counts.
+    let moveInDay: number | null = null;
+    if (facts?.moveInAt != null) {
+      const day = startOfDay(facts.moveInAt);
+      if (day <= startOfDay(nowMs) && calendarDaysBetween(day, startOfDay(nowMs)) <= 30) {
+        moveInDay = day;
+      }
+    }
+
     const eventDays = [...byDay.keys()].sort((a, b) => a - b);
     const timelineOverflow = Math.max(0, eventDays.length - TIMELINE_EVENT_CAP);
     const timeline: TimelineEvent[] = eventDays.slice(0, TIMELINE_EVENT_CAP).map((dayMs) => {
@@ -138,15 +166,22 @@ export function buildOpenGroups(input: {
         isFirstIssueAfterMoveIn: false,
       };
     });
+    // The rail domain, and every position measured against it.
+    let railStartMs = timeline.length > 0 ? timeline[0].dayMs : startOfDay(nowMs);
+    let railEndMs = startOfDay(nowMs);
     if (timeline.length > 0) {
-      const firstDay = timeline[0].dayMs;
-      const lastDay = Math.max(timeline[timeline.length - 1].dayMs, startOfDay(nowMs));
-      const span = Math.max(lastDay - firstDay, DAY_MS);
+      if (moveInDay !== null) railStartMs = Math.min(railStartMs, moveInDay);
+      railEndMs = Math.max(timeline[timeline.length - 1].dayMs, startOfDay(nowMs));
+      const span = Math.max(railEndMs - railStartMs, DAY_MS);
       for (const event of timeline) {
         // A lone point with no elapsed span centers on the rail.
-        event.position = lastDay === firstDay ? 0.5 : (event.dayMs - firstDay) / span;
+        event.position = railEndMs === railStartMs ? 0.5 : (event.dayMs - railStartMs) / span;
       }
     }
+    const positionOf = (dayMs: number) =>
+      railEndMs === railStartMs
+        ? 0.5
+        : (dayMs - railStartMs) / Math.max(railEndMs - railStartMs, DAY_MS);
 
     // Rail tint escalates with the OLDEST open issue's age.
     let railTint: OpenWorkOrderGroup["railTint"] = "secondary";
@@ -155,27 +190,26 @@ export function buildOpenGroups(input: {
       railTint = ageDays >= 30 ? "blocked" : ageDays >= 14 ? "attention" : ageDays >= 7 ? "warning" : "secondary";
     }
 
-    // Move-in marker + "first issue after move-in" callout: only for real,
-    // past move-ins within the last 30 days, and only an event within 30 days
-    // AFTER the move-in qualifies.
+    // Move-in marker + "first issue after move-in" callout. Only an event within
+    // 30 days AFTER the move-in qualifies as the first issue.
     let moveIn: OpenWorkOrderGroup["moveIn"] = null;
     let firstIssueAfterMoveIn: OpenWorkOrderGroup["firstIssueAfterMoveIn"] = null;
-    if (facts?.moveInAt != null) {
-      const moveInDay = startOfDay(facts.moveInAt);
-      const today = startOfDay(nowMs);
-      const daysAgo = calendarDaysBetween(moveInDay, today);
-      if (moveInDay <= today && daysAgo <= 30) {
-        moveIn = { dayMs: moveInDay, daysAgo };
-        const eventIndex = timeline.findIndex(
-          (event) => event.dayMs >= moveInDay && calendarDaysBetween(moveInDay, event.dayMs) <= 30,
-        );
-        if (eventIndex >= 0) {
-          timeline[eventIndex].isFirstIssueAfterMoveIn = true;
-          firstIssueAfterMoveIn = {
-            eventIndex,
-            elapsedDays: Math.max(calendarDaysBetween(moveInDay, timeline[eventIndex].dayMs), 0),
-          };
-        }
+    if (moveInDay !== null) {
+      const day = moveInDay;
+      moveIn = {
+        dayMs: day,
+        daysAgo: calendarDaysBetween(day, startOfDay(nowMs)),
+        position: positionOf(day),
+      };
+      const eventIndex = timeline.findIndex(
+        (event) => event.dayMs >= day && calendarDaysBetween(day, event.dayMs) <= 30,
+      );
+      if (eventIndex >= 0) {
+        timeline[eventIndex].isFirstIssueAfterMoveIn = true;
+        firstIssueAfterMoveIn = {
+          eventIndex,
+          elapsedDays: Math.max(calendarDaysBetween(day, timeline[eventIndex].dayMs), 0),
+        };
       }
     }
 
@@ -193,6 +227,8 @@ export function buildOpenGroups(input: {
       timeline,
       timelineOverflow,
       railTint,
+      railStartMs,
+      railEndMs,
       moveIn,
       firstIssueAfterMoveIn,
     });
@@ -232,12 +268,6 @@ export function sortOpenGroups(
     case "recentMoveInDescending":
       // -Infinity sentinel keeps units with no move-in data last.
       sorted.sort((a, b) => compareNumbers(b.recentMoveInSort, a.recentMoveInSort));
-      break;
-    case "idAscending":
-      sorted.sort((a, b) => compareNumericStrings(first(a).number, first(b).number));
-      break;
-    case "idDescending":
-      sorted.sort((a, b) => compareNumericStrings(first(b).number, first(a).number));
       break;
     case "statusAscending":
       sorted.sort((a, b) =>

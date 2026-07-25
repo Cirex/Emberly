@@ -104,7 +104,7 @@ describe("closed timeline bands", () => {
     expect(groupsApplyTo("dateCompletedAscending")).toBe(true);
     // These would put arbitrary rows under a day header.
     expect(groupsApplyTo("unitAscending")).toBe(false);
-    expect(groupsApplyTo("idDescending")).toBe(false);
+    expect(groupsApplyTo("unitDescending")).toBe(false);
     expect(groupsApplyTo("statusAscending")).toBe(false);
     // Reported-date is a date, but NOT the one the bands describe.
     expect(groupsApplyTo("dateReportedDescending")).toBe(false);

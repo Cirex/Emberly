@@ -119,6 +119,9 @@ const en = {
       },
       callback: "Callback",
     },
+    /** Open-board unit timeline: the rail starts at the move-in when there is
+        a recent one, so the left endpoint says what that date IS. */
+    timeline: { movedIn: "Moved in {{date}}" },
     untitled: "Untitled work order",
     loadingMore: "Loading more…",
     sort: {
@@ -126,7 +129,6 @@ const en = {
       field: {
         dateCompleted: "Completed",
         dateReported: "Reported",
-        id: "ID",
         status: "Status",
         unit: "Unit",
         recentMoveIn: "Move-in",
@@ -680,6 +682,7 @@ const es: typeof en = {
       },
       callback: "Reincidencia",
     },
+    timeline: { movedIn: "Mudanza {{date}}" },
     untitled: "Orden sin título",
     loadingMore: "Cargando más…",
     sort: {
@@ -687,7 +690,6 @@ const es: typeof en = {
       field: {
         dateCompleted: "Completada",
         dateReported: "Reportada",
-        id: "ID",
         status: "Estado",
         unit: "Unidad",
         recentMoveIn: "Ingreso",

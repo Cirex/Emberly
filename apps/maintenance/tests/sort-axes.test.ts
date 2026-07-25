@@ -5,6 +5,7 @@ import {
   directionKeys,
   optionFor,
   reconcileForMode,
+  sanitizeSortOption,
   sortFieldsFor,
   type SortDirection,
   type SortField,
@@ -22,7 +23,7 @@ import { RESMAN_LABELS } from "@/lib/derived/resman-labels";
  */
 
 const ALL = Object.keys(SORT_AXES) as WorkOrderSortOption[];
-const FIELDS: SortField[] = ["dateCompleted", "dateReported", "recentMoveIn", "id", "status", "unit"];
+const FIELDS: SortField[] = ["dateCompleted", "dateReported", "recentMoveIn", "status", "unit"];
 const DIRECTIONS: SortDirection[] = ["asc", "desc"];
 
 describe("sort axes", () => {
@@ -58,26 +59,48 @@ describe("sort axes", () => {
       const optionFields = new Set(sortOptionsFor(mode).map((o) => axesOf(o).field));
       expect(new Set(sortFieldsFor(mode))).toEqual(optionFields);
     }
-    // Move-in is meaningless off the open board's unit groups.
+    // Move-in is meaningless off the open board's unit groups; completion date
+    // is meaningless anywhere but closed.
     expect(sortFieldsFor("open")).toContain("recentMoveIn");
     expect(sortFieldsFor("closed")).not.toContain("recentMoveIn");
+    expect(sortFieldsFor("closed")).toContain("dateCompleted");
+    expect(sortFieldsFor("open")).not.toContain("dateCompleted");
+    // Each board is down to four fields, which is what fits one segmented row.
+    expect(sortFieldsFor("open")).toHaveLength(4);
+    expect(sortFieldsFor("closed")).toHaveLength(4);
   });
 
-  test("switching to Closed cannot strand a move-in sort", () => {
+  test("switching modes cannot strand a sort the new board does not offer", () => {
     // Without reconciliation the board would hold an option its own mode does
     // not offer, and the field control would show nothing selected.
     const reconciled = reconcileForMode("recentMoveInAscending", "closed");
     expect(sortOptionsFor("closed")).toContain(reconciled);
     // Direction is preserved across the fallback — the user asked for ascending.
     expect(axesOf(reconciled).direction).toBe("asc");
+    // The mirror case: completion date does not survive a move to Open.
+    expect(reconcileForMode("dateCompletedDescending", "open")).toBe("dateReportedDescending");
     // An option that IS valid for the mode is left alone.
-    expect(reconcileForMode("idDescending", "closed")).toBe("idDescending");
+    expect(reconcileForMode("statusDescending", "closed")).toBe("statusDescending");
+  });
+
+  test("a retired option read back from disk cannot crash the sheet", () => {
+    // Devices persisted `idDescending` before id sorting was retired. axesOf
+    // would return undefined for it and the filter sheet reads `.field`.
+    expect(sanitizeSortOption("idDescending", "closed")).toBe("dateCompletedDescending");
+    expect(sanitizeSortOption("idAscending", "open")).toBe("dateReportedDescending");
+    // Junk, absent, and wrong-typed values all land on the board's default.
+    expect(sanitizeSortOption(undefined, "open")).toBe("dateReportedDescending");
+    expect(sanitizeSortOption(42, "closed")).toBe("dateCompletedDescending");
+    // A completion sort saved on the open board reconciles instead of standing.
+    expect(sanitizeSortOption("dateCompletedAscending", "open")).toBe("dateReportedAscending");
+    // A still-valid value is returned untouched.
+    expect(sanitizeSortOption("unitAscending", "closed")).toBe("unitAscending");
   });
 
   test("direction labels read in the field's own language", () => {
     // "Ascending" for a date is a sentence a technician has to decode.
     expect(directionKeys("dateCompleted")).toEqual({ desc: "newestFirst", asc: "oldestFirst" });
-    expect(directionKeys("id")).toEqual({ asc: "lowToHigh", desc: "highToLow" });
+    expect(directionKeys("unit")).toEqual({ asc: "lowToHigh", desc: "highToLow" });
     expect(directionKeys("status")).toEqual({ asc: "aToZ", desc: "zToA" });
     // Every field must supply both, or the button renders an empty label.
     for (const field of FIELDS) {

@@ -16,6 +16,11 @@ import type { DisplayMode, ParsedWorkOrder, UnitIndex } from "./types";
  * descending, move-in had no ascending. Every field now has both, so the
  * direction control is never disabled and "oldest completed first" — the way you
  * find work that sat — is reachable.
+ *
+ * SORTING BY ID IS GONE. Work-order numbers are issued in reported order, so
+ * "ID: Newest" was a second, less legible copy of "Reported: Newest" — and when
+ * ResMan's numbering skipped a block, a misleading one. Legacy persisted values
+ * are reconciled on rehydrate (see sanitizeSortOption).
  */
 export type WorkOrderSortOption =
   | "dateCompletedDescending"
@@ -24,8 +29,6 @@ export type WorkOrderSortOption =
   | "dateReportedAscending"
   | "recentMoveInDescending"
   | "recentMoveInAscending"
-  | "idAscending"
-  | "idDescending"
   | "statusAscending"
   | "statusDescending"
   | "unitAscending"
@@ -39,8 +42,6 @@ export const SORT_LABELS: Record<WorkOrderSortOption, string> = {
   dateReportedDescending: "Date Reported: Newest",
   dateReportedAscending: "Date Reported: Oldest",
   recentMoveInDescending: "Recent Move-Ins",
-  idAscending: "ID: Ascending",
-  idDescending: "ID: Descending",
   statusAscending: "Status: Ascending",
   statusDescending: "Status: Descending",
   unitAscending: "Unit: Ascending",
@@ -54,19 +55,31 @@ const ALL_SORT_OPTIONS: WorkOrderSortOption[] = [
   "dateReportedDescending",
   "dateReportedAscending",
   "recentMoveInDescending",
-  "idAscending",
-  "idDescending",
   "statusAscending",
   "statusDescending",
   "unitAscending",
 ];
 
-/** Move-in sorting only means something on the open board's unit groups. */
+const COMPLETION_SORTS: WorkOrderSortOption[] = [
+  "dateCompletedDescending",
+  "dateCompletedAscending",
+];
+const MOVE_IN_SORTS: WorkOrderSortOption[] = ["recentMoveInDescending", "recentMoveInAscending"];
+
+/**
+ * Which orderings a board can offer.
+ *
+ * Completion date is CLOSED-ONLY: open work has no completion date, so every row
+ * shares the same missing-date sentinel and the ordering collapses to whatever
+ * the tiebreak happens to be — a control that looks like it sorts and doesn't.
+ * Move-in only means something on the open board's unit groups.
+ */
 export function sortOptionsFor(mode: DisplayMode): WorkOrderSortOption[] {
-  if (mode === "open") return [...ALL_SORT_OPTIONS];
-  return ALL_SORT_OPTIONS.filter(
-    (option) => option !== "recentMoveInDescending" && option !== "recentMoveInAscending",
-  );
+  return ALL_SORT_OPTIONS.filter((option) => {
+    if (COMPLETION_SORTS.includes(option)) return mode === "closed";
+    if (MOVE_IN_SORTS.includes(option)) return mode === "open";
+    return true;
+  });
 }
 
 /**
@@ -116,12 +129,6 @@ export function sortOpenWorkOrders(
           compareNumbers(recentMoveInSort(b, unitIndex), recentMoveInSort(a, unitIndex)) ||
           byReportedDesc(a, b),
       );
-      break;
-    case "idAscending":
-      sorted.sort((a, b) => compareNumericStrings(a.number, b.number));
-      break;
-    case "idDescending":
-      sorted.sort((a, b) => compareNumericStrings(b.number, a.number));
       break;
     case "statusAscending":
       sorted.sort((a, b) => compareStrings(a.status, b.status) || byReportedDesc(a, b));

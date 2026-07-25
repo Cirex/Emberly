@@ -109,12 +109,6 @@ export function buildClosedRows(input: {
     case "dateReportedAscending":
       rows.sort((a, b) => compareNumbers(a.dateReportedMs ?? Infinity, b.dateReportedMs ?? Infinity));
       break;
-    case "idAscending":
-      rows.sort((a, b) => compareNumericStrings(a.number, b.number));
-      break;
-    case "idDescending":
-      rows.sort((a, b) => compareNumericStrings(b.number, a.number));
-      break;
     case "statusAscending":
       rows.sort((a, b) => compareStrings(a.status, b.status));
       break;

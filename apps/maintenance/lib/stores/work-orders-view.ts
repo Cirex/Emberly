@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { WorkOrderSortOption } from "@/lib/derived/sort";
-import { axesOf, optionFor, reconcileForMode } from "@/lib/derived/sort-axes";
+import { axesOf, optionFor, reconcileForMode, sanitizeSortOption } from "@/lib/derived/sort-axes";
 import { EMPTY_FILTERS, type DisplayMode, type FilterSets, type SignalFilter } from "@/lib/derived/types";
 export type { SignalFilter };
 
@@ -132,6 +132,26 @@ export const useWorkOrdersView = create<WorkOrdersViewState>()(
       name: "emberly-maintenance-wo-view",
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({ displayMode: s.displayMode, sortOption: s.sortOption }),
+      /**
+       * Validate the stored sort against THIS build's vocabulary. Retiring an
+       * option does not reach devices that already saved it, and an unknown
+       * value has no axes — the filter sheet would crash on `.field`. Only
+       * `setDisplayMode` reconciled before, which never runs if the app opens on
+       * the mode it was closed in.
+       */
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<WorkOrdersViewState>;
+        const displayMode = saved.displayMode ?? current.displayMode;
+        return {
+          ...current,
+          ...saved,
+          displayMode,
+          sortOption: sanitizeSortOption(
+            saved.sortOption,
+            displayMode === "closed" ? "closed" : "open",
+          ),
+        };
+      },
     },
   ),
 );

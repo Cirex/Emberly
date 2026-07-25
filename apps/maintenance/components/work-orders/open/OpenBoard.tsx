@@ -7,7 +7,7 @@ import { ClassificationChip, TechBadge } from "@/components/work-orders/rows";
 import { timelineGapTitle, type OpenWorkOrderGroup, type TimelineEvent } from "@/lib/derived/open-groups";
 import { classificationColor, workOrderStatusColor } from "@/lib/derived/status";
 import { tagIconName } from "@/lib/derived/tags";
-import { abbreviatedDate, calendarDaysBetween, DAY_MS, startOfDay } from "@/lib/derived/time";
+import { abbreviatedDate, calendarDaysBetween, startOfDay } from "@/lib/derived/time";
 import type { ParsedWorkOrder } from "@/lib/derived/types";
 import { CALLBACK_TINT } from "@/theme/tokens";
 import { useTranslated } from "@/lib/translation/use-translated";
@@ -47,6 +47,8 @@ const MIN_GAP_LABEL_PX = 54;
  */
 function TimelineRail({ group, nowMs }: { group: OpenWorkOrderGroup; nowMs: number }) {
   const [width, setWidth] = useState(0);
+  // Both hooks stay ABOVE the early return below — Rules of Hooks.
+  const { t } = useTranslation();
   const { timeline: events, timelineOverflow, moveIn, firstIssueAfterMoveIn } = group;
   if (events.length === 0 || (group.workOrders.length <= 1 && moveIn === null)) return null;
 
@@ -54,12 +56,12 @@ function TimelineRail({ group, nowMs }: { group: OpenWorkOrderGroup; nowMs: numb
   const x = (position: number) =>
     RAIL_INSET + (width - RAIL_INSET * 2) * Math.min(Math.max(position, 0), 1);
 
-  // The move-in marker shares the events' day→position mapping.
-  const firstDay = events[0].dayMs;
-  const lastDay = Math.max(events[events.length - 1].dayMs, startOfDay(nowMs));
-  const span = Math.max(lastDay - firstDay, DAY_MS);
-  const moveInX =
-    moveIn !== null ? x(lastDay === firstDay ? 0.5 : (moveIn.dayMs - firstDay) / span) : null;
+  // Domain comes from the group — the view used to recompute it from the events
+  // alone, which meant a move-in that predates the first work order had nowhere
+  // to plot and clamped onto the first dot.
+  const firstDay = group.railStartMs;
+  const lastDay = group.railEndMs;
+  const moveInX = moveIn !== null ? x(moveIn.position) : null;
   const firstIssueX =
     firstIssueAfterMoveIn !== null ? x(events[firstIssueAfterMoveIn.eventIndex].position) : null;
 
@@ -108,15 +110,26 @@ function TimelineRail({ group, nowMs }: { group: OpenWorkOrderGroup; nowMs: numb
       .toString(16)
       .padStart(2, "0");
 
+  // When the rail starts at the move-in, the left endpoint IS the move-in date —
+  // say so, rather than printing a bare date the marker alone has to explain.
+  const startsAtMoveIn = moveIn !== null && moveIn.dayMs <= events[0].dayMs;
+  const startLabel = abbreviatedDate(firstDay, nowMs);
   const endLabel = abbreviatedDate(lastDay, nowMs);
   return (
     <View style={{ marginTop: 8 }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 2, marginBottom: 3 }}>
-        <Text className="text-muted dark:text-white/50" style={{ fontSize: 10, fontWeight: "500" }}>
-          {abbreviatedDate(firstDay, nowMs)}
+        <Text
+          className={startsAtMoveIn ? undefined : "text-muted dark:text-white/50"}
+          style={{
+            fontSize: 10,
+            fontWeight: startsAtMoveIn ? "700" : "500",
+            color: startsAtMoveIn ? MOVE_IN_TINT : undefined,
+          }}
+        >
+          {startsAtMoveIn ? t("workOrders.timeline.movedIn", { date: startLabel }) : startLabel}
         </Text>
         <Text className="text-muted dark:text-white/50" style={{ fontSize: 10, fontWeight: "500" }}>
-          {lastDay === startOfDay(nowMs) ? "Today" : endLabel}
+          {lastDay === startOfDay(nowMs) ? t("workOrders.closed.band.today") : endLabel}
         </Text>
       </View>
       <View style={{ flexDirection: "row", alignItems: "center" }}>

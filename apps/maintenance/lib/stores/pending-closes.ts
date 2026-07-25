@@ -44,6 +44,40 @@ interface PendingClosesState {
   remove: (workOrderId: string) => void;
 }
 
+/**
+ * Mark an entry accepted, but ONLY if it still holds the note that was sent.
+ * Returns whether the ack landed.
+ *
+ * The write is awaited, and the technician can re-close with a corrected note
+ * while it is in flight — `queueClose` overwrites the entry and resets `acked`.
+ * Acking blindly marked that NEWER note as accepted by a request that never
+ * carried it, and since `flush` only retries un-acked entries, the corrected
+ * note was silently dropped forever.
+ */
+function ackIfUnchanged(
+  set: (fn: (s: PendingClosesState) => Partial<PendingClosesState>) => void,
+  workOrderId: string,
+  sentNote: string,
+  attempts?: number,
+): boolean {
+  let acked = false;
+  set((s) => {
+    const cur = s.pending[workOrderId];
+    if (!cur || cur.note !== sentNote) return s;
+    acked = true;
+    return {
+      pending: {
+        ...s.pending,
+        [workOrderId]: { ...cur, acked: true, ...(attempts === undefined ? {} : { attempts }) },
+      },
+    };
+  });
+  return acked;
+}
+
+/** Module-scoped so it guards the ONE store, not a per-call closure. */
+let flushing = false;
+
 export const usePendingCloses = create<PendingClosesState>()(
   persist(
     (set, get) => ({
@@ -58,42 +92,51 @@ export const usePendingCloses = create<PendingClosesState>()(
         }));
         try {
           await closeWorkOrder(workOrderId, note, config);
-          set((s) => {
-            const entry = s.pending[workOrderId];
-            if (!entry) return s;
-            return { pending: { ...s.pending, [workOrderId]: { ...entry, acked: true } } };
-          });
+          ackIfUnchanged(set, workOrderId, note);
         } catch {
           // Keep it un-acked; flush() retries on the next sync tick.
         }
       },
 
       flush: async (config) => {
-        const unacked = Object.values(get().pending).filter((p) => !p.acked);
-        for (const entry of unacked) {
-          // This flush try is one more attempt on top of whatever the entry
-          // has already made (missing = the immediate try in queueClose).
-          const attempts = (entry.attempts ?? 1) + 1;
-          try {
-            await closeWorkOrder(entry.workOrderId, entry.note, config);
-            set((s) => {
-              const cur = s.pending[entry.workOrderId];
-              if (!cur) return s;
-              return { pending: { ...s.pending, [entry.workOrderId]: { ...cur, acked: true, attempts } } };
-            });
-            // No PII: retry accounting + queue latency only.
-            capture("pending_close_flushed", {
-              retry_count: attempts,
-              queued_ms: Date.now() - entry.queuedAt,
-            });
-          } catch {
-            // Still unreachable — persist the attempt count for the next tick.
-            set((s) => {
-              const cur = s.pending[entry.workOrderId];
-              if (!cur || cur.acked) return s;
-              return { pending: { ...s.pending, [entry.workOrderId]: { ...cur, attempts } } };
-            });
+        // Re-entrancy guard. flush() is driven by the 60s sync tick AND by
+        // AppState going active, and a slow request outlives the interval — so
+        // two flushes overlapped routinely, each re-sending the same un-acked
+        // closes. Against a real ResMan write that is a work order closed
+        // twice, and it also double-counted `attempts` and fired the analytics
+        // event twice per close.
+        if (flushing) return;
+        flushing = true;
+        try {
+          const unacked = Object.values(get().pending).filter((p) => !p.acked);
+          for (const entry of unacked) {
+            // This flush try is one more attempt on top of whatever the entry
+            // has already made (missing = the immediate try in queueClose).
+            const attempts = (entry.attempts ?? 1) + 1;
+            try {
+              await closeWorkOrder(entry.workOrderId, entry.note, config);
+              const acked = ackIfUnchanged(set, entry.workOrderId, entry.note, attempts);
+              // Only report a close that this request actually completed. If
+              // the note changed while the request was in flight, the entry
+              // stays queued and the event belongs to the later attempt.
+              if (acked) {
+                // No PII: retry accounting + queue latency only.
+                capture("pending_close_flushed", {
+                  retry_count: attempts,
+                  queued_ms: Date.now() - entry.queuedAt,
+                });
+              }
+            } catch {
+              // Still unreachable — persist the attempt count for the next tick.
+              set((s) => {
+                const cur = s.pending[entry.workOrderId];
+                if (!cur || cur.acked) return s;
+                return { pending: { ...s.pending, [entry.workOrderId]: { ...cur, attempts } } };
+              });
+            }
           }
+        } finally {
+          flushing = false;
         }
       },
 

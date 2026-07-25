@@ -1,5 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-  <dict/>
+  <dict>
+    <!--
+      Required for ANY push notification. Without this key iOS refuses to
+      register for remote notifications, so expo-notifications'
+      getExpoPushTokenAsync() throws and no device ever gets a push token.
+      That is exactly what happened: push_tokens sat empty while real devices
+      used the app daily, because the throw was swallowed by a console.warn.
+
+      `development` is correct for the committed project. Xcode substitutes
+      `production` when building against a distribution provisioning profile,
+      and EAS does the same for release builds.
+
+      This file only declares the entitlement — it does not create the
+      capability. The App ID must also have Push Notifications enabled and an
+      APNs key must exist in the Apple Developer account.
+    -->
+    <key>aps-environment</key>
+    <string>development</string>
+  </dict>
 </plist>

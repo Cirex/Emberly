@@ -16,6 +16,7 @@ import {
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import type { AppLanguage } from "@/lib/i18n";
 import { registerForEmergencyPush, unregisterEmergencyPush } from "@/lib/push";
+import { emergencyAlertNotice } from "@/lib/push/availability-notice";
 import { useConfig } from "@/lib/stores/config";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { usePendingEdits } from "@/lib/stores/pending-edits";
@@ -244,10 +245,21 @@ export default function Settings() {
 
   const onToggleEmergencyAlerts = (next: boolean) => {
     settings.setEmergencyAlerts(next);
-    // Fire-and-forget: both calls warn internally and never throw.
     const config = { baseUrl, token };
-    if (next) void registerForEmergencyPush(config);
-    else void unregisterEmergencyPush(config);
+    if (!next) {
+      void unregisterEmergencyPush(config);
+      return;
+    }
+    // Turning alerts ON is the one moment the tech is actually asking for this,
+    // so it is the one moment worth telling them it didn't work. Registration
+    // used to fail silently — the whole fleet had no push token for weeks
+    // because the iOS build carried no entitlement, and nothing anywhere said
+    // so. Never throws; the result is a reason code.
+    void registerForEmergencyPush(config).then((result) => {
+      if (result.ok) return;
+      const notice = emergencyAlertNotice(result);
+      if (notice) Alert.alert(notice.title, notice.body);
+    });
   };
 
   const onSignOut = async () => {

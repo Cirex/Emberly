@@ -32,6 +32,58 @@ let registering = false;
 // response for the whole process lifetime, so remember what was handled.
 let handledResponseDate: number | null = null;
 
+/**
+ * Why registration didn't happen. This used to be a `void` function whose every
+ * failure path was a `console.warn`, and the cost of that was concrete: the iOS
+ * push entitlement was missing from the build, `getExpoPushTokenAsync` threw on
+ * every launch, and push_tokens stayed EMPTY for the whole fleet with no symptom
+ * anyone could see. A reason code that reaches analytics makes the next such
+ * outage a dashboard line instead of an archaeology exercise.
+ */
+export type PushRegistrationReason =
+  /** A registration is already in flight this session. */
+  | "in_flight"
+  /** The tech turned emergency alerts off in Settings. */
+  | "alerts_off"
+  /** Simulator — Apple issues push tokens only to real hardware. */
+  | "simulator"
+  | "permission_denied"
+  /** No EAS projectId in the app config. */
+  | "no_project_id"
+  /** iOS refused to register: the build has no `aps-environment` entitlement. */
+  | "no_push_entitlement"
+  | "server_rejected"
+  | "unknown";
+
+export type PushRegistration =
+  | { ok: true; alreadyRegistered: boolean }
+  | { ok: false; reason: PushRegistrationReason; detail?: string };
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Last outcome, so Settings can show the tech why alerts aren't arriving. */
+let lastRegistration: PushRegistration | null = null;
+export function lastPushRegistration(): PushRegistration | null {
+  return lastRegistration;
+}
+
+function report(result: PushRegistration): PushRegistration {
+  lastRegistration = result;
+  if (result.ok) {
+    if (!result.alreadyRegistered) capture("push_registered");
+    return result;
+  }
+  // `in_flight` is normal concurrency, not a failure worth reporting.
+  if (result.reason !== "in_flight") {
+    console.warn(`[push] not registered: ${result.reason}${result.detail ? ` — ${result.detail}` : ""}`);
+    // No PII: a reason code and the platform.
+    capture("push_registration_failed", { reason: result.reason, platform: Platform.OS });
+  }
+  return result;
+}
+
 function easProjectId(): string | null {
   const fromExtra: unknown = Constants.expoConfig?.extra?.eas?.projectId;
   if (typeof fromExtra === "string" && fromExtra.length > 0) return fromExtra;
@@ -55,13 +107,14 @@ async function ensureGranted(): Promise<boolean> {
  * toggle. Skips silently when alerts are off, permission is denied, or the
  * app runs on a simulator (push tokens need real hardware).
  */
-export async function registerForEmergencyPush(config: StaffConfig): Promise<void> {
-  if (registeredToken || registering) return;
+export async function registerForEmergencyPush(config: StaffConfig): Promise<PushRegistration> {
+  if (registeredToken) return report({ ok: true, alreadyRegistered: true });
+  if (registering) return report({ ok: false, reason: "in_flight" });
   registering = true;
   try {
-    if (!useSettings.getState().emergencyAlerts) return;
-    if (!Device.isDevice) return;
-    if (!(await ensureGranted())) return;
+    if (!useSettings.getState().emergencyAlerts) return report({ ok: false, reason: "alerts_off" });
+    if (!Device.isDevice) return report({ ok: false, reason: "simulator" });
+    if (!(await ensureGranted())) return report({ ok: false, reason: "permission_denied" });
     if (Platform.OS === "android") {
       await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL, {
         name: "Emergency work orders",
@@ -69,18 +122,27 @@ export async function registerForEmergencyPush(config: StaffConfig): Promise<voi
       });
     }
     const projectId = easProjectId();
-    if (!projectId) {
-      console.warn("[push] no EAS projectId in app config; skipping registration");
-      return;
+    if (!projectId) return report({ ok: false, reason: "no_project_id" });
+
+    let token: string;
+    try {
+      token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    } catch (error) {
+      // The failure this whole reporting exists for. On iOS this throws when the
+      // build carries no `aps-environment` entitlement — which is a BUILD
+      // configuration problem, invisible at runtime, and it kept push_tokens
+      // empty while real devices used the app every day.
+      return report({ ok: false, reason: "no_push_entitlement", detail: message(error) });
     }
-    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-    if (await registerPushToken({ token, platform: Platform.OS === "ios" ? "ios" : "android" }, config)) {
-      registeredToken = token;
-    } else {
-      console.warn("[push] token registration was not accepted by the server");
+
+    const platform = Platform.OS === "ios" ? "ios" : "android";
+    if (!(await registerPushToken({ token, platform }, config))) {
+      return report({ ok: false, reason: "server_rejected" });
     }
+    registeredToken = token;
+    return report({ ok: true, alreadyRegistered: false });
   } catch (error) {
-    console.warn("[push] registration failed:", error);
+    return report({ ok: false, reason: "unknown", detail: message(error) });
   } finally {
     registering = false;
   }

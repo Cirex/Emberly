@@ -2,6 +2,9 @@ import { PRODUCTION_ORIGIN } from "@emberly/core";
 import * as Device from "expo-device";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
+import { capture, resetAnalytics } from "@/lib/analytics";
+import { unregisterManagerPush } from "@/lib/push";
+import { clearSessionData } from "@/lib/session-data";
 
 // The staff token lives in the Keychain-backed secure store, never in
 // AsyncStorage. It is a per-user `eapi_` access token minted by
@@ -64,7 +67,7 @@ function parseAdmin(raw: string | null): StaffAdmin | null {
   return null;
 }
 
-export const useConfig = create<ConfigState>((set) => ({
+export const useConfig = create<ConfigState>((set, get) => ({
   baseUrl: BASE_URL,
   token: "",
   admin: null,
@@ -103,8 +106,35 @@ export const useConfig = create<ConfigState>((set) => ({
     ]);
     set({ token: token.trim(), admin });
   },
+  /**
+   * The ONE sign-out path. Everything a sign-out has to do lives here rather
+   * than in the screen that triggered it: there are three entry points (the
+   * Settings button, the account menu, the sidebar rail) and two of them used
+   * to call this and nothing else — so signing out from the rail left this
+   * device registered for the staff member's push alerts and left every
+   * cached resident, ledger and lease row sitting in AsyncStorage.
+   */
   signOut: async () => {
-    await Promise.all([SecureStore.deleteItemAsync(K.token), SecureStore.deleteItemAsync(K.admin)]);
+    const { baseUrl, token } = get();
+    // FIRST, while the staff token still authenticates it: stop this device
+    // receiving that person's alerts. Best-effort — offline sign-out must
+    // still sign out, and a stale registration is cleaned up server-side.
+    if (token) {
+      try {
+        await unregisterManagerPush({ baseUrl, token });
+      } catch {
+        /* offline — the row ages out server-side */
+      }
+    }
+    // Attribute the event to the staff member, then drop the identity so
+    // nothing after this is attributed to them.
+    capture("signed_out");
+    resetAnalytics();
+    await Promise.all([
+      SecureStore.deleteItemAsync(K.token),
+      SecureStore.deleteItemAsync(K.admin),
+      clearSessionData(),
+    ]);
     set({ token: "", admin: null });
   },
 }));

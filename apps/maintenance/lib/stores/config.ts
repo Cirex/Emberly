@@ -2,6 +2,9 @@ import { PRODUCTION_ORIGIN } from "@emberly/core";
 import * as Device from "expo-device";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
+import { capture, resetAnalytics } from "@/lib/analytics";
+import { unregisterEmergencyPush } from "@/lib/push";
+import { clearSessionData } from "@/lib/session-data";
 
 // The staff token lives in the Keychain-backed secure store, never in
 // AsyncStorage. It is a per-user `eapi_` access token minted by
@@ -64,7 +67,7 @@ function parseAdmin(raw: string | null): StaffAdmin | null {
   return null;
 }
 
-export const useConfig = create<ConfigState>((set) => ({
+export const useConfig = create<ConfigState>((set, get) => ({
   baseUrl: BASE_URL,
   token: "",
   admin: null,
@@ -103,8 +106,35 @@ export const useConfig = create<ConfigState>((set) => ({
     ]);
     set({ token: token.trim(), admin });
   },
+  /**
+   * The ONE sign-out path. Everything a sign-out has to do lives here rather
+   * than in the screen that triggered it: there are two entry points (the
+   * Settings button and the account menu) and the account menu called this and
+   * nothing else — so signing out from there left this device registered for
+   * that tech's emergency dispatch and left the whole property's work orders
+   * cached in AsyncStorage.
+   */
   signOut: async () => {
-    await Promise.all([SecureStore.deleteItemAsync(K.token), SecureStore.deleteItemAsync(K.admin)]);
+    const { baseUrl, token } = get();
+    // FIRST, while the staff token still authenticates it: stop this device
+    // receiving that person's emergency pushes. Best-effort — an offline
+    // sign-out must still sign out.
+    if (token) {
+      try {
+        await unregisterEmergencyPush({ baseUrl, token });
+      } catch {
+        /* offline — the row ages out server-side */
+      }
+    }
+    // Attribute the event to the staff member, then drop the identity so
+    // nothing after this is attributed to them.
+    capture("signed_out");
+    resetAnalytics();
+    await Promise.all([
+      SecureStore.deleteItemAsync(K.token),
+      SecureStore.deleteItemAsync(K.admin),
+      clearSessionData(),
+    ]);
     set({ token: "", admin: null });
   },
 }));

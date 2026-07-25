@@ -11,10 +11,14 @@ export const dynamic = "force-dynamic";
  * resident (name, unit, phones, email, plates) so the manager app can match
  * name / unit / phone / plate entirely on device, offline, from cache.
  *
- * PII-FREE BY CONSTRUCTION: birthdate, driver's licence and income are not in
- * this payload and never will be — it is persisted to the phone's disk. The
- * profile route is the only place those fields can be requested, and only
- * behind `?includePii=1` with an audit-log row.
+ * FREE OF THE SENSITIVE TIER BY CONSTRUCTION: birthdate, driver's licence and
+ * income are not in this payload and never will be — it is persisted to the
+ * phone's disk. The profile route is the only place those fields can be
+ * requested, and only behind `?includePii=1` with an audit-log row.
+ *
+ * It is NOT free of personal data: a name, unit, phone, email and plate per
+ * resident is exactly that, which is why the app purges this cache on sign-out
+ * (apps/manager/lib/session-data.ts).
  *
  * Staff-token only: scanners are gate devices, and scoped field-device roles
  * (maintenance, security) have no business holding the resident roster.

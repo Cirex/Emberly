@@ -5,18 +5,25 @@ import type { StaffConfig } from "@/lib/stores/config";
 /**
  * People directory + tenant profile reads.
  *
- *   GET /api/resman/manager/people      → the search INDEX (one small,
- *       PII-free row per resident: name, unit, phones, email, plates). Small
- *       enough to cache on device, which is what makes name/unit/phone/plate
- *       search work offline and instantly.
+ *   GET /api/resman/manager/people      → the search INDEX (one small row per
+ *       resident: name, unit, phones, email, plates). Small enough to cache on
+ *       device, which is what makes name/unit/phone/plate search work offline
+ *       and instantly.
  *   GET /api/resman/manager/people/:id  → one full profile.
  *
- * PII CONTRACT: birthdate, driver's licence and income are ABSENT from both
- * default payloads. They arrive only when `fetchTenantProfile` is called with
- * `includePii`, which the UI does exactly once per masked field the manager
- * taps — the server writes an admin_audit_logs row for each such call. The
- * always-present `rentToIncomeRatio` is the affordability answer that needs no
- * salary disclosure.
+ * PII CONTRACT — what this actually promises. The index is NOT "PII-free": a
+ * name, unit number, phone, email and licence plate per resident is personal
+ * data by any definition, and it is the payload that gets written to disk. What
+ * the contract excludes is the SENSITIVE tier — birthdate, driver's licence and
+ * income are ABSENT from both default payloads. Those arrive only when
+ * `fetchTenantProfile` is called with `includePii`, which the UI does exactly
+ * once per masked field the manager taps, and the server writes an
+ * admin_audit_logs row for each such call. The always-present
+ * `rentToIncomeRatio` is the affordability answer that needs no salary
+ * disclosure.
+ *
+ * Because the index IS personal data at rest, sign-out purges it — see
+ * lib/session-data.ts. Profiles are never persisted at all.
  */
 
 const num = z.number().nullable().optional();

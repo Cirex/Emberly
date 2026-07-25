@@ -14,7 +14,6 @@ import {
   translateBatchOrTimeout,
 } from "@/lib/translation/native";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
-import { capture, resetAnalytics } from "@/lib/analytics";
 import type { AppLanguage } from "@/lib/i18n";
 import { registerForEmergencyPush, unregisterEmergencyPush } from "@/lib/push";
 import { useConfig } from "@/lib/stores/config";
@@ -252,13 +251,9 @@ export default function Settings() {
   };
 
   const onSignOut = async () => {
-    // Record the sign-out while still identified, then clear the identity so
-    // later events aren't attributed to this staff member.
-    capture("signed_out");
-    resetAnalytics();
-    // Stop emergency pushes for this device while the token still
-    // authenticates the DELETE — after signOut it couldn't.
-    await unregisterEmergencyPush({ baseUrl, token });
+    // Push cleanup, analytics reset and the cache purge all live inside
+    // signOut() — this screen is one of two entry points and they must not
+    // drift apart again.
     await signOut();
     // The root layout's guard drops the tabs; land on the sign-in gate.
     router.replace("/sign-in");

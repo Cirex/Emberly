@@ -4,9 +4,8 @@ import { useTranslation } from "react-i18next";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import Constants from "expo-constants";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
-import { capture, resetAnalytics } from "@/lib/analytics";
 import type { AppLanguage } from "@/lib/i18n";
-import { syncManagerPushRegistration, unregisterManagerPush } from "@/lib/push";
+import { syncManagerPushRegistration } from "@/lib/push";
 import { MANAGER_ALERT_KINDS, type ManagerAlertKind } from "@/lib/push-routing";
 import { useConfig } from "@/lib/stores/config";
 import { useSettings } from "@/lib/stores/settings";
@@ -199,13 +198,9 @@ export default function Settings() {
   };
 
   const onSignOut = async () => {
-    // Delete this device's push token while the staff token still
-    // authenticates the call — after signOut() the DELETE would 401.
-    await unregisterManagerPush({ baseUrl, token });
-    // Record the sign-out while still identified, then clear the identity so
-    // later events aren't attributed to this staff member.
-    capture("signed_out");
-    resetAnalytics();
+    // Push cleanup, analytics reset and the cache purge all live inside
+    // signOut() — this screen is one of three entry points and they must not
+    // drift apart again.
     await signOut();
     // The root layout's guard drops the tabs; land on the sign-in gate.
     router.replace("/sign-in");

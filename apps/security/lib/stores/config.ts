@@ -48,7 +48,18 @@ export const useConfig = create<ConfigState>((set) => ({
     // Flip the in-memory key first so the root gate re-renders to `setup`
     // immediately, then purge the Keychain-backed store.
     set({ scannerKey: "" });
-    await SecureStore.deleteItemAsync(K.key);
+    // The key is not the only thing worth taking off a decommissioned iPad: the
+    // cached tenant detail panes are the property's resident list. See
+    // lib/session-data.ts for what survives and why.
+    //
+    // Imported HERE rather than at the top of the file on purpose. Every
+    // lib/api/* module imports `handleUnauthorizedScannerKey` from this file, so
+    // a static import would close a module-init cycle:
+    //   config → session-data → stores → api → config.
+    // Nothing needs those stores until a deactivation actually happens, and by
+    // then they are long since loaded.
+    const { clearSessionData } = await import("@/lib/session-data");
+    await Promise.all([SecureStore.deleteItemAsync(K.key), clearSessionData()]);
   },
 }));
 

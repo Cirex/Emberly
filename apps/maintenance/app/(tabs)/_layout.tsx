@@ -24,6 +24,19 @@ import { useWorkOrderTranslationSync } from "@/lib/translation/use-translated";
  * also pushes a silent wake-up the moment it writes a change, which is what
  * makes the app feel live. The poll exists because push is best-effort: a tech
  * can decline the notification permission, and iOS throttles silent delivery.
+ *
+ * THIS INTERVAL IS ONLY CHEAP BECAUSE THE DELTA READ WORKS. Measured against
+ * the live mirror (4,067 rows): a full fetch is 3.78 MB over 21 paged requests.
+ * If a tick ever fetched everything again, this interval would move
+ * ~640 GB/month PER DEVICE — three phones would blow through a Supabase Pro
+ * plan's included egress on work orders alone. The old 60s full poll was
+ * already ~160 GB/month/device.
+ *
+ * So the delta is not an optimization, it is what makes the interval affordable,
+ * and it depends on resman_work_orders.updated_at meaning "this row changed"
+ * (deltas/2026-07-24-work-order-change-detection.sql). Revert that trigger and
+ * every tick silently becomes a full download again. Before raising the
+ * frequency, check that quiet ticks are still returning empty.
  */
 const REFRESH_MS = 15_000;
 

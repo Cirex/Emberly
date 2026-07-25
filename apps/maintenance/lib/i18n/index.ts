@@ -1,5 +1,6 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
+import { RESMAN_LABELS } from "@/lib/derived/resman-labels";
 
 /**
  * App i18n (AGENTS.md · Localization): i18next with English as the source
@@ -94,6 +95,13 @@ const en = {
     },
     field: { notes: "technician notes", description: "description", assignment: "assignment" },
   },
+  /**
+   * ResMan's fixed vocabularies. Reviewed Spanish rather than machine
+   * translation — these appear on nearly every row, and a technician should not
+   * have to decode a machine's guess at "In Progress". See
+   * lib/derived/resman-labels.ts.
+   */
+  resman: RESMAN_LABELS.en,
   workOrders: {
     modes: { open: "Open", closed: "Closed", preventive: "Preventive", hotSpots: "Hot Spots" },
     modeMenuA11y: "Viewing {{mode}}; change mode",
@@ -621,6 +629,7 @@ const es: typeof en = {
     },
     field: { notes: "notas del técnico", description: "descripción", assignment: "asignación" },
   },
+  resman: RESMAN_LABELS.es,
   workOrders: {
     modes: { open: "Abiertas", closed: "Cerradas", preventive: "Preventivo", hotSpots: "Puntos críticos" },
     modeMenuA11y: "Viendo {{mode}}; cambiar modo",

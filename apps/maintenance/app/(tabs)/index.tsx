@@ -38,6 +38,7 @@ import { useMyDay, type MyDayStop } from "@/lib/stores/my-day";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { useWorkOrders } from "@/lib/stores/work-orders";
 import { HAIRLINE, MUTED, NAVY, OLIVE, OLIVE_TEXT, screenHPad } from "@/theme/tokens";
+import { statusLabel } from "@/lib/derived/resman-labels";
 
 const GREEN = "#33A666";
 const RED = "#D1382E";
@@ -598,6 +599,9 @@ function StopRow({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  // The stop cards ARE My Day — the expanded list below them was the only
+  // thing translated, so a full cache changed nothing a tech actually looks at.
+  const tr = useTranslated();
   const swipeRef = useRef<SwipeableMethods>(null);
   const primary = stop.workOrderIds.map((id) => byId.get(id)).find(Boolean);
   const emergency = stop.addedBy === "emergency";
@@ -638,7 +642,7 @@ function StopRow({
           numberOfLines={2}
           style={{ fontSize: upNext ? 13 : 12.5, marginTop: 1, lineHeight: 17 }}
         >
-          {primary?.title || t("myDay.workOrder")}
+          {tr(primary?.title ?? "").shown || t("myDay.workOrder")}
         </Text>
         {primary ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
@@ -733,6 +737,9 @@ function DoneRow({
   onOpen: () => void;
 }) {
   const { t } = useTranslation();
+  // The stop cards ARE My Day — the expanded list below them was the only
+  // thing translated, so a full cache changed nothing a tech actually looks at.
+  const tr = useTranslated();
   const primary = stop.workOrderIds.map((id) => byId.get(id)).find(Boolean);
   return (
     <Pressable
@@ -772,7 +779,7 @@ function DoneRow({
           {stop.workOrderIds.length > 1 ? `  ·  ${t("myDay.tickets", { count: stop.workOrderIds.length })}` : ""}
         </Text>
         <Text className="text-muted" numberOfLines={1} style={{ fontSize: 12.5, marginTop: 1, textDecorationLine: "line-through" }}>
-          {primary?.title || t("myDay.workOrder")}
+          {tr(primary?.title ?? "").shown || t("myDay.workOrder")}
         </Text>
         <Text style={{ fontSize: 10, fontWeight: "700", color: GREEN, marginTop: 3 }}>
           {t("myDay.closedLine")} <Text style={{ color: MUTED, fontWeight: "600" }}>· {t("myDay.syncingToResman")}</Text>
@@ -862,7 +869,9 @@ function QueueRow({
         </Text>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 7 }}>
           <View style={{ paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999, backgroundColor: `${statusColor}1A` }}>
-            <Text style={{ fontSize: 10.5, fontWeight: "700", color: statusColor }}>{wo.status}</Text>
+            <Text style={{ fontSize: 10.5, fontWeight: "700", color: statusColor }}>
+              {statusLabel(t, wo.status)}
+            </Text>
           </View>
           <Text className="text-slate dark:text-white/70" style={{ fontSize: 11.5 }}>
             {wo.unitNumber}

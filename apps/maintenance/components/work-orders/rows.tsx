@@ -2,6 +2,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Text, View } from "react-native";
 import { classificationColor, workOrderStatusColor } from "@/lib/derived/status";
 import { CALLBACK_TINT } from "@/theme/tokens";
+import { useTranslation } from "react-i18next";
+import { statusLabel } from "@/lib/derived/resman-labels";
 import { useTranslated } from "@/lib/translation/use-translated";
 
 /**
@@ -64,9 +66,13 @@ function HeaderCell({
 }
 
 export function StatusText({ status, size = 11.5 }: { status: string; size?: number }) {
+  // Localized here rather than at each call site: this is the shared status
+  // renderer for the make-ready board and hot spots, so both were showing
+  // ResMan's English to a Spanish reader.
+  const { t } = useTranslation();
   return (
     <Text numberOfLines={1} style={{ fontSize: size, fontWeight: "600", color: workOrderStatusColor(status) }}>
-      {status}
+      {statusLabel(t, status)}
     </Text>
   );
 }

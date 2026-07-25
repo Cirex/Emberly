@@ -28,6 +28,7 @@ import { usePendingEdits } from "@/lib/stores/pending-edits";
 import { useWorkOrderPhotos } from "@/lib/stores/work-order-photos";
 import { useTranslated } from "@/lib/translation/use-translated";
 import { CALLBACK_TINT, MUTED, NAVY, OLIVE, OLIVE_TEXT } from "@/theme/tokens";
+import { statusLabel } from "@/lib/derived/resman-labels";
 
 const SLATE = "#4C556F";
 const RED = "#D1382E";
@@ -295,7 +296,7 @@ export default function WorkOrderDetail() {
               marginBottom: 12,
             }}
           >
-            <Chip label={wo.status} color={statusColor} emphasized />
+            <Chip label={statusLabel(t, wo.status)} color={statusColor} emphasized />
             {wo.tags.map((t) => (
               <Chip key={t} label={t} color={tagTint(t)} icon={tagIconName(t)} />
             ))}
@@ -496,7 +497,7 @@ export default function WorkOrderDetail() {
                     numberOfLines={1}
                     style={{ fontSize: 12.5, fontWeight: "700", color: ink, letterSpacing: -0.1 }}
                   >
-                    {r.title || "Untitled"}
+                    {tr(r.title).shown || t("workOrder.untitled")}
                   </Text>
                   {isCallback(r) && r.callbackMatchedId && numberById.has(r.callbackMatchedId) ? (
                     <View

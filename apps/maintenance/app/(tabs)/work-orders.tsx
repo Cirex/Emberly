@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FlatList, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,6 +8,7 @@ import { FilterSheet } from "@/components/work-orders/FilterSheet";
 import { GlassHeader } from "@/components/work-orders/GlassHeader";
 import { AnalyticsOverlayHost } from "@/components/work-orders/analytics/OverlayHost";
 import { ClosedRow, LoadingMoreFooter } from "@/components/work-orders/closed/ClosedRow";
+import type { ClosedWorkOrderRow } from "@/lib/derived/closed-rows";
 import { HotSpots } from "@/components/work-orders/hot-spots/HotSpots";
 import { OpenGroupCard } from "@/components/work-orders/open/OpenBoard";
 import { PreventiveBoard } from "@/components/work-orders/preventive/PreventiveBoard";
@@ -219,12 +220,27 @@ export default function WorkOrdersScreen() {
   }
 
   // ----- Closed: full-bleed table with smart scroll ----------------------
+  // Stable references for the closed list — see the note at the FlatList.
+  const closedVisible = useMemo(
+    () => snapshot.closedRows.slice(0, renderLimit),
+    [snapshot.closedRows, renderLimit],
+  );
+  const renderClosedRow = useCallback(
+    ({ item }: { item: ClosedWorkOrderRow }) => <ClosedRow row={item} />,
+    [],
+  );
+
   if (view.displayMode === "closed") {
     const rows = snapshot.closedRows;
     return (
       <View style={{ flex: 1 }}>
         <FlatList
-          data={rows.slice(0, renderLimit)}
+          // `closedVisible`/`renderClosedRow` are memoized above. Slicing or
+          // building the renderer inline here would hand FlatList a new
+          // reference on every parent render, re-rendering every mounted row —
+          // which on a board of thousands is a visible stall that blocks even a
+          // tab change.
+          data={closedVisible}
           keyExtractor={(r) => r.id}
           contentContainerStyle={contentStyle}
           ListHeaderComponent={
@@ -237,7 +253,7 @@ export default function WorkOrdersScreen() {
           onEndReachedThreshold={0.6}
           onEndReached={() => setRenderLimit((l) => (l < rows.length ? l + RENDER_PAGE : l))}
           ListFooterComponent={<LoadingMoreFooter visible={renderLimit < rows.length} />}
-          renderItem={({ item }) => <ClosedRow row={item} />}
+          renderItem={renderClosedRow}
         />
         {header}
         {modals}

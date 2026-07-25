@@ -11,6 +11,8 @@ import { abbreviatedDate, calendarDaysBetween, DAY_MS, startOfDay } from "@/lib/
 import type { ParsedWorkOrder } from "@/lib/derived/types";
 import { CALLBACK_TINT } from "@/theme/tokens";
 import { useTranslated } from "@/lib/translation/use-translated";
+import { useTranslation } from "react-i18next";
+import { statusLabel } from "@/lib/derived/resman-labels";
 
 const RAIL_TINTS = {
   blocked: "#D1382E",
@@ -347,6 +349,7 @@ function WorkOrderTicket({
   first: boolean;
   pad: number;
 }) {
+  const { t } = useTranslation();
   const tr = useTranslated();
   const statusColor = workOrderStatusColor(wo.status);
   return (
@@ -387,7 +390,7 @@ function WorkOrderTicket({
           {tr(wo.title).shown || "Untitled work order"}
         </Text>
         <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "700", color: statusColor, marginTop: 1 }}>
-          {wo.status}
+          {statusLabel(t, wo.status)}
         </Text>
       </View>
       {wo.technicianDisplay !== "Unassigned" ? <TechBadge name={wo.technicianDisplay} size={22} /> : null}

@@ -1,4 +1,5 @@
 import { useRouter } from "expo-router";
+import { memo } from "react";
 import { Pressable, Text, View } from "react-native";
 import { ClassificationChip, WorkOrderRow } from "@/components/work-orders/rows";
 import type { ClosedWorkOrderRow } from "@/lib/derived/closed-rows";
@@ -8,7 +9,13 @@ import { MUTED } from "@/theme/tokens";
  * One closed work order in the structured two-line language: ID · status ·
  * unit + classification · completed date + days-to-close, then the full title.
  */
-export function ClosedRow({ row }: { row: ClosedWorkOrderRow }) {
+/**
+ * Memoized: the closed board can hold thousands of rows, and any parent
+ * re-render (a sync tick bumping dataVersion, a filter change) would otherwise
+ * re-render every mounted row. `row` objects come from the derived snapshot and
+ * are referentially stable while the snapshot is, so this is a real cutoff.
+ */
+export const ClosedRow = memo(function ClosedRow({ row }: { row: ClosedWorkOrderRow }) {
   const router = useRouter();
   return (
     <Pressable onPress={() => router.push(`/work-order/${row.id}`)}>
@@ -30,7 +37,7 @@ export function ClosedRow({ row }: { row: ClosedWorkOrderRow }) {
       />
     </Pressable>
   );
-}
+});
 
 /** Quiet incremental-render footer — the smart-scroll affordance. */
 export function LoadingMoreFooter({ visible }: { visible: boolean }) {

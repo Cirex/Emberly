@@ -76,8 +76,14 @@ export const useAnnotations = create<AnnotationsState>((set, get) => ({
   hydrated: false,
 
   hydrate: async () => {
-    const raw = await AsyncStorage.getItem(KEY);
-    const parsed: MapAnnotation[] = raw ? JSON.parse(raw) : [];
+    let parsed: MapAnnotation[] = [];
+    try {
+      const raw = await AsyncStorage.getItem(KEY);
+      parsed = raw ? JSON.parse(raw) : [];
+    } catch {
+      // Unreadable store — treat as empty, but still mark hydrated. Leaving
+      // `hydrated` false would block sync() forever (see the guard there).
+    }
     // Rows persisted before the utility layer carry no kind — they are pins.
     set({ annotations: parsed.map((a) => (a.kind ? a : { ...a, kind: "pin" })), hydrated: true });
   },
@@ -168,6 +174,14 @@ export const useAnnotations = create<AnnotationsState>((set, get) => ({
 
   sync: async (config) => {
     if (syncing) return;
+    // Hydrate first, ALWAYS. This store is loaded by hand and its only
+    // hydrate() caller is the Property Map screen — the fourth tab, which
+    // React Navigation does not mount at launch (bottom tabs default to
+    // lazy). The sync tick fires immediately on launch, so without this the
+    // pull below would merge onto an EMPTY list and persist() would write
+    // that over the real store: every queued local pin and un-pushed edit
+    // silently destroyed before the tech ever opens the map.
+    if (!get().hydrated) await get().hydrate();
     syncing = true;
 
     const apply = (mutate: (list: MapAnnotation[]) => MapAnnotation[]) => {

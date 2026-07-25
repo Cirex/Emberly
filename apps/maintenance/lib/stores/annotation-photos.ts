@@ -84,8 +84,20 @@ export const useAnnotationPhotos = create<AnnotationPhotosState>((set, get) => (
   syncing: false,
 
   hydrate: async () => {
-    const raw = await AsyncStorage.getItem(KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
+    let raw: string | null = null;
+    // Shape is duck-typed below (legacy bare map vs the current envelope), so
+    // this stays `any` exactly as the original inferred it from JSON.parse.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let parsed: any = {};
+    try {
+      raw = await AsyncStorage.getItem(KEY);
+      parsed = raw ? JSON.parse(raw) : {};
+    } catch {
+      // Unreadable store — treat as empty but still mark hydrated below, so a
+      // corrupt payload can't wedge sync() off permanently.
+      raw = null;
+      parsed = {};
+    }
     // Pre-sync installs persisted a bare byAnnotation map at this key. Their
     // photos predate uploading entirely, so queue every one — this runs once,
     // and the queue is dropped per-photo as uploads land.
@@ -194,6 +206,11 @@ export const useAnnotationPhotos = create<AnnotationPhotosState>((set, get) => (
 
   sync: async (config) => {
     if (get().syncing) return;
+    // Hydrate first, ALWAYS — same reason as the annotations store. sync()
+    // ends with an unconditional persist(), so running it unhydrated writes
+    // the empty initial state over every photo↔pin mapping, every queued
+    // upload, and every queued server deletion, orphaning the JPEGs on disk.
+    if (!get().hydrated) await get().hydrate();
     set({ syncing: true });
     try {
       for (const [photoId, annotationId] of Object.entries(get().pendingUploads)) {

@@ -29,7 +29,10 @@ async function runCleanup(): Promise<NextResponse> {
  * cross-site POST, so the admin-cookie path is not CSRF-exploitable here.
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  if (!hasCronBearer(request) && !verifyAdminKey(request)) {
+  // `verifyAdminKey` is async — un-awaited it returns a Promise, which is
+  // always truthy, so the negation was always false and this 401 was
+  // unreachable. The endpoint was open to anyone.
+  if (!hasCronBearer(request) && !(await verifyAdminKey(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return runCleanup();

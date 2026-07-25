@@ -87,7 +87,6 @@ export const useAnnotationPhotos = create<AnnotationPhotosState>((set, get) => (
     let raw: string | null = null;
     // Shape is duck-typed below (legacy bare map vs the current envelope), so
     // this stays `any` exactly as the original inferred it from JSON.parse.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let parsed: any = {};
     try {
       raw = await AsyncStorage.getItem(KEY);

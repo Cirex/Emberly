@@ -54,10 +54,6 @@ export interface MapAnnotation {
   removed?: boolean;
 }
 
-export function isUtilityAnnotation(a: Pick<MapAnnotation, "kind">): boolean {
-  return a.kind === "utility_pin" || a.kind === "utility_line";
-}
-
 export function fromRemote(r: RemoteAnnotation): MapAnnotation {
   return {
     id: r.id,

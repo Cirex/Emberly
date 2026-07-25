@@ -146,8 +146,3 @@ export const useJobTime = create<JobTimeState>()(
     },
   ),
 );
-
-/** Read without subscribing — for the close path, which needs a snapshot. */
-export function jobTimeEntry(workOrderId: string): JobTimeEntry | undefined {
-  return useJobTime.getState().entries[workOrderId];
-}

@@ -15,9 +15,6 @@ import PostHog from "posthog-react-native";
 const apiKey = process.env.EXPO_PUBLIC_POSTHOG_KEY;
 const host = process.env.EXPO_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";
 
-/** True only when a PostHog key is configured via env. */
-export const analyticsEnabled = Boolean(apiKey);
-
 /**
  * The PostHog client, or `null` when analytics is disabled. Passed to
  * `PostHogProvider` at the root; also used by the helpers below.

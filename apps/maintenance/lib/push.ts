@@ -65,9 +65,6 @@ function message(error: unknown): string {
 
 /** Last outcome, so Settings can show the tech why alerts aren't arriving. */
 let lastRegistration: PushRegistration | null = null;
-export function lastPushRegistration(): PushRegistration | null {
-  return lastRegistration;
-}
 
 function report(result: PushRegistration): PushRegistration {
   lastRegistration = result;

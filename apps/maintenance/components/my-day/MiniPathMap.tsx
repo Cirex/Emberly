@@ -30,7 +30,6 @@ const EMERGENCY = "#D1382E";
 const BADGE_R = 11; // screen points — the canvas is unzoomable, so fixed size
 
 const IONICONS_TTF = require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf");
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const IONICONS_GLYPHS: Record<string, number> = require("@expo/vector-icons/build/vendor/react-native-vector-icons/glyphmaps/Ionicons.json");
 
 const UNIT_CENTER = new Map(PLACED_UNITS.map((u) => [u.number, u]));

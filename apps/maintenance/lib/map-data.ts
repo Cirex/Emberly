@@ -55,8 +55,6 @@ export const PLACED_UNITS: PlacedUnit[] = Object.entries(DATA.units).map(([numbe
   return { number, x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
 });
 
-export const MAP_ROADS: MapRoad[] = DATA.roads;
-
 /** A building card in page coordinates — the rounded rect the plan draws. */
 export interface PlacedBlock {
   x: number;
@@ -87,14 +85,3 @@ export const UNIT_BLOCK: ReadonlyMap<string, number> = (() => {
 })();
 
 export const UNIT_COUNT = PLACED_UNITS.length;
-
-/** Case-insensitive substring match on unit number. */
-export function matchUnits(query: string): Set<string> {
-  const q = query.trim().toLowerCase();
-  if (!q) return new Set();
-  const out = new Set<string>();
-  for (const u of PLACED_UNITS) {
-    if (u.number.toLowerCase().includes(q)) out.add(u.number);
-  }
-  return out;
-}

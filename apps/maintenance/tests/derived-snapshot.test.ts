@@ -185,7 +185,7 @@ describe("snapshot", () => {
     const units = syntheticUnits(360);
     // Warm parse (level 1) happens inside the first build; measure a cold full build.
     const t0 = performance.now();
-    buildSnapshot(input({ workOrders: rows, units, dataVersion: 7, unitsVersion: 7 }));
+    const coldSnap = buildSnapshot(input({ workOrders: rows, units, dataVersion: 7, unitsVersion: 7 }));
     const cold = performance.now() - t0;
     // Filter-change rebuild (level-1 cache warm).
     const t1 = performance.now();
@@ -199,19 +199,22 @@ describe("snapshot", () => {
     const afterDelta = rows.slice();
     for (const i of [3, 1500, 3900]) afterDelta[i] = { ...rows[i], title: "Edited by the sync" };
     const t2 = performance.now();
-    buildSnapshot(input({ workOrders: afterDelta, units, dataVersion: 8, unitsVersion: 7 }));
+    const deltaSnap = buildSnapshot(input({ workOrders: afterDelta, units, dataVersion: 8, unitsVersion: 7 }));
     const delta = performance.now() - t2;
     console.log(
       `snapshot build: cold ${cold.toFixed(1)}ms, warm ${warm.toFixed(1)}ms, ` +
         `after a 3-row delta ${delta.toFixed(1)}ms (4k rows)`,
     );
-    // A delta rebuild must stay under a cold one. If this ever approaches
-    // `cold`, something started rebuilding row objects and every parse cache is
-    // missing — see the identity test in work-orders-delta. The margin here
-    // understates the real one: these synthetic rows carry eight repeated titles
-    // and no notes, so the text work the caches skip is far cheaper than the
-    // live corpus's (157ms → 30ms measured against the real mirror).
-    expect(delta).toBeLessThan(cold);
+    // Assert the MECHANISM, not the clock: timing comparisons flake when the
+    // suite runs files in parallel, and this one did. What must hold is that
+    // the delta build REUSED the cached derivation for rows that did not
+    // change — the tags array is shared by the parse cache, so identity is
+    // proof. If someone starts rebuilding row objects, this breaks and the
+    // 157ms → 30ms win silently evaporates.
+    const before = [...coldSnap.byUnit.values()].flat().find((p) => p.id === "wo-11")!;
+    const after = [...deltaSnap.byUnit.values()].flat().find((p) => p.id === "wo-11")!;
+    expect(after.tags).toBe(before.tags);
+    expect(after.searchKey).toBe(before.searchKey);
     // The console.log above is the real perf signal. These ceilings are only a
     // catastrophic-regression tripwire (e.g. an O(n)→O(n²) slip), deliberately
     // generous — a cold build is normally ~230ms — so a busy CI/dev machine

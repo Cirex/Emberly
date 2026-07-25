@@ -10,7 +10,7 @@ import {
   type SortDirection,
   type SortField,
 } from "@/lib/derived/sort-axes";
-import { SORT_LABELS, sortOptionsFor, type WorkOrderSortOption } from "@/lib/derived/sort";
+import { sortOptionsFor, type WorkOrderSortOption } from "@/lib/derived/sort";
 import { RESMAN_LABELS } from "@/lib/derived/resman-labels";
 
 /**
@@ -44,14 +44,6 @@ describe("sort axes", () => {
       }
     }
     expect(ALL).toHaveLength(FIELDS.length * DIRECTIONS.length);
-  });
-
-  test("every option still has a legacy label, so nothing is orphaned", () => {
-    // SORT_LABELS is the pre-existing flat mapping; a new union member added
-    // without one would render blank anywhere still using it.
-    for (const option of ALL) {
-      expect(SORT_LABELS[option], `no SORT_LABELS entry for ${option}`).toBeTruthy();
-    }
   });
 
   test("fields offered match the options offered, per mode", () => {

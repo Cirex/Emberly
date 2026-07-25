@@ -55,10 +55,6 @@ const STATUS_RANK: Record<string, number> = {
   Cancelled: 6,
 };
 
-export function statusRank(status: string): number {
-  return STATUS_RANK[status] ?? 3.5;
-}
-
 export const CLASSIFICATION_COLOR: Record<string, string> = {
   Ruby: "#9C101F",
   Diamond: "#388FC7",
@@ -76,19 +72,4 @@ export function classificationColor(classification: string): string {
     (k) => k.toLowerCase() === classification.trim().toLowerCase(),
   );
   return key ? CLASSIFICATION_COLOR[key] : TINT.muted;
-}
-
-export function occupancyColor(occupancy: string): string {
-  switch (occupancy) {
-    case "Occupied":
-      return TINT.ready;
-    case "Vacant":
-      return TINT.blocked;
-    case "Notice":
-    case "NTV":
-    case "Eviction":
-      return TINT.warning;
-    default:
-      return TINT.muted;
-  }
 }

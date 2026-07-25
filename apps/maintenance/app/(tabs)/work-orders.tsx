@@ -17,7 +17,6 @@ import type { ClosedWorkOrderRow } from "@/lib/derived/closed-rows";
 import { HotSpots } from "@/components/work-orders/hot-spots/HotSpots";
 import { OpenGroupCard } from "@/components/work-orders/open/OpenBoard";
 import { PreventiveBoard } from "@/components/work-orders/preventive/PreventiveBoard";
-import { ColumnHeader } from "@/components/work-orders/rows";
 import { buildPreventiveScoreCards, pmRoundTotals } from "@/lib/derived/pm-cards";
 import { useDerivedSnapshot } from "@/lib/hooks/use-derived-snapshot";
 import { isSignedIn, useConfig } from "@/lib/stores/config";

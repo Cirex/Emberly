@@ -60,12 +60,6 @@
 	<string>Allow $(PRODUCT_NAME) to access your Face ID biometric data.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Emberly Maintenance connects to on-site UniFi Protect cameras over the local network.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Allow $(PRODUCT_NAME) to access your location</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>Allow $(PRODUCT_NAME) to access your location</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Emberly Maintenance uses your location to show accurate day/night camera coverage on the property map.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Emberly Maintenance uses the microphone so you can dictate work-order notes instead of typing them.</string>
 	<key>NSMotionUsageDescription</key>

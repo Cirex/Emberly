@@ -153,14 +153,3 @@ export async function closeWorkOrder(
   if (!res.ok) throw new Error(`Failed to close work order (${res.status})`);
   return CloseResponseSchema.parse(await res.json());
 }
-
-export async function getWorkOrder(id: string, config: StaffConfig): Promise<WorkOrder | null> {
-  const res = await fetch(`${config.baseUrl}/api/resman/work-orders/${encodeURIComponent(id)}`, {
-    headers: { Authorization: `Bearer ${config.token}` },
-  });
-  if (res.status === 404) return null;
-  if (res.status === 401 || res.status === 403) throw new Error("Not authorized for the ResMan API");
-  if (!res.ok) throw new Error(`Failed to load work order (${res.status})`);
-  const body = (await res.json()) as { data?: unknown };
-  return WorkOrderSchema.parse(body.data ?? body);
-}

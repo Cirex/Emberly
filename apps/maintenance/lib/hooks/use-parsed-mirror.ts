@@ -87,7 +87,6 @@ export function useParsedMirror(): ParsedMirror {
       return parseMirror(input, hasCompleteMirror(key) ? "all" : "open");
       // `key` covers workOrders/units/dataVersion/unitsVersion — it IS their
       // identity — and `completion` re-checks the caches after a wide parse.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
     [key, completion],
   );

@@ -34,19 +34,6 @@ export type WorkOrderSortOption =
   | "unitAscending"
   | "unitDescending";
 
-export const SORT_LABELS: Record<WorkOrderSortOption, string> = {
-  dateCompletedAscending: "Date Completed: Oldest",
-  recentMoveInAscending: "Longest Tenured",
-  unitDescending: "Unit: Descending",
-  dateCompletedDescending: "Date Completed: Newest",
-  dateReportedDescending: "Date Reported: Newest",
-  dateReportedAscending: "Date Reported: Oldest",
-  recentMoveInDescending: "Recent Move-Ins",
-  statusAscending: "Status: Ascending",
-  statusDescending: "Status: Descending",
-  unitAscending: "Unit: Ascending",
-};
-
 const ALL_SORT_OPTIONS: WorkOrderSortOption[] = [
   "dateCompletedDescending",
   "dateCompletedAscending",

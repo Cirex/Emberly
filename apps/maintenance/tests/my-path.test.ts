@@ -15,7 +15,7 @@ import type { ParsedWorkOrder } from "@/lib/derived/types";
 import {
   buildPath,
   dayKeyOf,
-  greetingFor,
+  greetingKeyFor,
   isEmergency,
   priorityRank,
   rankUnits,
@@ -204,8 +204,14 @@ describe("day helpers", () => {
     expect(dayKeyOf(new Date("2026-07-18T23:55:00").getTime())).toBe("2026-07-18");
   });
   test("greeting windows", () => {
-    expect(greetingFor(new Date("2026-07-18T08:00:00").getTime())).toBe("Good morning");
-    expect(greetingFor(new Date("2026-07-18T13:00:00").getTime())).toBe("Good afternoon");
-    expect(greetingFor(new Date("2026-07-18T17:30:00").getTime())).toBe("Good evening");
+    // Against greetingKeyFor: the English-only greetingFor beside it was a
+    // pre-i18n leftover with the same boundaries and no caller.
+    expect(greetingKeyFor(new Date("2026-07-18T08:00:00").getTime())).toBe("morning");
+    expect(greetingKeyFor(new Date("2026-07-18T13:00:00").getTime())).toBe("afternoon");
+    expect(greetingKeyFor(new Date("2026-07-18T17:30:00").getTime())).toBe("evening");
+    // The boundaries themselves, which is what this actually guards.
+    expect(greetingKeyFor(new Date("2026-07-18T11:59:00").getTime())).toBe("morning");
+    expect(greetingKeyFor(new Date("2026-07-18T12:00:00").getTime())).toBe("afternoon");
+    expect(greetingKeyFor(new Date("2026-07-18T16:00:00").getTime())).toBe("evening");
   });
 });

@@ -140,7 +140,6 @@ export default function PropertyMapScreen() {
     const m = new Map<string, ResmanUnit>();
     for (const u of units.allUnits) m.set(u.number, u);
     return m;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [units.allUnits]);
 
   // Queued deletions stay in the store until the server confirms them — the

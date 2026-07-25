@@ -170,8 +170,3 @@ export const usePendingCloses = create<PendingClosesState>()(
     },
   ),
 );
-
-/** Convenience selector for screens: is this work order optimistically closed? */
-export function isPendingClose(pending: Record<string, PendingClose>, workOrderId: string): boolean {
-  return pending[workOrderId] !== undefined;
-}

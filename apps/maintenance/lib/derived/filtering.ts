@@ -82,14 +82,6 @@ export function normalizedOccupancyFilterValue(facts: UnitFacts | undefined): st
 
 export type WorkOrderSignal = "Duplicate" | "Callback";
 
-/** The signals a row carries. Filter match is OR / non-disjoint; empty selection = all. */
-export function signalsOf(wo: ParsedWorkOrder): Set<WorkOrderSignal> {
-  const signals = new Set<WorkOrderSignal>();
-  if (wo.isDuplicate) signals.add("Duplicate");
-  if (isCallbackSignal(wo)) signals.add("Callback");
-  return signals;
-}
-
 /**
  * Curated tag order for the filter panel — the maintenance team's triage
  * priority, not alphabetical. Unknown tags sort after every known one.

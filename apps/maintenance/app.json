@@ -14,7 +14,6 @@
       "appleTeamId": "T49DUB6KRJ",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Emberly Maintenance attaches photos from your library to property-map annotations.",
-        "NSLocationWhenInUseUsageDescription": "Emberly Maintenance uses your location to render the property map's day and night appearance accurately.",
         "NSMicrophoneUsageDescription": "Emberly Maintenance uses the microphone so you can dictate work-order notes instead of typing them.",
         "NSSpeechRecognitionUsageDescription": "Emberly Maintenance transcribes your dictated notes on this device. The audio is not sent to Apple or to Emberly.",
         "ITSAppUsesNonExemptEncryption": false
@@ -28,16 +27,11 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon-foreground.png",
         "backgroundColor": "#FCF8F0"
-      },
-      "permissions": [
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
-      ]
+      }
     },
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-location",
       "expo-notifications",
       [
         "expo-build-properties",

@@ -110,7 +110,6 @@ function buildUtilityPath(points: UtilityPoint[]) {
 
 /** Ionicons rendered straight onto the pins via the bundled typeface. */
 const IONICONS_TTF = require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf");
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const IONICONS_GLYPHS: Record<string, number> = require("@expo/vector-icons/build/vendor/react-native-vector-icons/glyphmaps/Ionicons.json");
 const PIN_ICON_SIZE = 26;
 

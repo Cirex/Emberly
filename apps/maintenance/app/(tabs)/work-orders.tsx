@@ -25,6 +25,7 @@ import { usePm } from "@/lib/stores/pm";
 import { useWorkOrders } from "@/lib/stores/work-orders";
 import { activeFilterCount, useWorkOrdersView } from "@/lib/stores/work-orders-view";
 import { useNowMs } from "@/lib/hooks/use-now";
+import { TraceRender } from "@/lib/perf/render-trace";
 
 /** Incremental render page for long lists (smart scroll — no row caps). */
 const RENDER_PAGE = 150;
@@ -139,25 +140,27 @@ export default function WorkOrdersScreen() {
   const facetMode = view.displayMode === "open" || view.displayMode === "closed";
 
   const header = (
-    <GlassHeader
-      mode={view.displayMode}
-      onMode={(m) => {
-        // The dropdown only, so the stale-mode migration effect above can't fire it.
-        capture("board_mode_switched", { mode: m });
-        view.setDisplayMode(m);
-      }}
-      count={pillCount}
-      cards={cards}
-      onAction={(a) => view.setActiveOverlay(a)}
-      showFilters={facetMode}
-      filterCount={filterCount}
-      onOpenFilters={() => view.setFilterSheetOpen(true)}
-      onOpenInsights={() => {
-        capture("insights_viewed");
-        view.setActiveOverlay("closedInsights");
-      }}
-      onHeight={setHeaderH}
-    />
+    <TraceRender id="wo:header">
+      <GlassHeader
+        mode={view.displayMode}
+        onMode={(m) => {
+          // The dropdown only, so the stale-mode migration effect above can't fire it.
+          capture("board_mode_switched", { mode: m });
+          view.setDisplayMode(m);
+        }}
+        count={pillCount}
+        cards={cards}
+        onAction={(a) => view.setActiveOverlay(a)}
+        showFilters={facetMode}
+        filterCount={filterCount}
+        onOpenFilters={() => view.setFilterSheetOpen(true)}
+        onOpenInsights={() => {
+          capture("insights_viewed");
+          view.setActiveOverlay("closedInsights");
+        }}
+        onHeight={setHeaderH}
+      />
+    </TraceRender>
   );
 
   const statusLine =
@@ -194,8 +197,12 @@ export default function WorkOrdersScreen() {
   // Modals ride along every mode.
   const modals = (
     <>
-      <FilterSheet />
-      <AnalyticsOverlayHost snapshot={snapshot} />
+      <TraceRender id="wo:filter-sheet">
+        <FilterSheet />
+      </TraceRender>
+      <TraceRender id="wo:overlays">
+        <AnalyticsOverlayHost snapshot={snapshot} />
+      </TraceRender>
     </>
   );
 

@@ -38,6 +38,9 @@ import {
  * search only.
  */
 
+/** React Native's dev flag, absent outside the app (tests, node tooling). */
+const DEV = typeof __DEV__ !== "undefined" && __DEV__;
+
 export interface SnapshotInput {
   /** Active UI language — part of the cache key because score-card titles are
    *  composed through i18next at build time. Defaults to "en" (tests). */
@@ -117,6 +120,13 @@ export function parseMirror(input: ParseMirrorInput): ParsedMirror {
   const key = `${input.dataVersion}|${input.unitsVersion}`;
   if (parseCache?.key === key) return parseCache;
 
+  // A cache MISS is the expensive path, and the device trace shows My Day's
+  // first mount at ~997ms — most of which is presumed to be this. Presumed is
+  // not measured, so it says so out loud in dev.
+  //
+  // `typeof` guarded: __DEV__ is a React Native global, and this module is
+  // imported by the derived-engine tests, which run in plain bun.
+  const startedAt = DEV ? Date.now() : 0;
   const parsed = parseAll(input.workOrders);
   const unitIndex = makeUnitIndex(input.units);
   const byUnit = new Map<string, ParsedWorkOrder[]>();
@@ -129,6 +139,9 @@ export function parseMirror(input: ParseMirrorInput): ParsedMirror {
     byId.set(wo.id, wo);
   }
   parseCache = { key, parsed, unitIndex, byUnit, byId };
+  if (DEV) {
+    console.log(`[perf] parseMirror ${Date.now() - startedAt}ms for ${parsed.length} rows`);
+  }
   return parseCache;
 }
 // A few most-recent snapshots, keyed by the full memo key. It must hold more

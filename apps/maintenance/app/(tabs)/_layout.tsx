@@ -16,6 +16,7 @@ import { useTags } from "@/lib/stores/tags";
 import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
 import { useWorkOrderTranslationSync } from "@/lib/translation/use-translated";
+import { isScreenshotMode } from "@/lib/screenshot-mode";
 
 /**
  * Poll interval. Short on purpose: the work-order refresh asks only for what
@@ -64,6 +65,14 @@ function useServerSync() {
   useEffect(() => {
     if (!hydrated || !isSignedIn({ token })) return;
     const config = { baseUrl, token };
+    // THE load-bearing half of screenshot mode. Seeding fixtures is not enough:
+    // this tick fires within a second of launch and would replace them with the
+    // live board — putting real resident data into a public App Store image. So
+    // seed, then return before anything can sync, poll or register for push.
+    if (isScreenshotMode()) {
+      void useWorkOrders.getState().loadAll(config);
+      return;
+    }
     const CLOSED = new Set(["Closed", "Completed", "Cancelled", "Canceled"]);
     const tick = () => {
       void useWorkOrders

@@ -22,9 +22,16 @@
  *   ASC_MARKETING_URL                       (optional)
  */
 
-/** Fail at push time rather than silently shipping an empty review section. */
-function required(name) {
-  const value = process.env[name];
+/**
+ * Fail at push time rather than silently shipping an empty review section.
+ *
+ * The value is passed in rather than read as process.env[name]: Expo's lint rule
+ * forbids dynamic env access because EXPO_PUBLIC_* vars are inlined by static
+ * analysis at bundle time. That does not apply to this file — it is a Node
+ * config the EAS CLI reads and is never bundled — but static access is clearer
+ * than a suppression comment either way.
+ */
+function required(name, value) {
   if (!value || value.trim() === "") {
     throw new Error(
       `store.config.js: ${name} is required to push metadata. ` +
@@ -73,9 +80,9 @@ module.exports = {
         // so these will likely be pages there, but they have to exist before
         // this is pushed. Forcing them through required() means a push cannot
         // quietly send Apple a 404.
-        supportUrl: required("ASC_SUPPORT_URL"),
+        supportUrl: required("ASC_SUPPORT_URL", process.env.ASC_SUPPORT_URL),
         marketingUrl: process.env.ASC_MARKETING_URL || undefined,
-        privacyPolicyUrl: required("ASC_PRIVACY_POLICY_URL"),
+        privacyPolicyUrl: required("ASC_PRIVACY_POLICY_URL", process.env.ASC_PRIVACY_POLICY_URL),
       },
     },
     categories: ["BUSINESS", "PRODUCTIVITY"],
@@ -106,15 +113,15 @@ module.exports = {
       koreaAgeRatingOverride: "NONE",
     },
     review: {
-      firstName: required("ASC_REVIEW_FIRST_NAME"),
-      lastName: required("ASC_REVIEW_LAST_NAME"),
-      email: required("ASC_REVIEW_EMAIL"),
-      phone: required("ASC_REVIEW_PHONE"),
+      firstName: required("ASC_REVIEW_FIRST_NAME", process.env.ASC_REVIEW_FIRST_NAME),
+      lastName: required("ASC_REVIEW_LAST_NAME", process.env.ASC_REVIEW_LAST_NAME),
+      email: required("ASC_REVIEW_EMAIL", process.env.ASC_REVIEW_EMAIL),
+      phone: required("ASC_REVIEW_PHONE", process.env.ASC_REVIEW_PHONE),
       // THE most common rejection for this app's shape: every screen is behind a
       // sign-in, so App Review sees a login wall and nothing else without these.
       demoRequired: true,
-      demoUsername: required("ASC_DEMO_USERNAME"),
-      demoPassword: required("ASC_DEMO_PASSWORD"),
+      demoUsername: required("ASC_DEMO_USERNAME", process.env.ASC_DEMO_USERNAME),
+      demoPassword: required("ASC_DEMO_PASSWORD", process.env.ASC_DEMO_PASSWORD),
       // Kept to what is verifiable. An earlier draft of this file told Apple
       // that location was used to order the technician's route by proximity —
       // the app does not use location AT ALL (expo-location is never imported).

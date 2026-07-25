@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { capture, resetAnalytics } from "@/lib/analytics";
 import { unregisterEmergencyPush } from "@/lib/push";
 import { clearSessionData } from "@/lib/session-data";
+import { SCREENSHOT_ADMIN, isScreenshotMode } from "@/lib/screenshot-mode";
 
 // The staff token lives in the Keychain-backed secure store, never in
 // AsyncStorage. It is a per-user `eapi_` access token minted by
@@ -73,6 +74,13 @@ export const useConfig = create<ConfigState>((set, get) => ({
   admin: null,
   hydrated: false,
   hydrate: async () => {
+    // Screenshot builds present as signed in without touching the Keychain and
+    // without a real token — so nothing can authenticate, and therefore nothing
+    // can pull real resident data into a public App Store image.
+    if (isScreenshotMode()) {
+      set({ token: "screenshot", admin: { ...SCREENSHOT_ADMIN }, hydrated: true });
+      return;
+    }
     try {
       const [token, adminRaw] = await Promise.all([
         SecureStore.getItemAsync(K.token),

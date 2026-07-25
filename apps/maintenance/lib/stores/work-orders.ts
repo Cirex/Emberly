@@ -4,6 +4,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { reportSyncFailed, reportSyncSucceeded } from "@/lib/analytics";
 import { listWorkOrders, type WorkOrder } from "@/lib/api/work-orders";
 import type { StaffConfig } from "@/lib/stores/config";
+import { SCREENSHOT_WORK_ORDERS, isScreenshotMode } from "@/lib/screenshot-mode";
 
 /**
  * The full work-order mirror, cached on device — the derived engine (filters,
@@ -129,6 +130,16 @@ export const useWorkOrders = create<WorkOrdersState>()(
       loading: false,
 
       loadAll: async (config) => {
+        if (isScreenshotMode()) {
+          set((s) => ({
+            workOrders: [...SCREENSHOT_WORK_ORDERS],
+            dataVersion: s.dataVersion + 1,
+            loading: false,
+            refreshedAt: Date.now(),
+            deltaCursor: "",
+          }));
+          return;
+        }
         if (get().loading) return;
         // With a cache on disk the spinner is reserved for a true first run —
         // existing rows stay up while the refresh happens behind them.
@@ -148,6 +159,8 @@ export const useWorkOrders = create<WorkOrdersState>()(
       },
 
       refresh: async (config) => {
+        // Never overwrite fixtures with the live board.
+        if (isScreenshotMode()) return;
         if (refreshing) return;
         refreshing = true;
         try {

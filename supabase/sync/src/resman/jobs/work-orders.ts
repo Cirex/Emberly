@@ -11,8 +11,10 @@
 import { upsertMirror, type ServiceClient } from "../../db/client";
 import {
   buildEmergencyPushMessages,
+  buildWorkOrdersChangedMessages,
   detectNewEmergencies,
   sendExpoPushMessages,
+  type ExpoAnyPushMessage,
 } from "../../shared/push";
 import type { ResManClient } from "../client";
 import type { ResManCredentials } from "../config";
@@ -45,6 +47,12 @@ export interface SyncWorkOrdersResult {
   linkedUnits: number;
   /** New Emergency work orders for which a push notification was attempted. */
   emergenciesNotified: number;
+  /**
+   * Work orders whose content actually changed this pass — the number the
+   * silent wake-up push reports, and the number a device's ?updated_since=
+   * poll will return. 0 means every device can skip its next fetch entirely.
+   */
+  changed: number;
 }
 
 /** Page the property's units into a unit-number → resman_unit_id map. */
@@ -106,6 +114,100 @@ async function loadExistingWorkOrderIds(
   }
 }
 
+/** Active maintenance-app device tokens. Throws — callers are best-effort. */
+async function loadMaintenancePushTokens(supabase: ServiceClient): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("push_tokens")
+    .select("expo_push_token")
+    .eq("active", true)
+    .eq("app", "maintenance");
+  if (error) throw new Error(`read push_tokens failed: ${error.message}`);
+  return ((data ?? []) as unknown as Array<{ expo_push_token: string }>)
+    .map((row) => row.expo_push_token)
+    .filter((token) => token.length > 0);
+}
+
+/** Send, then retire whatever Expo told us is no longer a device. */
+async function sendAndPruneTokens(
+  supabase: ServiceClient,
+  messages: ReadonlyArray<ExpoAnyPushMessage>,
+  log: (message: string) => void,
+): Promise<{ sent: number; failed: number }> {
+  const outcome = await sendExpoPushMessages(messages, { log });
+  if (outcome.invalidTokens.length > 0) {
+    const { error } = await supabase
+      .from("push_tokens")
+      .update({ active: false })
+      .in("expo_push_token", outcome.invalidTokens);
+    if (error) log(`[work-orders] WARNING: deactivating stale push tokens failed: ${error.message}`);
+  }
+  return { sent: outcome.sent, failed: outcome.failed };
+}
+
+/**
+ * How many work orders actually changed content this pass.
+ *
+ * Counted in the DB rather than by diffing the scrape in memory, because the
+ * change-detecting updated_at trigger is already the authority — and it is the
+ * SAME authority the device's ?updated_since= poll reads. Deriving the push
+ * count from anywhere else would let the two disagree, which shows up as a
+ * device being told to sync and then finding nothing (or worse, not being told).
+ *
+ * Returns null when the count can't be read, so the caller skips the push
+ * rather than guessing.
+ */
+async function countChangedSince(
+  supabase: ServiceClient,
+  propertyId: string,
+  since: string,
+  log: (message: string) => void,
+): Promise<number | null> {
+  const { count, error } = await supabase
+    .from("resman_work_orders")
+    .select("resman_work_order_id", { count: "exact", head: true })
+    .eq("resman_property_id", propertyId)
+    .gt("updated_at", since);
+  if (error) {
+    log(`[work-orders] WARNING: counting changed rows failed: ${error.message}`);
+    return null;
+  }
+  return count ?? 0;
+}
+
+/**
+ * Best-effort silent wake-up: if anything changed, tell every active device
+ * once so it runs its sync tick now instead of up to a poll interval later.
+ * Never throws — a push problem must not fail the sync.
+ */
+async function notifyWorkOrdersChanged(
+  supabase: ServiceClient,
+  changed: number,
+  log: (message: string) => void,
+): Promise<void> {
+  if (changed === 0) {
+    log(`[work-orders] nothing changed — no wake-up push`);
+    return;
+  }
+  try {
+    const tokens = await loadMaintenancePushTokens(supabase);
+    if (tokens.length === 0) return;
+    const outcome = await sendAndPruneTokens(
+      supabase,
+      buildWorkOrdersChangedMessages(tokens, changed),
+      log,
+    );
+    log(
+      `[work-orders] wake-up push: changed=${changed} devices=${tokens.length} ` +
+        `sent=${outcome.sent} failed=${outcome.failed}`,
+    );
+  } catch (error) {
+    log(
+      `[work-orders] WARNING: wake-up push pass failed: ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 /**
  * Best-effort emergency push pass: detect newly-inserted open Emergency work
  * orders, fan one push per active maintenance-app device out via Expo, and
@@ -121,36 +223,18 @@ async function notifyNewEmergencies(
     const emergencies = detectNewEmergencies(existingIds, rows);
     if (emergencies.length === 0) return 0;
 
-    const { data, error } = await supabase
-      .from("push_tokens")
-      .select("expo_push_token")
-      .eq("active", true)
-      .eq("app", "maintenance");
-    if (error) throw new Error(`read push_tokens failed: ${error.message}`);
-    const tokens = ((data ?? []) as unknown as Array<{ expo_push_token: string }>)
-      .map((row) => row.expo_push_token)
-      .filter((token) => token.length > 0);
+    const tokens = await loadMaintenancePushTokens(supabase);
     if (tokens.length === 0) {
       log(`[work-orders] ${emergencies.length} new emergency(ies) but no active push tokens`);
       return emergencies.length;
     }
 
     const messages = emergencies.flatMap((wo) => buildEmergencyPushMessages(wo, tokens));
-    const outcome = await sendExpoPushMessages(messages, { log });
+    const outcome = await sendAndPruneTokens(supabase, messages, log);
     log(
       `[work-orders] emergency push: workOrders=${emergencies.length} devices=${tokens.length} ` +
-        `sent=${outcome.sent} failed=${outcome.failed} invalidTokens=${outcome.invalidTokens.length}`,
+        `sent=${outcome.sent} failed=${outcome.failed}`,
     );
-
-    if (outcome.invalidTokens.length > 0) {
-      const { error: deactivateError } = await supabase
-        .from("push_tokens")
-        .update({ active: false })
-        .in("expo_push_token", outcome.invalidTokens);
-      if (deactivateError) {
-        log(`[work-orders] WARNING: deactivating stale push tokens failed: ${deactivateError.message}`);
-      }
-    }
     return emergencies.length;
   } catch (error) {
     log(
@@ -185,7 +269,10 @@ export async function syncWorkOrders(params: SyncWorkOrdersParams): Promise<Sync
   const { rows } = decodeCsvRows(bytes);
   if (rows.length < 2) {
     log(`[work-orders] report returned no data rows`);
-    return { fetched: 0, mapped: 0, upserted: 0, deletedStale: 0, linkedUnits: 0, emergenciesNotified: 0 };
+    return {
+      fetched: 0, mapped: 0, upserted: 0, deletedStale: 0, linkedUnits: 0,
+      emergenciesNotified: 0, changed: 0,
+    };
   }
 
   const lookup = new CsvHeaderLookup(rows[0]);
@@ -205,6 +292,12 @@ export async function syncWorkOrders(params: SyncWorkOrdersParams): Promise<Sync
     woRows.push(mapped);
   }
 
+  // Mark the instant before the write. Anything the upsert genuinely changes
+  // lands with updated_at > this; anything it rewrites unchanged keeps its old
+  // timestamp (the change-detecting trigger — see
+  // deltas/2026-07-24-work-order-change-detection.sql).
+  const upsertMark = new Date().toISOString();
+
   const out = await upsertMirror(supabase, "resman_work_orders", woRows, {
     conflictColumn: "resman_work_order_id",
     deleteMissing: true,
@@ -214,9 +307,17 @@ export async function syncWorkOrders(params: SyncWorkOrdersParams): Promise<Sync
   const emergenciesNotified =
     existingIds === null ? 0 : await notifyNewEmergencies(supabase, existingIds, woRows, log);
 
+  // Anything whose content moved — read back from the trigger's own verdict,
+  // using the mark taken before the upsert. A null count means "couldn't tell",
+  // which stays silent: a spurious wake-up is cheap but an app that learns to
+  // ignore them is not.
+  const changed = await countChangedSince(supabase, propertyId, upsertMark, log);
+  await notifyWorkOrdersChanged(supabase, changed ?? 0, log);
+
   log(
     `[work-orders] fetched=${dataRows.length} mapped=${woRows.length} upserted=${out.upserted} ` +
-      `deletedStale=${out.deletedStale} linkedUnits=${linkedUnits} emergenciesNotified=${emergenciesNotified}`,
+      `deletedStale=${out.deletedStale} linkedUnits=${linkedUnits} ` +
+      `emergenciesNotified=${emergenciesNotified} changed=${changed ?? "unknown"}`,
   );
 
   return {
@@ -226,5 +327,6 @@ export async function syncWorkOrders(params: SyncWorkOrdersParams): Promise<Sync
     deletedStale: out.deletedStale,
     linkedUnits,
     emergenciesNotified,
+    changed: changed ?? 0,
   };
 }

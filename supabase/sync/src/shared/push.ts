@@ -57,6 +57,28 @@ export interface ExpoPushMessage {
 }
 
 /**
+ * A SILENT push: no title, no body, no sound, so the OS hands it straight to
+ * the app instead of the lock screen. Its only job is to tell a device that the
+ * server has something new, so the app can run the sync tick it already has
+ * — which is what turns a 60-second poll into "updates when the data updates"
+ * without the phone holding a socket open.
+ *
+ * `_contentAvailable` is Expo's spelling of the APNs `content-available: 1`
+ * flag; without it iOS drops a message that carries no user-visible content.
+ * Priority stays "normal": these are not alerts, and "high" on a silent push is
+ * how an app earns itself a delivery-rate throttle from Apple.
+ */
+export interface ExpoDataPushMessage {
+  to: string;
+  data: ExpoPushData;
+  _contentAvailable: true;
+  priority: "normal";
+}
+
+/** Either shape the Expo sender accepts. */
+export type ExpoAnyPushMessage = ExpoPushMessage | ExpoDataPushMessage;
+
+/**
  * Newly-inserted Emergency work orders in an open status: rows whose id was
  * absent from the mirror before the upsert, priority === "Emergency", and
  * status in OPEN_WORK_ORDER_STATUSES. Rows are the mapped upsert payloads
@@ -99,6 +121,27 @@ export function buildEmergencyPushMessages(
   }));
 }
 
+/**
+ * ONE silent wake-up per device — deliberately not one per changed work order.
+ * A big ResMan edit pass can move dozens of rows; the device's answer to all of
+ * them is the same single sync tick, so fanning out per row would just spend the
+ * app's push budget to do the same work N times.
+ *
+ * `changed` rides along for logging and for the app to decide whether a tick is
+ * worth it at all; the device must NOT trust it as data.
+ */
+export function buildWorkOrdersChangedMessages(
+  tokens: ReadonlyArray<string>,
+  changed: number,
+): ExpoDataPushMessage[] {
+  return tokens.map((to) => ({
+    to,
+    data: { type: "work-orders-changed", changed },
+    _contentAvailable: true,
+    priority: "normal",
+  }));
+}
+
 /** Split messages into Expo-sized request chunks. */
 export function chunkPushMessages<T>(items: ReadonlyArray<T>, size = EXPO_PUSH_CHUNK): T[][] {
   const out: T[][] = [];
@@ -128,7 +171,7 @@ export interface SendExpoPushResult {
  * token for deactivation.
  */
 export async function sendExpoPushMessages(
-  messages: ReadonlyArray<ExpoPushMessage>,
+  messages: ReadonlyArray<ExpoAnyPushMessage>,
   deps: { fetchFn?: FetchLike; log?: (message: string) => void } = {},
 ): Promise<SendExpoPushResult> {
   const fetchFn = deps.fetchFn ?? (fetch as unknown as FetchLike);

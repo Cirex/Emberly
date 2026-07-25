@@ -65,6 +65,12 @@ export async function listWorkOrders(
     priority?: string;
     callback_status?: string;
     unit?: string;
+    /**
+     * ISO timestamp — narrow the result to work orders changed since then. The
+     * server compares against a change-detecting `updated_at`, so a quiet poll
+     * comes back empty instead of re-sending the whole board.
+     */
+    updatedSince?: string;
   },
   config: StaffConfig,
 ): Promise<WorkOrderList> {
@@ -75,6 +81,7 @@ export async function listWorkOrders(
   if (params.priority) q.set("priority", params.priority);
   if (params.callback_status) q.set("callback_status", params.callback_status);
   if (params.unit) q.set("unit", params.unit);
+  if (params.updatedSince) q.set("updated_since", params.updatedSince);
 
   const res = await fetch(`${config.baseUrl}/api/resman/work-orders?${q.toString()}`, {
     headers: { Authorization: `Bearer ${config.token}` },

@@ -2,7 +2,7 @@ import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { capture } from "@/lib/analytics";
 import { registerPushToken, unregisterPushToken } from "@/lib/api/push-tokens";
@@ -136,12 +136,26 @@ export function useEmergencyNotificationResponses(enabled: boolean): void {
     // Foreground presentation: without a handler iOS swallows pushes while the
     // app is open, which is exactly when an emergency must interrupt.
     Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
+      handleNotification: async (notification) => {
+        // Silent sync wake-ups carry no user-visible content and must not be
+        // presented — banner-ing "the board changed" every few minutes is
+        // exactly how a tech learns to swipe our notifications away, emergency
+        // ones included.
+        if (isWorkOrdersChanged(notification)) {
+          return {
+            shouldShowBanner: false,
+            shouldShowList: false,
+            shouldPlaySound: false,
+            shouldSetBadge: false,
+          };
+        }
+        return {
+          shouldShowBanner: true,
+          shouldShowList: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+        };
+      },
     });
     // Warm taps (app foregrounded or backgrounded) arrive via the listener…
     const subscription = Notifications.addNotificationResponseReceivedListener(openWorkOrderFrom);
@@ -149,6 +163,40 @@ export function useEmergencyNotificationResponses(enabled: boolean): void {
     Notifications.getLastNotificationResponseAsync()
       .then(openWorkOrderFrom)
       .catch((error) => console.warn("[push] cold-start response read failed:", error));
+    return () => subscription.remove();
+  }, [enabled]);
+}
+
+/** `data.type` the sync worker stamps on its silent wake-up pushes. */
+export const WORK_ORDERS_CHANGED = "work-orders-changed";
+
+/** True when this notification is a sync wake-up rather than an alert. */
+function isWorkOrdersChanged(notification: Notifications.Notification): boolean {
+  return notification.request.content.data?.type === WORK_ORDERS_CHANGED;
+}
+
+/**
+ * Run `onChanged` when the server says the work-order mirror moved.
+ *
+ * This is what makes the app feel live rather than polled: the sync worker
+ * pushes a silent, content-free notification the moment it writes a real
+ * change, and the device runs the sync tick it already had. The interval poll
+ * stays as the floor — push is best-effort by nature (a tech can decline the
+ * permission, and iOS throttles silent delivery), so it must never be the only
+ * way data arrives.
+ *
+ * Foreground and backgrounded delivery only. A push to a KILLED app needs a
+ * registered background task; until then the next launch's tick covers it.
+ */
+export function useWorkOrdersChangedPush(enabled: boolean, onChanged: () => void): void {
+  const handler = useRef(onChanged);
+  handler.current = onChanged;
+
+  useEffect(() => {
+    if (!enabled) return;
+    const subscription = Notifications.addNotificationReceivedListener((notification) => {
+      if (isWorkOrdersChanged(notification)) handler.current();
+    });
     return () => subscription.remove();
   }, [enabled]);
 }

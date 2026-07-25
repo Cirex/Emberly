@@ -85,6 +85,39 @@ export function resolveFilters(
   return entries;
 }
 
+/**
+ * Full ISO-8601 date-time with a timezone — `2026-07-24T12:00:00Z` or
+ * `...+02:00`, with optional fractional seconds.
+ *
+ * Deliberately strict, because `new Date()` is not: it reads "0" as the year
+ * 2000 and "3000" as the year 3000. A bound in the FUTURE returns nothing,
+ * which on this endpoint means a technician's board goes blank — so a value
+ * that is anything other than an unambiguous instant must not become a filter.
+ * The only producer is the server's own `updated_at` echoed back by the device,
+ * which always matches this.
+ */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Resolves the delta bound from the query string, or null when absent/invalid.
+ *
+ * A malformed timestamp is IGNORED rather than 400'd: this parameter only
+ * NARROWS a result set, so failing open returns the full list — correct, just
+ * not cheap. Failing closed on a client bug would instead hide every row, and
+ * the caller has no way to tell an empty delta from an empty table.
+ */
+export function resolveSince(
+  resource: ResmanResource,
+  searchParams: URLSearchParams,
+): { column: string; value: string } | null {
+  if (!resource.since) return null;
+  const raw = searchParams.get(resource.since.param)?.trim();
+  if (!raw || !ISO_INSTANT.test(raw)) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return { column: resource.since.column, value: parsed.toISOString() };
+}
+
 /** Projects a raw DB row onto the resource's public column set (applying any derive step). */
 export function shapeRow(resource: ResmanResource, row: Record<string, unknown>): Record<string, unknown> {
   const derived = resource.derive ? resource.derive(row) : row;
@@ -115,6 +148,12 @@ export async function listResource(
   for (const { column, value } of resolveFilters(resource, searchParams)) {
     query = query.eq(column, value);
   }
+
+  // Delta bound last, so it narrows whatever the filters selected. `gt` not
+  // `gte`: the caller passes the timestamp it already has, and re-sending that
+  // row every poll is the cost this parameter exists to avoid.
+  const since = resolveSince(resource, searchParams);
+  if (since) query = query.gt(since.column, since.value);
 
   query = query.order(resource.order.column, { ascending: resource.order.ascending });
   if (resource.tiebreak) {

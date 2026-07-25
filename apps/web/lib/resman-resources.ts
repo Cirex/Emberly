@@ -51,6 +51,17 @@ interface ResmanResourceDef<T extends TableName> {
   /** Secondary sort applied after `order` — for running-balance style data
    *  where the primary column has ties that must not shuffle. */
   tiebreak?: { column: ColumnOf<T>; ascending: boolean };
+  /**
+   * Opt into DELTA reads: `?<param>=<ISO timestamp>` narrows the list to rows
+   * whose `column` is strictly greater. Separate from `filters` because that map
+   * is equality-only, and a delta needs `gt`.
+   *
+   * Only worth declaring on a table whose timestamp actually tracks CHANGE. The
+   * mirror tables re-upsert every row each sync pass, so an unconditional
+   * updated_at trigger makes the delta return everything — see
+   * deltas/2026-07-24-work-order-change-detection.sql.
+   */
+  since?: { param: string; column: ColumnOf<T> };
 }
 
 /** Erased resource shape consumed by the generic engine. */
@@ -66,6 +77,7 @@ export interface ResmanResource {
   scannerVisible?: string;
   order: { column: string; ascending: boolean };
   tiebreak?: { column: string; ascending: boolean };
+  since?: { param: string; column: string };
 }
 
 function defineResource<T extends TableName>(def: ResmanResourceDef<T>): ResmanResource {
@@ -81,6 +93,7 @@ function defineResource<T extends TableName>(def: ResmanResourceDef<T>): ResmanR
     scannerVisible: def.scannerVisible,
     order: def.order,
     tiebreak: def.tiebreak,
+    since: def.since,
   };
 }
 
@@ -259,6 +272,9 @@ export const workOrdersResource = defineResource({
     priority: "priority",
     callback_status: "callback_status",
   },
+  // The maintenance app's poll asks only for what moved since its last
+  // successful read, so a quiet tick is a near-empty response and can run often.
+  since: { param: "updated_since", column: "updated_at" },
   order: { column: "date_reported", ascending: false },
 });
 

@@ -1,9 +1,9 @@
 import { Tabs } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { AppState } from "react-native";
 import { FloatingTabBar } from "@/components/ui/FloatingTabBar";
-import { registerForEmergencyPush } from "@/lib/push";
+import { registerForEmergencyPush, useWorkOrdersChangedPush } from "@/lib/push";
 import { useAnnotationPhotos } from "@/lib/stores/annotation-photos";
 import { useAnnotations } from "@/lib/stores/annotations";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
@@ -17,11 +17,20 @@ import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
 import { useWorkOrderTranslationSync } from "@/lib/translation/use-translated";
 
-const REFRESH_MS = 60_000;
+/**
+ * Poll interval. Short on purpose: the work-order refresh asks only for what
+ * changed since its last read (`?updated_since=`), so a quiet tick is two tiny
+ * responses rather than the whole board. This is the FLOOR — the sync worker
+ * also pushes a silent wake-up the moment it writes a change, which is what
+ * makes the app feel live. The poll exists because push is best-effort: a tech
+ * can decline the notification permission, and iOS throttles silent delivery.
+ */
+const REFRESH_MS = 15_000;
 
 /**
  * Keeps the cached data live without anyone asking: a quiet re-sync when the
- * app comes to the foreground and every minute while it's up. The stores
+ * app comes to the foreground, on a short interval while it's up, and
+ * immediately when the server pushes word that something changed. The stores
  * skip their state writes when the server has nothing new, so a quiet tick
  * re-renders nothing. Annotations push their queued edits and pull the shared
  * layer, so pins placed in the admin portal appear here (and vice versa)
@@ -31,6 +40,13 @@ function useServerSync() {
   const hydrated = useConfig((s) => s.hydrated);
   const token = useConfig((s) => s.token);
   const baseUrl = useConfig((s) => s.baseUrl);
+  // Held in a ref so the push listener can fire the CURRENT tick without
+  // re-subscribing every time the config object identity changes.
+  const tickRef = useRef<() => void>(() => {});
+
+  // A silent push means the server already knows something moved — sync now
+  // instead of waiting out the interval.
+  useWorkOrdersChangedPush(hydrated && isSignedIn({ token }), () => tickRef.current());
 
   useEffect(() => {
     if (!hydrated || !isSignedIn({ token })) return;
@@ -98,6 +114,9 @@ function useServerSync() {
     // (or the sign-in screen having just registered) costs nothing.
     void registerForEmergencyPush(config);
 
+    // Publish the tick bound to THIS config, so a push that arrives later runs
+    // the current one rather than a stale closure.
+    tickRef.current = tick;
     tick();
     const interval = setInterval(tick, REFRESH_MS);
     const sub = AppState.addEventListener("change", (state) => {

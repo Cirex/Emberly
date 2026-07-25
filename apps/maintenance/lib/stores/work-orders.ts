@@ -21,6 +21,15 @@ interface WorkOrdersState {
   dataVersion: number;
   /** Wall-clock ms of the last completed refresh (0 = never this session). */
   refreshedAt: number;
+  /**
+   * High-water mark of the SERVER's `updated_at`, used as the delta bound.
+   *
+   * Deliberately a server timestamp echoed back, never `Date.now()`: a device
+   * clock that runs even slightly fast would ask for changes "since" a moment
+   * the server hasn't reached and skip rows permanently. Empty until a full
+   * load has landed.
+   */
+  deltaCursor: string;
   loading: boolean;
   error?: string;
   loadAll: (config: StaffConfig) => Promise<void>;
@@ -49,6 +58,65 @@ async function fetchAll(config: StaffConfig): Promise<WorkOrder[]> {
   return [...byId.values()];
 }
 
+/** Newest server `updated_at` across `rows`, or `fallback` when none is newer. */
+function maxUpdatedAt(rows: readonly WorkOrder[], fallback: string): string {
+  let max = fallback;
+  for (const row of rows) {
+    const stamp = row.updated_at ?? "";
+    // ISO-8601 UTC strings from PostgREST sort lexicographically.
+    if (stamp > max) max = stamp;
+  }
+  return max;
+}
+
+/** Page just the rows that changed since `since`. */
+async function fetchSince(config: StaffConfig, since: string): Promise<WorkOrder[]> {
+  const acc: WorkOrder[] = [];
+  let offset = 0;
+  for (;;) {
+    const res = await listWorkOrders({ limit: PAGE, offset, updatedSince: since }, config);
+    acc.push(...res.data);
+    if (!res.pagination.hasMore) break;
+    offset += PAGE;
+    if (offset > 50_000) break;
+  }
+  return acc;
+}
+
+/**
+ * The server's total row count, from a one-row request.
+ *
+ * This is how DELETIONS are caught. A delta read only ever reports rows that
+ * still exist, so a work order removed from ResMan (and swept by the sync's
+ * delete-missing pass) would otherwise sit on the device forever. Comparing the
+ * count is exact and costs one tiny request — much better than "reconcile fully
+ * every N minutes and hope".
+ */
+async function fetchTotalCount(config: StaffConfig): Promise<number> {
+  const res = await listWorkOrders({ limit: 1 }, config);
+  return res.pagination.count;
+}
+
+/**
+ * Full read, used to establish the cursor and to recover whenever the delta
+ * path can't be trusted (no cursor yet, or the row count drifted). Writes state
+ * only when the data actually differs, so a reconcile that confirms the cache
+ * re-renders nothing.
+ */
+async function fullSync(
+  set: (partial: (s: WorkOrdersState) => Partial<WorkOrdersState>) => void,
+  get: () => WorkOrdersState,
+  config: StaffConfig,
+): Promise<void> {
+  const acc = await fetchAll(config);
+  const changed = JSON.stringify(acc) !== JSON.stringify(get().workOrders);
+  set((s) => ({
+    ...(changed ? { workOrders: acc, dataVersion: s.dataVersion + 1 } : {}),
+    deltaCursor: maxUpdatedAt(acc, ""),
+    refreshedAt: Date.now(),
+  }));
+}
+
 let refreshing = false;
 
 export const useWorkOrders = create<WorkOrdersState>()(
@@ -57,6 +125,7 @@ export const useWorkOrders = create<WorkOrdersState>()(
       workOrders: [],
       dataVersion: 0,
       refreshedAt: 0,
+      deltaCursor: "",
       loading: false,
 
       loadAll: async (config) => {
@@ -66,7 +135,13 @@ export const useWorkOrders = create<WorkOrdersState>()(
         set({ loading: get().workOrders.length === 0, error: undefined });
         try {
           const acc = await fetchAll(config);
-          set((s) => ({ workOrders: acc, dataVersion: s.dataVersion + 1, loading: false, refreshedAt: Date.now() }));
+          set((s) => ({
+            workOrders: acc,
+            dataVersion: s.dataVersion + 1,
+            loading: false,
+            refreshedAt: Date.now(),
+            deltaCursor: maxUpdatedAt(acc, ""),
+          }));
         } catch (err) {
           set({ loading: false, error: err instanceof Error ? err.message : "Failed to load work orders" });
         }
@@ -76,12 +151,47 @@ export const useWorkOrders = create<WorkOrdersState>()(
         if (refreshing) return;
         refreshing = true;
         try {
-          const acc = await fetchAll(config);
-          // The state only moves when the data did — a quiet 60s poll must not
-          // rebuild the derived snapshot just to confirm nothing happened.
-          const prev = get();
-          if (JSON.stringify(acc) !== JSON.stringify(prev.workOrders)) {
-            set((s) => ({ workOrders: acc, dataVersion: s.dataVersion + 1 }));
+          const cursor = get().deltaCursor;
+          if (cursor === "") {
+            // No cursor yet (fresh install, or a cache persisted before delta
+            // sync existed) — one full read establishes it.
+            await fullSync(set, get, config);
+            reportSyncSucceeded("workOrders");
+            return;
+          }
+
+          // Delta and total in parallel: what changed, and whether anything
+          // vanished. Two small requests beat one full page.
+          const [changed, total] = await Promise.all([
+            fetchSince(config, cursor),
+            fetchTotalCount(config),
+          ]);
+
+          const byId = new Map(get().workOrders.map((row) => [row.resman_work_order_id, row]));
+          for (const row of changed) byId.set(row.resman_work_order_id, row);
+
+          if (byId.size !== total) {
+            // Row count disagrees with the server: something was deleted (or an
+            // earlier delta was missed). Only a full read can tell which, and
+            // guessing here would leave a phantom work order on the board.
+            await fullSync(set, get, config);
+            reportSyncSucceeded("workOrders");
+            return;
+          }
+
+          if (changed.length > 0) {
+            const merged = [...byId.values()];
+            set((s) => ({
+              workOrders: merged,
+              dataVersion: s.dataVersion + 1,
+              deltaCursor: maxUpdatedAt(changed, cursor),
+              refreshedAt: Date.now(),
+            }));
+          } else {
+            // Nothing moved. Advance only the freshness clock — touching
+            // dataVersion would rebuild every derived snapshot to confirm that
+            // nothing happened, which is the whole cost this avoids.
+            set({ refreshedAt: Date.now() });
           }
           reportSyncSucceeded("workOrders");
         } catch {

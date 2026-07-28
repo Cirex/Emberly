@@ -8,6 +8,7 @@ import { UTILITY_COLORS, effectiveLineStyle, effectiveLineWeight } from "@/lib/u
 import { PIN_ICONS } from "@/components/map/AnnotationEditorDialog";
 import { FlowRow, StyleChip, StyleRow, WeightRow } from "@/components/map/UtilityStyleControls";
 import { activeLocale } from "@/lib/i18n";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 const NAVY = "#091B54";
 const MUTED = "#70788F";
@@ -34,6 +35,7 @@ export function UtilityAnnotationDialog({
   annotation: MapAnnotation;
   onClose: () => void;
 }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const remove = useAnnotations((s) => s.remove);
@@ -253,7 +255,7 @@ export function UtilityAnnotationDialog({
             <Pressable
               onPress={onClose}
               accessibilityRole="button"
-              style={{ borderRadius: 999, paddingHorizontal: 18, paddingVertical: 8, backgroundColor: "rgba(162,169,33,0.92)" }}
+              style={{ borderRadius: 999, paddingHorizontal: 18, paddingVertical: 8, backgroundColor: `${palette.fill}EB` }}
             >
               <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "800" }}>{t("utility.done")}</Text>
             </Pressable>

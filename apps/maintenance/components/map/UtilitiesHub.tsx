@@ -10,6 +10,7 @@ import { useSettings } from "@/lib/stores/settings";
 import { useUtilityVisibility } from "@/lib/stores/utility-visibility";
 import { UTILITY_COLORS, effectiveLineStyle, effectiveLineWeight } from "@/lib/utility-lines";
 import { LinePreview } from "@/components/map/UtilityStyleControls";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 const NAVY = "#091B54";
 const MUTED = "#70788F";
@@ -35,6 +36,7 @@ export function UtilitiesHub({
   onDropPin: () => void;
   onSelectRun: (id: string) => void;
 }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const annotations = useAnnotations((s) => s.annotations);
@@ -93,7 +95,7 @@ export function UtilitiesHub({
                 alignItems: "center",
                 justifyContent: "center",
                 marginRight: 6,
-                backgroundColor: layerVisible ? "rgba(162,169,33,0.14)" : "rgba(9,27,84,0.05)",
+                backgroundColor: layerVisible ? `${palette.fill}24` : "rgba(9,27,84,0.05)",
               }}
             >
               <Ionicons
@@ -130,7 +132,7 @@ export function UtilitiesHub({
                   paddingHorizontal: 12,
                   paddingVertical: 7,
                   borderRadius: 999,
-                  backgroundColor: "rgba(162,169,33,0.18)",
+                  backgroundColor: `${palette.fill}2E`,
                 }}
               >
                 <Text style={{ fontSize: 12, fontWeight: "700", color: "#5C6018" }}>{label}</Text>
@@ -249,7 +251,7 @@ export function UtilitiesHub({
                             borderRadius: 14,
                             alignItems: "center",
                             justifyContent: "center",
-                            backgroundColor: hidden ? "rgba(9,27,84,0.05)" : "rgba(162,169,33,0.14)",
+                            backgroundColor: hidden ? "rgba(9,27,84,0.05)" : `${palette.fill}24`,
                           }}
                         >
                           <Ionicons

@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import type { ScoreCard } from "@/lib/derived/score-cards";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 import { HAIRLINE } from "@/theme/tokens";
 
 /**
@@ -18,6 +19,7 @@ export function ScoreCardGrid({
   cards: ScoreCard[];
   onAction: (action: NonNullable<ScoreCard["action"]>) => void;
 }) {
+  const palette = useAccentPalette();
   const { width } = useWindowDimensions();
   const columns = width >= 768 ? 4 : 2;
 
@@ -52,7 +54,7 @@ export function ScoreCardGrid({
               />
             ) : null}
             <Text
-              style={{ fontSize: 24, fontWeight: "800", letterSpacing: -0.5, fontVariant: ["tabular-nums"], lineHeight: 28, color: card.tint }}
+              style={{ fontSize: 24, fontWeight: "800", letterSpacing: -0.5, fontVariant: ["tabular-nums"], lineHeight: 28, color: card.tint ?? palette.text }}
             >
               {card.value}
             </Text>

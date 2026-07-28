@@ -28,7 +28,8 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import type { RectColor } from "@emberly/core";
-import { MUTED, OLIVE } from "@/theme/tokens";
+import { MUTED } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 import {
   BLOCK_RADIUS,
   PAGE_HEIGHT,
@@ -55,7 +56,9 @@ import { buildPlanPicture } from "@emberly/ui";
 
 const DEFAULT_FILL = "rgba(9,27,84,0.10)";
 const FADED_FILL = "rgba(9,27,84,0.035)";
-const MATCH_FILL = "rgba(162,169,33,0.62)";
+/** Search-match wash over a unit. Alpha suffix on the accent — the tint has to
+ *  follow the theme, and Skia takes #RRGGBBAA the same as RN does. */
+const MATCH_ALPHA = "9E";
 const MIN_SCALE = 1;
 const MAX_SCALE = 12;
 /** Opening zoom — maintenance works close-up: 8× on the leasing office
@@ -127,7 +130,8 @@ const TOUR_NUM_SIZE = 15;
 const TOUR_CHECK_SIZE = 16;
 const TOUR_DONE = "#33A666";
 // The dashed route threading the stops in order, drawn under the badges.
-const TOUR_ROUTE_COLOR = "rgba(132,143,13,0.92)";
+/** Dashed route threading the tour stops — accent at 92%. */
+const TOUR_ROUTE_ALPHA = "EB";
 const TOUR_ROUTE_WIDTH = 4;
 
 /** Page-space centroid per unit, for placing tour badges. */
@@ -142,6 +146,8 @@ export interface TourBadgeStop {
 export type PlaceMode = "none" | "annotate" | "utility";
 
 interface UnitsLayerProps {
+  /** Accent + MATCH_ALPHA, resolved by the parent. */
+  matchFill: string;
   matched: Set<string>;
   hasQuery: boolean;
   colorMap: Map<string, RectColor>;
@@ -155,7 +161,7 @@ function blockClip(unitNumber: string) {
   return b ? rrect(rect(b.x, b.y, b.w, b.h), BLOCK_RADIUS, BLOCK_RADIUS) : undefined;
 }
 
-const UnitsLayer = memo(function UnitsLayer({ matched, hasQuery, colorMap, showPlan }: UnitsLayerProps) {
+const UnitsLayer = memo(function UnitsLayer({ matchFill, matched, hasQuery, colorMap, showPlan }: UnitsLayerProps) {
   // Tints clip to their building card so corner units follow the card's
   // rounded contour instead of drawing square shoulders over it. Grouping by
   // block keeps it to one clip per building rather than one per unit.
@@ -167,7 +173,7 @@ const UnitsLayer = memo(function UnitsLayer({ matched, hasQuery, colorMap, showP
     // visual. The flat navy default only earns its place when the plan is
     // hidden and the boxes are all there is to see.
     const fill = matched.has(u.number)
-      ? MATCH_FILL
+      ? matchFill
       : hasQuery
         ? FADED_FILL
         : (c?.fill ?? (showPlan ? undefined : DEFAULT_FILL));
@@ -261,6 +267,7 @@ export function SkiaMapCanvas({
   onSelectUtility,
   selectedUtilityId,
 }: SkiaMapCanvasProps) {
+  const palette = useAccentPalette();
   const dark = useColorScheme().colorScheme === "dark";
   const pinIconFont = useFont(IONICONS_TTF, PIN_ICON_SIZE);
   const utilPinIconFont = useFont(IONICONS_TTF, UTIL_PIN_ICON_SIZE);
@@ -662,7 +669,13 @@ export function SkiaMapCanvas({
         <Fill color={dark ? "#101318" : "#F6F4EB"} />
         <Group transform={transform}>
           {showPlan ? <Picture picture={plan} /> : null}
-          <UnitsLayer matched={matched} hasQuery={hasQuery} colorMap={colorMap} showPlan={showPlan} />
+          <UnitsLayer
+            matchFill={`${palette.fill}${MATCH_ALPHA}`}
+            matched={matched}
+            hasQuery={hasQuery}
+            colorMap={colorMap}
+            showPlan={showPlan}
+          />
 
           {/* Selection highlight: the unit's occupancy tint at 18% with a
               hairline. Rounded corners (and clipped to the building card) so it
@@ -896,14 +909,14 @@ export function SkiaMapCanvas({
               strokeWidth={TOUR_ROUTE_WIDTH}
               strokeCap="round"
               strokeJoin="round"
-              color={TOUR_ROUTE_COLOR}
+              color={`${palette.text}${TOUR_ROUTE_ALPHA}`}
             >
               <DashPathEffect intervals={[TOUR_BADGE_R, TOUR_BADGE_R * 0.7]} />
             </Path>
           ) : null}
 
           {/* Tour route badges (TourRouteMapOverlayLayout.swift): a numbered
-              disc at each stop's unit centroid — olive while pending, green
+              disc at each stop's unit centroid — accent while pending, green
               with a checkmark once done. Pure rendering: handleTap never
               looks at these, so they can't steal taps from the units. */}
           {tourStops?.map((s, i) => {
@@ -915,7 +928,7 @@ export function SkiaMapCanvas({
             const labelW = font ? font.getTextWidth(label) : 0;
             return (
               <Group key={`tour-${s.unitNumber}`}>
-                <Circle cx={u.cx} cy={u.cy} r={TOUR_BADGE_R} color={s.isDone ? TOUR_DONE : OLIVE} />
+                <Circle cx={u.cx} cy={u.cy} r={TOUR_BADGE_R} color={s.isDone ? TOUR_DONE : palette.fill} />
                 <Circle
                   cx={u.cx}
                   cy={u.cy}

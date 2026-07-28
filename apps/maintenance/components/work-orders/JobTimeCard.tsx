@@ -10,7 +10,8 @@ import {
   type JobTimeEntry,
 } from "@/lib/derived/job-time";
 import { useJobTime } from "@/lib/stores/job-time";
-import { HAIRLINE, MUTED, OLIVE_TEXT } from "@/theme/tokens";
+import { HAIRLINE, MUTED } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 const RED = "#D1382E";
 const INFO = "#2563B4";
@@ -34,6 +35,7 @@ export function JobTimeCard({
   closed: boolean;
   hairline: string;
 }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const entry = useJobTime((s) => s.entries[workOrderId]);
   const start = useJobTime((s) => s.start);
@@ -108,13 +110,13 @@ export function JobTimeCard({
             paddingHorizontal: 15,
             paddingVertical: 9,
             borderRadius: 999,
-            backgroundColor: running ? "rgba(209,56,46,0.10)" : "rgba(132,143,13,0.14)",
+            backgroundColor: running ? "rgba(209,56,46,0.10)" : `${palette.text}24`,
             borderWidth: 1,
-            borderColor: running ? "rgba(209,56,46,0.28)" : "rgba(132,143,13,0.28)",
+            borderColor: running ? "rgba(209,56,46,0.28)" : `${palette.text}47`,
           }}
         >
-          <Ionicons name={running ? "pause" : "play"} size={13} color={running ? RED : OLIVE_TEXT} />
-          <Text style={{ fontSize: 12.5, fontWeight: "800", color: running ? RED : OLIVE_TEXT }}>
+          <Ionicons name={running ? "pause" : "play"} size={13} color={running ? RED : palette.text} />
+          <Text style={{ fontSize: 12.5, fontWeight: "800", color: running ? RED : palette.text }}>
             {running ? t("jobTime.pause") : elapsed > 0 ? t("jobTime.resume") : t("jobTime.start")}
           </Text>
         </Pressable>
@@ -193,13 +195,13 @@ export function JobTimeCard({
               alignItems: "center",
               justifyContent: "center",
               backgroundColor:
-                draftPart.trim().length === 0 ? "rgba(9,27,84,0.05)" : "rgba(132,143,13,0.14)",
+                draftPart.trim().length === 0 ? "rgba(9,27,84,0.05)" : `${palette.text}24`,
             }}
           >
             <Ionicons
               name="add"
               size={20}
-              color={draftPart.trim().length === 0 ? MUTED : OLIVE_TEXT}
+              color={draftPart.trim().length === 0 ? MUTED : palette.text}
             />
           </Pressable>
         </View>

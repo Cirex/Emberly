@@ -21,8 +21,33 @@ export interface AccentTheme {
    * Everything that is not a Tailwind class needs this: `tintColor` on the
    * Emberly mark, Skia paints, icon colours. The channel triples below exist
    * only because CSS variables must be `rgb(var(--x) / <alpha>)`.
+   *
+   * This is the FILL tone — bars, dots, badges, pins. It is bright by design
+   * and is NOT safe for small text; use `text` for anything readable.
    */
   hex: string;
+  /**
+   * The accent darkened until it clears 4.5:1 against warm paper (#FAF7F0).
+   * Every label, icon and selected state on a light surface uses this.
+   *
+   * The olive this replaced (#848F0D) measured 3.32:1 — below AA for the 9–12pt
+   * labels it was used on, in an app whose users read it outdoors. The ramp is
+   * generated against the surfaces it actually sits on rather than picked by eye.
+   */
+  text: string;
+  /** A step deeper than `text`, for accent inside LIGHT glass chrome, which
+   *  lifts the surface behind it and eats contrast. */
+  glass: string;
+  /** The pale counterpart for accent inside DARK glass. */
+  glassDark: string;
+  /**
+   * Three backdrop glow tints, fanned around the accent's hue rather than set
+   * to it, so the workspace wash keeps the multi-hue depth of the original
+   * blue/mint/green composition instead of flattening to one colour.
+   * Ordered upper-left, upper-right, lower-right.
+   */
+  glowLight: readonly [string, string, string];
+  glowDark: readonly [string, string, string];
   header: RgbChannels;
   /** A deeper tone for selected chrome, so a filled state stays legible. */
   selection: RgbChannels;
@@ -46,12 +71,42 @@ export interface AccentTheme {
  * below, which is why they are written defensively.
  */
 export const ACCENT_THEMES: Record<AccentThemeId, AccentTheme> = {
-  olive: { id: "olive", label: "Olive", hex: "#A2A921", header: "162 169 33", selection: "107 116 17", metricValue: "240 243 214" },
-  blue: { id: "blue", label: "Harbor", hex: "#2563B4", header: "37 99 180", selection: "25 66 120", metricValue: "227 241 255" },
-  emerald: { id: "emerald", label: "Emerald", hex: "#1F805C", header: "31 128 92", selection: "16 84 60", metricValue: "223 250 236" },
-  plum: { id: "plum", label: "Plum", hex: "#7840AD", header: "120 64 173", selection: "78 40 115", metricValue: "243 232 255" },
-  ember: { id: "ember", label: "Ember", hex: "#C2410C", header: "194 65 12", selection: "128 42 8", metricValue: "255 236 222" },
-  graphite: { id: "graphite", label: "Graphite", hex: "#3B3E48", header: "59 62 72", selection: "33 35 42", metricValue: "237 241 247" },
+  olive: {
+    id: "olive", label: "Olive", hex: "#A2A921",
+    text: "#6E7311", glass: "#5B5F0C", glassDark: "#C1C837",
+    glowLight: ["#D5B17B", "#D1D57B", "#B3D57B"], glowDark: ["#372E20", "#353720", "#2E3720"],
+    header: "162 169 33", selection: "107 116 17", metricValue: "240 243 214",
+  },
+  blue: {
+    id: "blue", label: "Harbor", hex: "#2563B4",
+    text: "#2068C6", glass: "#195CB4", glassDark: "#6897D4",
+    glowLight: ["#7BCBD5", "#7BA2D5", "#7B85D5"], glowDark: ["#203437", "#202A37", "#202237"],
+    header: "37 99 180", selection: "25 66 120", metricValue: "227 241 255",
+  },
+  emerald: {
+    id: "emerald", label: "Emerald", hex: "#1F805C",
+    text: "#19805A", glass: "#136D4C", glassDark: "#3DC291",
+    glowLight: ["#7BD58B", "#7BD5B4", "#7BD5D2"], glowDark: ["#203724", "#20372E", "#203736"],
+    header: "31 128 92", selection: "16 84 60", metricValue: "223 250 236",
+  },
+  plum: {
+    id: "plum", label: "Plum", hex: "#7840AD",
+    text: "#7439AD", glass: "#67309C", glassDark: "#A986CA",
+    glowLight: ["#817BD5", "#AA7BD5", "#C77BD5"], glowDark: ["#222037", "#2C2037", "#332037"],
+    header: "120 64 173", selection: "78 40 115", metricValue: "243 232 255",
+  },
+  ember: {
+    id: "ember", label: "Ember", hex: "#C2410C",
+    text: "#CE3E03", glass: "#B83500", glassDark: "#E57648",
+    glowLight: ["#D57B8A", "#D5957B", "#D5B37B"], glowDark: ["#372024", "#372720", "#372E20"],
+    header: "194 65 12", selection: "128 42 8", metricValue: "255 236 222",
+  },
+  graphite: {
+    id: "graphite", label: "Graphite", hex: "#3B3E48",
+    text: "#666C7F", glass: "#5A6071", glassDark: "#9094A2",
+    glowLight: ["#7BB9D5", "#7B90D5", "#847BD5"], glowDark: ["#202F37", "#202537", "#222037"],
+    header: "59 62 72", selection: "33 35 42", metricValue: "237 241 247",
+  },
 };
 
 export const DEFAULT_ACCENT: AccentThemeId = "olive";
@@ -114,11 +169,20 @@ export const HAIRLINE = "rgba(9,27,84,0.09)";
 export const HAIRLINE_STRONG = "rgba(9,27,84,0.12)";
 
 /**
- * Olive accent family — three distinct roles:
- *  - OLIVE: bright accent for fills, progress bars, badges, tour pins.
- *  - OLIVE_TEXT: darker olive for text/icons on light surfaces (contrast).
- *  - OLIVE_GLASS / OLIVE_GLASS_DARK: accent tint for content inside glass
- *    chrome (GlassHeader, selected FloatingTabBar tab), light/dark paired.
+ * Olive accent family — the four roles, frozen at the olive values.
+ *
+ * These are STATIC. They are the right thing for a surface that must be olive
+ * whatever the user picked (and for the security app, which has no picker), and
+ * the wrong thing for anything the accent should reach: importing them is what
+ * made the accent picker change almost nothing, because 117 call sites across
+ * 23 files hardcoded olive while the picker only tinted the mark and the tab bar.
+ *
+ * In the maintenance app, read the ramp off the chosen theme instead —
+ * `useAccentPalette()` (apps/maintenance/lib/hooks/use-accent.ts) returns the
+ * same four roles resolved for the active accent.
+ *
+ * Note OLIVE_TEXT measures 3.32:1 on warm paper, under AA for the small labels
+ * it was used on; `ACCENT_THEMES.olive.text` is the corrected tone.
  */
 export const OLIVE = "#A2A921";
 export const OLIVE_TEXT = "#848F0D";

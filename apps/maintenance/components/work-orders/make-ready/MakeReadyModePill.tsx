@@ -3,7 +3,8 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MUTED, NAVY, OLIVE_GLASS } from "@/theme/tokens";
+import { MUTED, NAVY } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 /** The Make Ready screen's view modes (local to the tab, not persisted). */
 export type MakeReadyMode = "turns" | "schedule" | "history";
@@ -29,6 +30,7 @@ export function MakeReadyModePill({
   /** The visible row count for the pill (mode-aware). */
   count: number;
 }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -74,12 +76,12 @@ export function MakeReadyModePill({
             width: 25,
             height: 25,
             borderRadius: 13,
-            backgroundColor: "rgba(132,143,13,0.15)",
+            backgroundColor: `${palette.text}26`,
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <Ionicons name={current.icon as never} size={14} color={OLIVE_GLASS} />
+          <Ionicons name={current.icon as never} size={14} color={palette.glass} />
         </View>
         <Text style={{ fontSize: 16, fontWeight: "800", letterSpacing: -0.3, color: NAVY }}>
           {t(current.labelKey)}
@@ -90,12 +92,12 @@ export function MakeReadyModePill({
             height: 21,
             paddingHorizontal: 7,
             borderRadius: 999,
-            backgroundColor: "rgba(132,143,13,0.14)",
+            backgroundColor: `${palette.text}24`,
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <Text style={{ fontSize: 11, fontWeight: "800", color: OLIVE_GLASS, fontVariant: ["tabular-nums"] }}>
+          <Text style={{ fontSize: 11, fontWeight: "800", color: palette.glass, fontVariant: ["tabular-nums"] }}>
             {count.toLocaleString()}
           </Text>
         </View>
@@ -148,19 +150,19 @@ export function MakeReadyModePill({
                   borderTopColor: "rgba(9,27,84,0.06)",
                 }}
               >
-                <Ionicons name={m.icon as never} size={15} color={selected ? OLIVE_GLASS : "#4C556F"} />
+                <Ionicons name={m.icon as never} size={15} color={selected ? palette.glass : "#4C556F"} />
                 <Text
                   style={{
                     flex: 1,
                     fontSize: 13.5,
                     fontWeight: "700",
-                    color: selected ? OLIVE_GLASS : NAVY,
+                    color: selected ? palette.glass : NAVY,
                     letterSpacing: -0.1,
                   }}
                 >
                   {t(m.labelKey)}
                 </Text>
-                {selected ? <Ionicons name="checkmark" size={15} color={OLIVE_GLASS} /> : null}
+                {selected ? <Ionicons name="checkmark" size={15} color={palette.glass} /> : null}
               </Pressable>
             );
           })}

@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import { ScrollView, Text, View, Pressable } from "react-native";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import type { MyWeek } from "@/lib/derived/my-week";
-import { HAIRLINE, MUTED, NAVY, OLIVE, OLIVE_TEXT } from "@/theme/tokens";
+import { HAIRLINE, MUTED, NAVY } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 const GREEN = "#33A666";
 const AMBER = "#B05E14";
@@ -29,6 +30,7 @@ export function MyWeekPanel({
   bottomInset: number;
   onBack: () => void;
 }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const initials = week.technician
     .split(/\s+/)
@@ -164,14 +166,14 @@ export function MyWeekPanel({
           gap: 9,
           borderRadius: 16,
           borderWidth: 1,
-          borderColor: "rgba(162,169,33,0.28)",
-          backgroundColor: "rgba(162,169,33,0.10)",
+          borderColor: `${palette.fill}47`,
+          backgroundColor: `${palette.fill}1A`,
           paddingVertical: 13,
           paddingHorizontal: 15,
         }}
       >
-        <Ionicons name="star" size={14} color={OLIVE_TEXT} />
-        <Text style={{ flex: 1, fontSize: 12.5, fontWeight: "700", color: OLIVE_TEXT }}>
+        <Ionicons name="star" size={14} color={palette.text} />
+        <Text style={{ flex: 1, fontSize: 12.5, fontWeight: "700", color: palette.text }}>
           {week.streakAtWindowCap
             ? t("myWeek.streakClean", { days: week.callbackFreeStreakDays })
             : t("myWeek.streakDays", { count: week.callbackFreeStreakDays })}
@@ -276,6 +278,7 @@ function LastWeekStat({ label, value, divider }: { label: string; value: string;
 
 /** Bars scaled to the busiest day; today reads olive, the rest blue. */
 function DayChart({ week }: { week: MyWeek }) {
+  const palette = useAccentPalette();
   const max = Math.max(1, ...week.perDay.map((d) => d.count));
   return (
     <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 9, height: 96, marginTop: 12 }}>
@@ -294,14 +297,14 @@ function DayChart({ week }: { week: MyWeek }) {
               // rather than disappearing from the week.
               height: Math.max(2, (day.count / max) * 60),
               borderRadius: 5,
-              backgroundColor: day.isToday ? OLIVE : "rgba(37,99,180,0.32)",
+              backgroundColor: day.isToday ? palette.fill : "rgba(37,99,180,0.32)",
             }}
           />
           <Text
             style={{
               fontSize: 9.5,
               fontWeight: day.isToday ? "800" : "700",
-              color: day.isToday ? OLIVE_TEXT : MUTED,
+              color: day.isToday ? palette.text : MUTED,
             }}
           >
             {day.label}

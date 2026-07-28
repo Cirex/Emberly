@@ -19,7 +19,8 @@ import {
 import { TINT } from "@/lib/derived/status";
 import type { ParsedWorkOrder } from "@/lib/derived/types";
 import { abbreviatedDate, calendarDaysBetween } from "@/lib/derived/time";
-import { HAIRLINE, HAIRLINE_SOFT, MUTED, OLIVE, OLIVE_TEXT } from "@/theme/tokens";
+import { HAIRLINE, HAIRLINE_SOFT, MUTED } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 /**
  * Make Ready turns board. Phone shows the turn rows banded by whether a
@@ -155,6 +156,7 @@ function UrgencyBadge({ urgency }: { urgency: MoveInUrgency }) {
 /** Six flex capsules — one per stage, filled olive up to completedStageCount
  *  (the tablet board's compact strip). */
 function ProgressStrip({ completed }: { completed: number }) {
+  const palette = useAccentPalette();
   return (
     <View style={{ flexDirection: "row", gap: 4 }}>
       {MAKE_READY_STAGES.map((stage, i) => (
@@ -164,7 +166,7 @@ function ProgressStrip({ completed }: { completed: number }) {
             flex: 1,
             height: 6,
             borderRadius: 3,
-            backgroundColor: i < completed ? OLIVE : "rgba(9,27,84,0.10)",
+            backgroundColor: i < completed ? palette.fill : "rgba(9,27,84,0.10)",
           }}
         />
       ))}
@@ -175,6 +177,7 @@ function ProgressStrip({ completed }: { completed: number }) {
 /** The six-segment stage bar with 7.5px labels: green when the stage is done,
  *  olive for the stage the turn is currently on, faint for the rest. */
 function StageBar({ group }: { group: MakeReadyGroup }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const current = currentStageOf(group);
   return (
@@ -188,7 +191,7 @@ function StageBar({ group }: { group: MakeReadyGroup }) {
               style={{
                 height: 6,
                 borderRadius: 3,
-                backgroundColor: done ? GREEN : isCurrent ? OLIVE : "rgba(9,27,84,0.08)",
+                backgroundColor: done ? GREEN : isCurrent ? palette.fill : "rgba(9,27,84,0.08)",
               }}
             />
             <Text
@@ -196,7 +199,7 @@ function StageBar({ group }: { group: MakeReadyGroup }) {
               style={{
                 fontSize: 7.5,
                 fontWeight: "700",
-                color: done ? GREEN : isCurrent ? OLIVE_TEXT : "#98A0B4",
+                color: done ? GREEN : isCurrent ? palette.text : "#98A0B4",
               }}
             >
               {t(`makeReady.stagesShort.${stage}`)}
@@ -241,6 +244,7 @@ function StageChip({ stage }: { stage: MakeReadyStage }) {
 /** The move-in chip: red-filled "Nd late" past date, amber inside 7 days,
  *  olive dated chip beyond that, nothing when no move-in is set. */
 function MoveInChip({ moveInAt, nowMs }: { moveInAt: number | null; nowMs: number }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   if (moveInAt === null) return null;
   const days = calendarDaysBetween(nowMs, moveInAt);
@@ -254,7 +258,7 @@ function MoveInChip({ moveInAt, nowMs }: { moveInAt: number | null; nowMs: numbe
     );
   }
   const soon = days <= 7;
-  const color = soon ? AMBER : OLIVE_TEXT;
+  const color = soon ? AMBER : palette.text;
   const label =
     days === 0
       ? t("makeReady.chip.moveInToday")
@@ -280,6 +284,7 @@ function MoveInChip({ moveInAt, nowMs }: { moveInAt: number | null; nowMs: numbe
 /** Expanded row: the six stages as a labeled circle strip (olive check when
  *  done, empty ring when not) — the mockup's glyph row, no bordered cells. */
 function StageGlyphStrip({ group }: { group: MakeReadyGroup }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   return (
     <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 2 }}>
@@ -294,18 +299,18 @@ function StageGlyphStrip({ group }: { group: MakeReadyGroup }) {
                 borderRadius: 15,
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: done ? "rgba(162,169,33,0.18)" : "rgba(9,27,84,0.06)",
+                backgroundColor: done ? `${palette.fill}2E` : "rgba(9,27,84,0.06)",
               }}
             >
               {done ? (
-                <Ionicons name="checkmark" size={15} color={OLIVE_TEXT} />
+                <Ionicons name="checkmark" size={15} color={palette.text} />
               ) : (
                 <View style={{ width: 10, height: 10, borderRadius: 5, borderWidth: 1.5, borderColor: "#98A0B4" }} />
               )}
             </View>
             <Text
               numberOfLines={1}
-              style={{ fontSize: 8.5, fontWeight: "700", color: done ? OLIVE_TEXT : "#98A0B4" }}
+              style={{ fontSize: 8.5, fontWeight: "700", color: done ? palette.text : "#98A0B4" }}
             >
               {t(`makeReady.stagesShort.${stage}`)}
             </Text>

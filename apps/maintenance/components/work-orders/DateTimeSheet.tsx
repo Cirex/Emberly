@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Modal, Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MUTED, NAVY, OLIVE_TEXT } from "@/theme/tokens";
+import { MUTED, NAVY } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 /**
  * Native date + time picker for the work-order journey (Scheduled, Completed).
@@ -47,6 +48,7 @@ export function DateTimeSheet({
   onClear?: () => void;
   onClose: () => void;
 }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState<Date>(() => new Date(value ?? Date.now()));
@@ -189,7 +191,7 @@ export function DateTimeSheet({
               borderRadius: 999,
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: OLIVE_TEXT,
+              backgroundColor: palette.text,
             }}
           >
             <Text style={{ fontSize: 13, fontWeight: "700", color: "#FFFFFF", letterSpacing: -0.1 }}>

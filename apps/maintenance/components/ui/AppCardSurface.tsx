@@ -3,6 +3,7 @@ import { useColorScheme } from "nativewind";
 import type { ReactNode } from "react";
 import { View, type ViewProps } from "react-native";
 import { useFieldMode } from "@/lib/stores/settings";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 type Kind = "row" | "panel";
 const RADIUS: Record<Kind, number> = { row: 14, panel: 20 };
@@ -30,6 +31,7 @@ export function AppCardSurface({
   style,
   ...rest
 }: AppCardSurfaceProps) {
+  const palette = useAccentPalette();
   const { colorScheme } = useColorScheme();
   const field = useFieldMode();
   const dark = colorScheme === "dark" && !field;
@@ -43,7 +45,7 @@ export function AppCardSurface({
           borderRadius: r,
           borderWidth: selected ? 1.2 : field ? 1.4 : 1,
           borderColor: selected
-            ? "rgba(162,169,33,0.88)" // olive@88%
+            ? `${palette.fill}E0` // olive@88%
             : dark
               ? "rgba(255,255,255,0.10)"
               : field

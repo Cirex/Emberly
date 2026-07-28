@@ -27,7 +27,7 @@ import { useUnits } from "@/lib/stores/units";
 import { useWorkOrders } from "@/lib/stores/work-orders";
 import { HAIRLINE, type AccentThemeId } from "@/theme/tokens";
 import { AccentPicker, Dropdown, ThemeCards } from "@/components/settings/AppearanceControls";
-import { useAccentHex } from "@/lib/hooks/use-accent";
+import { useAccentHex, useAccentPalette } from "@/lib/hooks/use-accent";
 
 const NAVY = "#091B54";
 const RED = "#D1382E";
@@ -86,6 +86,7 @@ function Segments<T extends string>({
   options: { id: T; label: string }[];
   onChange: (v: T) => void;
 }) {
+  const palette = useAccentPalette();
   return (
     <View style={{ flexDirection: "row", borderRadius: 12, backgroundColor: "rgba(9,27,84,0.06)", padding: 3, gap: 2 }}>
       {options.map((o) => (
@@ -98,7 +99,7 @@ function Segments<T extends string>({
             paddingHorizontal: 12,
             paddingVertical: 6,
             borderRadius: 9,
-            backgroundColor: value === o.id ? "rgba(162,169,33,0.85)" : "transparent",
+            backgroundColor: value === o.id ? `${palette.fill}D9` : "transparent",
           }}
         >
           <Text style={{ fontSize: 13, fontWeight: "600", color: value === o.id ? "#FFFFFF" : "#4C556F" }}>
@@ -111,6 +112,7 @@ function Segments<T extends string>({
 }
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  const palette = useAccentPalette();
   return (
     <Pressable
       onPress={() => onChange(!value)}
@@ -121,7 +123,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
         height: 30,
         borderRadius: 16,
         padding: 3,
-        backgroundColor: value ? "rgba(162,169,33,0.85)" : "rgba(9,27,84,0.14)",
+        backgroundColor: value ? `${palette.fill}D9` : "rgba(9,27,84,0.14)",
         alignItems: value ? "flex-end" : "flex-start",
         justifyContent: "center",
       }}
@@ -138,6 +140,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
  * occupancy tint) and makes sync state visible.
  */
 export default function Settings() {
+  const palette = useAccentPalette();
   const router = useRouter();
   const { t } = useTranslation();
   const settings = useSettings();
@@ -292,9 +295,9 @@ export default function Settings() {
                 borderRadius: 999,
                 paddingHorizontal: 9,
                 paddingVertical: 3,
-                backgroundColor: "rgba(162,169,33,0.12)",
+                backgroundColor: `${palette.fill}1F`,
                 borderWidth: 1,
-                borderColor: "rgba(162,169,33,0.4)",
+                borderColor: `${palette.fill}66`,
               }}
             >
               {/* Machine role value on purpose — roles are not translated. */}

@@ -6,6 +6,7 @@ import type { LineStyle, LineWeight, UtilityPoint, UtilityType } from "@/lib/api
 import { PAGE_HEIGHT, PAGE_WIDTH } from "@/lib/map-data";
 import { UTILITY_COLORS, runLengthLabel } from "@/lib/utility-lines";
 import { FlowRow, StyleChip, StyleRow, WeightRow } from "@/components/map/UtilityStyleControls";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 const NAVY = "#091B54";
 const MUTED = "#70788F";
@@ -61,6 +62,7 @@ export function UtilityDrawSheet({
   onFinish: () => void;
   onCancel: () => void;
 }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const line = subMode === "line";
@@ -177,7 +179,7 @@ export function UtilityDrawSheet({
                     borderRadius: 999,
                     paddingHorizontal: 17,
                     paddingVertical: 7,
-                    backgroundColor: "rgba(162,169,33,0.92)",
+                    backgroundColor: `${palette.fill}EB`,
                     opacity: canFinish ? 1 : 0.4,
                   }}
                 >

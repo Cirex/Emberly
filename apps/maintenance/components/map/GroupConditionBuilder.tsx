@@ -11,6 +11,7 @@ import {
   defaultConditionFor,
   type ConditionKind,
 } from "@/lib/map-group-conditions";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 const NAVY = "#091B54";
 const MUTED = "#70788F";
@@ -27,6 +28,7 @@ function Chip({
   danger?: boolean;
   onPress: () => void;
 }) {
+  const palette = useAccentPalette();
   return (
     <Pressable
       onPress={onPress}
@@ -37,8 +39,8 @@ function Chip({
         paddingVertical: 5,
         borderRadius: 999,
         borderWidth: 1,
-        backgroundColor: on ? "rgba(162,169,33,0.14)" : "rgba(9,27,84,0.04)",
-        borderColor: danger ? "rgba(209,56,46,0.4)" : on ? "rgba(162,169,33,0.55)" : "rgba(9,27,84,0.12)",
+        backgroundColor: on ? `${palette.fill}24` : "rgba(9,27,84,0.04)",
+        borderColor: danger ? "rgba(209,56,46,0.4)" : on ? `${palette.fill}8C` : "rgba(9,27,84,0.12)",
       }}
     >
       <Text style={{ fontSize: 11, fontWeight: "600", color: danger ? "#D1382E" : on ? "#767B24" : "#4C556F" }}>

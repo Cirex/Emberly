@@ -6,7 +6,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { PmTask, PmTaskStatus, PmTemplateRound } from "@/lib/api/pm-tasks";
 import { pmDaysLate, pmDueDateMs, pmRoundOverdue } from "@/lib/derived/pm-cards";
 import { abbreviatedDate } from "@/lib/derived/time";
-import { HAIRLINE, MUTED, NAVY, OLIVE_TEXT } from "@/theme/tokens";
+import { HAIRLINE, MUTED, NAVY } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 /**
  * The Preventive mode board (approved PM design pass): template round cards —
@@ -84,6 +85,7 @@ function DueChip({ template, nowMs }: { template: PmTemplateRound; nowMs: number
 
 /** Small tinted capsule for the template's category (free-text, not translated). */
 function CategoryChip({ category }: { category: string }) {
+  const palette = useAccentPalette();
   if (!category.trim()) return null;
   return (
     <View
@@ -91,12 +93,12 @@ function CategoryChip({ category }: { category: string }) {
         paddingHorizontal: 7,
         paddingVertical: 1.5,
         borderRadius: 999,
-        backgroundColor: "rgba(162,169,33,0.14)",
+        backgroundColor: `${palette.fill}24`,
         borderWidth: 1,
-        borderColor: "rgba(162,169,33,0.4)",
+        borderColor: `${palette.fill}66`,
       }}
     >
-      <Text style={{ fontSize: 9, fontWeight: "700", color: OLIVE_TEXT }}>{category}</Text>
+      <Text style={{ fontSize: 9, fontWeight: "700", color: palette.text }}>{category}</Text>
     </View>
   );
 }
@@ -140,6 +142,7 @@ function RoundRow({
   pad: number;
   onPress: () => void;
 }) {
+    const palette = useAccentPalette();
   const { t } = useTranslation();
   const upcoming = template.tasks.length === 0;
   return (
@@ -156,12 +159,12 @@ function RoundRow({
             width: 28,
             height: 28,
             borderRadius: 9,
-            backgroundColor: "rgba(132,143,13,0.13)",
+            backgroundColor: `${palette.text}21`,
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <Ionicons name="sync-outline" size={14} color={OLIVE_TEXT} />
+          <Ionicons name="sync-outline" size={14} color={palette.text} />
         </View>
         <View style={{ flex: 1, gap: 2 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>

@@ -7,6 +7,7 @@ import type { GroupCondition, GroupUnit, MapFilterGroup } from "@emberly/core";
 import { GroupConditionBuilder } from "@/components/map/GroupConditionBuilder";
 import { conditionSummary } from "@/lib/map-group-conditions";
 import { useMapGroups } from "@/lib/stores/map-groups";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 const NAVY = "#091B54";
 const MUTED = "#70788F";
@@ -32,6 +33,7 @@ export function GroupsSheet({
   units: GroupUnit[];
   onClose: () => void;
 }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const store = useMapGroups();
@@ -88,7 +90,7 @@ export function GroupsSheet({
                 alignItems: "center",
                 justifyContent: "center",
                 marginRight: 6,
-                backgroundColor: store.enabled ? "rgba(162,169,33,0.14)" : "rgba(9,27,84,0.05)",
+                backgroundColor: store.enabled ? `${palette.fill}24` : "rgba(9,27,84,0.05)",
               }}
             >
               <Ionicons
@@ -186,7 +188,7 @@ export function GroupsSheet({
                       borderRadius: 14,
                       alignItems: "center",
                       justifyContent: "center",
-                      backgroundColor: g.visible ? "rgba(162,169,33,0.14)" : "rgba(9,27,84,0.05)",
+                      backgroundColor: g.visible ? `${palette.fill}24` : "rgba(9,27,84,0.05)",
                     }}
                   >
                     <Ionicons name={g.visible ? "eye-outline" : "eye-off-outline"} size={14} color={g.visible ? "#767B24" : MUTED} />
@@ -278,7 +280,7 @@ export function GroupsSheet({
                 borderRadius: 12,
                 paddingVertical: 10,
                 alignItems: "center",
-                backgroundColor: "rgba(162,169,33,0.06)",
+                backgroundColor: `${palette.fill}0F`,
               }}
             >
               <Text style={{ fontSize: 12.5, fontWeight: "700", color: "#767B24" }}>{t("mapGroups.newGroup")}</Text>

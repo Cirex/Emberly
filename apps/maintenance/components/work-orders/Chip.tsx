@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, Text, View } from "react-native";
-import { OLIVE, OLIVE_TEXT } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
+
 
 /**
  * A small glass action chip — an icon (optionally with a label) and an
@@ -14,7 +15,7 @@ export function Chip({
   badge,
   onPress,
   tint = "#4C556F",
-  activeTint = OLIVE_TEXT,
+  activeTint,
   accessibilityLabel,
 }: {
   label?: string;
@@ -27,7 +28,10 @@ export function Chip({
   /** Required for icon-only chips (no visible label for the reader to use). */
   accessibilityLabel?: string;
 }) {
-  const color = active ? activeTint : tint;
+  const palette = useAccentPalette();
+  // `activeTint` used to default to a hardcoded olive in the parameter list,
+  // which a hook cannot reach — the accent is resolved here instead.
+  const color = active ? (activeTint ?? palette.text) : tint;
   return (
     <Pressable
       onPress={onPress}
@@ -40,15 +44,15 @@ export function Chip({
         paddingHorizontal: 11,
         height: 34,
         borderRadius: 999,
-        backgroundColor: active ? "rgba(162,169,33,0.16)" : "rgba(255,255,255,0.65)",
+        backgroundColor: active ? `${palette.fill}29` : "rgba(255,255,255,0.65)",
         borderWidth: 1,
-        borderColor: active ? "rgba(162,169,33,0.5)" : "rgba(9,27,84,0.12)",
+        borderColor: active ? `${palette.fill}80` : "rgba(9,27,84,0.12)",
       }}
     >
       <Ionicons name={icon as never} size={13} color={color} />
       {label ? <Text style={{ fontSize: 12, fontWeight: "600", color }}>{label}</Text> : null}
       {badge !== undefined && badge > 0 ? (
-        <View style={{ backgroundColor: OLIVE, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 }}>
+        <View style={{ backgroundColor: palette.fill, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 }}>
           <Text style={{ color: "#FFFFFF", fontSize: 10, fontWeight: "700" }}>{badge}</Text>
         </View>
       ) : null}

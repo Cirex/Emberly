@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, Text, View } from "react-native";
-import { MUTED, OLIVE_TEXT } from "@/theme/tokens";
+import { MUTED } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 /**
  * Markdown-lite — the tiny subset the maintenance team actually writes:
@@ -42,6 +43,7 @@ export function MarkdownLite({
   /** Present = checkboxes are tappable; called with the 0-based source line. */
   onToggleLine?: (lineIndex: number) => void;
 }) {
+  const palette = useAccentPalette();
   const BODY = { fontSize: 13, color: ink, lineHeight: 19.5 } as const;
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   return (
@@ -77,7 +79,7 @@ export function MarkdownLite({
               <Ionicons
                 name={checked ? "checkbox-outline" : "square-outline"}
                 size={13}
-                color={checked ? OLIVE_TEXT : MUTED}
+                color={checked ? palette.text : MUTED}
                 style={{ marginTop: 3 }}
               />
               <View style={{ flex: 1 }}>

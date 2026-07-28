@@ -16,6 +16,7 @@ import {
 import type { ParsedWorkOrder } from "@/lib/derived/types";
 import { abbreviatedDate } from "@/lib/derived/time";
 import { CALLBACK_TINT, HAIRLINE, HAIRLINE_SOFT, MUTED } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 /**
  * Hot Spots mode, full-screen redesign: a property-wide "signals per week"
@@ -195,6 +196,7 @@ function RankRow({
   onPress: () => void;
   onShowOnMap: () => void;
 }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const high = row.riskLevel === "High";
   const topTrade = hotSpotTopTrade(row);
@@ -210,7 +212,7 @@ function RankRow({
         borderTopWidth: 1,
         borderTopColor: HAIRLINE_SOFT,
         backgroundColor:
-          highlightSelection && selected ? "rgba(162,169,33,0.10)" : high ? HIGH_ROW_WASH : undefined,
+          highlightSelection && selected ? `${palette.fill}1A` : high ? HIGH_ROW_WASH : undefined,
       }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: RANK_GAP }}>

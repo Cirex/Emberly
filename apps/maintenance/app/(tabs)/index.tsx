@@ -36,10 +36,10 @@ import { activeLocale } from "@/lib/i18n";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
 import { useMyDay, type MyDayStop } from "@/lib/stores/my-day";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
-import { HAIRLINE, MUTED, NAVY, OLIVE, OLIVE_TEXT, screenHPad } from "@/theme/tokens";
+import { HAIRLINE, MUTED, NAVY, screenHPad } from "@/theme/tokens";
 import { statusLabel } from "@/lib/derived/resman-labels";
 import { useNowMs } from "@/lib/hooks/use-now";
-import { useAccentHex } from "@/lib/hooks/use-accent";
+import { useAccentHex, useAccentPalette } from "@/lib/hooks/use-accent";
 
 const GREEN = "#33A666";
 const RED = "#D1382E";
@@ -62,6 +62,7 @@ const keyOfWorkOrder = (wo: ParsedWorkOrder) => wo.id;
  * queue adds a unit — unchanged.
  */
 export default function MyDayScreen() {
+  const palette = useAccentPalette();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const pad = screenHPad(width);
@@ -281,9 +282,9 @@ export default function MyDayScreen() {
                 refresh on the list below — the gesture a tech already reaches
                 for — which frees the spot for the way into My Week. */}
             <GlassPill dark={dark} onPress={showWeek}>
-              <Ionicons name="stats-chart" size={12} color={OLIVE_TEXT} />
-              <Text style={{ fontSize: 12, fontWeight: "700", color: OLIVE_TEXT }}>{t("myWeek.open")}</Text>
-              <Ionicons name="chevron-forward" size={11} color={OLIVE_TEXT} />
+              <Ionicons name="stats-chart" size={12} color={palette.text} />
+              <Text style={{ fontSize: 12, fontWeight: "700", color: palette.text }}>{t("myWeek.open")}</Text>
+              <Ionicons name="chevron-forward" size={11} color={palette.text} />
             </GlassPill>
             <Pressable
               onPress={openInMap}
@@ -295,7 +296,7 @@ export default function MyDayScreen() {
                 paddingHorizontal: 14,
                 paddingVertical: 8,
                 borderRadius: 999,
-                backgroundColor: "rgba(162,169,33,0.92)",
+                backgroundColor: `${palette.fill}EB`,
                 borderWidth: 1,
                 borderColor: "rgba(255,255,255,0.5)",
               }}
@@ -578,6 +579,7 @@ function CloseAction({ translation }: { translation: SharedValue<number> }) {
  *  actions; translation is positive as it opens, so the panel starts one
  *  width off-screen to the left and slides in with the drag). */
 function AddAction({ translation }: { translation: SharedValue<number> }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const style = useAnimatedStyle(() => ({
     transform: [{ translateX: translation.value - ACTION_W }],
@@ -585,7 +587,7 @@ function AddAction({ translation }: { translation: SharedValue<number> }) {
   return (
     <Reanimated.View
       style={[
-        { width: ACTION_W, backgroundColor: OLIVE, alignItems: "center", justifyContent: "center", gap: 2 },
+        { width: ACTION_W, backgroundColor: palette.fill, alignItems: "center", justifyContent: "center", gap: 2 },
         style,
       ]}
     >
@@ -617,6 +619,7 @@ function StopRow({
   onOpen: () => void;
   onClose: () => void;
 }) {
+    const palette = useAccentPalette();
   const { t } = useTranslation();
   // The stop cards ARE My Day — the expanded list below them was the only
   // thing translated, so a full cache changed nothing a tech actually looks at.
@@ -639,7 +642,7 @@ function StopRow({
           marginTop: upNext ? 15 : 1,
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: emergency ? RED : OLIVE,
+          backgroundColor: emergency ? RED : palette.fill,
         }}
       >
         <Text style={{ color: "#FFFFFF", fontSize: emergency ? 13 : 11, fontWeight: "800" }}>

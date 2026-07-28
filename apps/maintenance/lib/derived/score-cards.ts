@@ -23,17 +23,20 @@ export interface ScoreCard {
   caption: string;
   /** Ionicons name. */
   icon: string;
-  /** Hex tint. */
-  tint: string;
+  /**
+   * Hex tint, or `null` for "the user's accent", resolved at render.
+   *
+   * Null rather than a hex because these builders run inside the memoized
+   * derived snapshot — threading the accent in would bust that cache on every
+   * theme change and put a presentation concern in a pure data layer.
+   */
+  tint: string | null;
   interactive: boolean;
   action: "openMonthly" | "sameWeek" | "daysToClose" | "callbacks" | "technicianWeek" | "technicianMonth" | null;
 }
 
 /** Callback signal, local by design (spec'd per module; do not import filters). */
 const CALLBACK_SIGNALS = new Set(["possible", "confirmed"]);
-
-/** The Swift olive accent the tiles used; not in the security token palette. */
-const OLIVE = "#A2A921";
 
 function count(n: number): string {
   return n.toLocaleString();
@@ -111,7 +114,7 @@ function openCards(
       value: count(visible.length),
       caption: t("scoreCards.captions.unitsWithOpenWork", { count: uniqueUnitCount }),
       icon: "list-outline",
-      tint: OLIVE,
+      tint: null,
       interactive: true,
       action: "openMonthly",
     },
@@ -196,7 +199,7 @@ function closedCards(closedFiltered: ParsedWorkOrder[], weeklySummary: Technicia
           ? t("scoreCards.captions.noClosed90")
           : t("scoreCards.captions.sameWeekDetail", { pct: (sameWeekRate * 100).toFixed(1), sample }),
       icon: "checkmark-circle-outline",
-      tint: OLIVE,
+      tint: null,
       interactive: true,
       action: "sameWeek",
     },
@@ -270,7 +273,7 @@ function makeReadyCards(groups: MakeReadyGroup[], nowMs: number): ScoreCard[] {
       value: count(inProgress),
       caption: t("scoreCards.captions.unitsNotReady"),
       icon: "hammer-outline",
-      tint: OLIVE,
+      tint: null,
       interactive: false,
       action: null,
     },
@@ -322,7 +325,7 @@ function hotSpotCards(rows: HotSpotRow[]): ScoreCard[] {
       value: count(rows.length),
       caption: t("scoreCards.captions.repeatSignals"),
       icon: "flame-outline",
-      tint: OLIVE,
+      tint: null,
       interactive: false,
       action: null,
     },

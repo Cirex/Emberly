@@ -2,6 +2,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useColorScheme } from "nativewind";
 import { StyleSheet, View, useWindowDimensions } from "react-native";
 import Svg, { Circle, Defs, RadialGradient, Stop } from "react-native-svg";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 import { useFieldMode } from "@/lib/stores/settings";
 
 /**
@@ -16,17 +17,27 @@ import { useFieldMode } from "@/lib/stores/settings";
  * react-native-svg.
  */
 
-/** Each glow as a fraction of the screen, so the composition holds at any size. */
+/**
+ * Each glow as a fraction of the screen, so the composition holds at any size.
+ *
+ * The ids used to name colours (glowBlue / glowMint / glowGreen) because the
+ * wash was a fixed blue→mint→green diagonal. It now takes its hues from the
+ * accent, so they name POSITIONS instead: the three tints come from
+ * `palette.glowLight` / `glowDark` in this order. The hues are fanned around
+ * the accent rather than set to it, which keeps the depth the original
+ * three-colour composition had instead of flattening to one tone.
+ */
 const GLOWS = [
-  // Blue, upper-left — the cool end of the diagonal wash.
-  { id: "glowBlue", size: 0.95, inset: -0.24, drop: -0.28, anchorX: "left", anchorY: "top", peak: 1, mid: 0.5 },
-  // Mint, upper-right — a bridge between the two.
-  { id: "glowMint", size: 0.55, inset: 0.14, drop: -0.16, anchorX: "right", anchorY: "top", peak: 0.65, mid: 0.28 },
-  // Green, lower-right — the organic end.
-  { id: "glowGreen", size: 1.0, inset: -0.28, drop: -0.32, anchorX: "right", anchorY: "bottom", peak: 1, mid: 0.46 },
+  // The cool end of the diagonal wash.
+  { id: "glowA", size: 0.95, inset: -0.24, drop: -0.28, anchorX: "left", anchorY: "top", peak: 1, mid: 0.5 },
+  // A bridge between the two.
+  { id: "glowB", size: 0.55, inset: 0.14, drop: -0.16, anchorX: "right", anchorY: "top", peak: 0.65, mid: 0.28 },
+  // The saturated end.
+  { id: "glowC", size: 1.0, inset: -0.28, drop: -0.32, anchorX: "right", anchorY: "bottom", peak: 1, mid: 0.46 },
 ] as const;
 
 export function WorkspaceBackdrop() {
+  const palette = useAccentPalette();
   const { colorScheme } = useColorScheme();
   const { width, height } = useWindowDimensions();
   // Field mode: flat bright paper, no glows — atmosphere costs contrast in sun.
@@ -39,17 +50,23 @@ export function WorkspaceBackdrop() {
     );
   }
 
+  // The base wash. Dark stays neutral near-black; light takes a breath of the
+  // accent at each corner so the paper itself shifts with the theme, which is
+  // the largest single surface in the app and previously never moved.
   const stops = dark
     ? (["#14181F", "#1A1A1F", "#12171A"] as const)
-    : (["#DCE9FD", "#F8F5EC", "#D6EBDE"] as const);
+    : ([`${palette.glowLight[0]}2E`, "#F8F5EC", `${palette.glowLight[2]}2E`] as const);
 
   // Light tints run more saturated than security's: almost every pixel here
   // sits behind a blurred glass card, which eats about half the chroma — the
-  // deeper source colors are what let the blue/green wash read THROUGH the
-  // cards instead of only in the gaps between them.
-  const tints: Record<(typeof GLOWS)[number]["id"], string> = dark
-    ? { glowBlue: "#243247", glowMint: "#22392F", glowGreen: "#1F3B34" }
-    : { glowBlue: "#6C9AE3", glowMint: "#7FC49C", glowGreen: "#4BA891" };
+  // deeper source colors are what let the wash read THROUGH the cards instead
+  // of only in the gaps between them.
+  const glow = dark ? palette.glowDark : palette.glowLight;
+  const tints: Record<(typeof GLOWS)[number]["id"], string> = {
+    glowA: glow[0],
+    glowB: glow[1],
+    glowC: glow[2],
+  };
 
   // Against near-black the same opacities barely register, so ease them back.
   const gain = dark ? 0.75 : 1;

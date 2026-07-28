@@ -28,7 +28,8 @@ import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { usePendingEdits } from "@/lib/stores/pending-edits";
 import { useWorkOrderPhotos } from "@/lib/stores/work-order-photos";
 import { useTranslated } from "@/lib/translation/use-translated";
-import { CALLBACK_TINT, MUTED, NAVY, OLIVE, OLIVE_TEXT } from "@/theme/tokens";
+import { CALLBACK_TINT, MUTED, NAVY } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 import { statusLabel } from "@/lib/derived/resman-labels";
 
 const SLATE = "#4C556F";
@@ -47,6 +48,7 @@ const OCCUPIED_GREEN = "#33A666";
  * floating liquid-glass action bar (Show on Map · Mark Complete).
  */
 export default function WorkOrderDetail() {
+  const palette = useAccentPalette();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { t } = useTranslation();
@@ -116,13 +118,13 @@ export default function WorkOrderDetail() {
       >
         <Ionicons name="document-text-outline" size={28} color={MUTED} />
         <Text className="text-navy dark:text-white" style={{ fontSize: 15, fontWeight: "700" }}>
-          Work order not found
+          {t("workOrders.detail.notFoundTitle")}
         </Text>
         <Text
           className="text-muted dark:text-white/60"
           style={{ fontSize: 12, textAlign: "center" }}
         >
-          It may not be in the cached set yet. Pull to refresh the list and try again.
+          {t("workOrders.detail.notFoundBody")}
         </Text>
         <Pressable
           onPress={() => router.back()}
@@ -137,7 +139,7 @@ export default function WorkOrderDetail() {
             justifyContent: "center",
           }}
         >
-          <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "600" }}>Back</Text>
+          <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "600" }}>{t("workOrders.detail.back")}</Text>
         </Pressable>
       </View>
     );
@@ -290,9 +292,11 @@ export default function WorkOrderDetail() {
               paddingRight: 44,
             }}
           >
-            WORK ORDER #{wo.number}
+            {t("workOrders.detail.eyebrow", { number: wo.number }).toUpperCase()}
             {wo.reportedAt !== null
-              ? `  ·  REPORTED ${abbreviatedDate(wo.reportedAt, nowMs).toUpperCase()}`
+              ? `  ·  ${t("workOrders.detail.eyebrowReported", {
+                  date: abbreviatedDate(wo.reportedAt, nowMs),
+                }).toUpperCase()}`
               : ""}
           </Text>
           <Text
@@ -306,7 +310,7 @@ export default function WorkOrderDetail() {
               paddingRight: 44,
             }}
           >
-            {titleTr.shown || "Untitled work order"}
+            {titleTr.shown || t("workOrders.untitled")}
           </Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 7 }}>
             <Text
@@ -343,7 +347,9 @@ export default function WorkOrderDetail() {
             {occupiedDays !== null ? (
               <>
                 <Dot />
-                <Text style={{ fontSize: 12.5, color: MUTED }}>{occupiedDays} days</Text>
+                <Text style={{ fontSize: 12.5, color: MUTED }}>
+                  {t("workOrders.detail.occupiedDays", { count: occupiedDays })}
+                </Text>
               </>
             ) : null}
           </View>
@@ -363,16 +369,16 @@ export default function WorkOrderDetail() {
               <Chip key={t} label={t} color={tagTint(t)} icon={tagIconName(t)} />
             ))}
             {isCallback(wo) ? (
-              <Chip label="Possible Callback" color={CALLBACK_TINT} icon="arrow-u-left-top" emphasized />
+              <Chip label={t("workOrders.detail.chips.possibleCallback")} color={CALLBACK_TINT} icon="arrow-u-left-top" emphasized />
             ) : null}
             {wo.isDuplicate ? (
-              <Chip label="Duplicate" color={DUPLICATE_TINT} icon="content-duplicate" emphasized />
+              <Chip label={t("workOrders.detail.chips.duplicate")} color={DUPLICATE_TINT} icon="content-duplicate" emphasized />
             ) : null}
             {pendingClose ? (
-              <Chip label="Close pending" color={OLIVE_TEXT} icon="progress-check" emphasized />
+              <Chip label={t("workOrders.detail.chips.closePending")} color={palette.text} icon="progress-check" emphasized />
             ) : null}
             {anyTranslated ? (
-              <Chip label={t("translation.badge")} color={OLIVE_TEXT} icon="translate" emphasized />
+              <Chip label={t("translation.badge")} color={palette.text} icon="translate" emphasized />
             ) : null}
           </View>
         </LinearGradient>
@@ -381,7 +387,7 @@ export default function WorkOrderDetail() {
         <Pressable
           onPress={() => router.back()}
           accessibilityRole="button"
-          accessibilityLabel="Close"
+          accessibilityLabel={t("workOrders.detail.close")}
           hitSlop={8}
           style={{
             position: "absolute",
@@ -407,7 +413,7 @@ export default function WorkOrderDetail() {
 
         {/* Progress — the journey line. */}
         <Section
-          label="Progress"
+          label={t("workOrders.detail.sections.progress")}
           hairline={hairline}
           first
           trailing={
@@ -416,15 +422,18 @@ export default function WorkOrderDetail() {
               // a close stamped on this device computes it the same way the
               // engine does rather than showing nothing.
               <AgePill
-                text={`Closed in ${
-                  wo.daysToComplete ??
-                  Math.max(0, Math.floor((completedAtShown - wo.reportedAt) / DAY_MS))
-                } days`}
+                text={t("workOrders.detail.closedInDays", {
+                  count:
+                    wo.daysToComplete ??
+                    Math.max(0, Math.floor((completedAtShown - wo.reportedAt) / DAY_MS)),
+                })}
                 color={GREEN}
               />
             ) : wo.reportedAt !== null ? (
               <AgePill
-                text={`Open ${calendarDaysBetween(wo.reportedAt, nowMs)} days`}
+                text={t("workOrders.detail.openDays", {
+                  count: calendarDaysBetween(wo.reportedAt, nowMs),
+                })}
                 color={RED}
               />
             ) : null
@@ -452,7 +461,7 @@ export default function WorkOrderDetail() {
           <Pressable
             onPress={() => setEditing("technician")}
             accessibilityRole="button"
-            accessibilityLabel={`Reassign; currently ${technicianShown}`}
+            accessibilityLabel={t("workOrders.detail.reassignA11y", { name: technicianShown })}
             style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
           >
             <TechBadge name={technicianShown} size={34} />
@@ -482,7 +491,7 @@ export default function WorkOrderDetail() {
 
         {/* Description — tap to edit. */}
         <Section
-          label="Description"
+          label={t("workOrders.detail.sections.description")}
           hairline={hairline}
           trailing={
             overlay?.description !== undefined ? <PendingSyncPill /> : <EditGlyph dark={dark} />
@@ -492,7 +501,7 @@ export default function WorkOrderDetail() {
             {descriptionShown.trim().length > 0 ? (
               <MarkdownLite text={descriptionShown} ink={ink} />
             ) : (
-              <Text style={{ fontSize: 12.5, color: MUTED }}>No description. Tap to add one.</Text>
+              <Text style={{ fontSize: 12.5, color: MUTED }}>{t("workOrders.detail.noDescription")}</Text>
             )}
           </Pressable>
           {descTr.translated ? (
@@ -508,7 +517,7 @@ export default function WorkOrderDetail() {
 
         {/* Technician notes — tap to edit. */}
         <Section
-          label="Technician Notes"
+          label={t("workOrders.detail.sections.technicianNotes")}
           hairline={hairline}
           trailing={
             overlay?.completionNotes !== undefined ? <PendingSyncPill /> : <EditGlyph dark={dark} />
@@ -536,7 +545,7 @@ export default function WorkOrderDetail() {
 
         {/* Related work orders */}
         <Section
-          label="Related Work Orders"
+          label={t("workOrders.detail.sections.relatedWorkOrders")}
           meta={related.length > 0 ? `${related.length} for this unit` : undefined}
           hairline={hairline}
           flushBody
@@ -659,7 +668,7 @@ export default function WorkOrderDetail() {
           >
             <Ionicons name="map-outline" size={15} color={ink} />
             <Text style={{ fontSize: 13, fontWeight: "700", color: ink, letterSpacing: -0.1 }}>
-              Show on Map
+              {t("workOrders.detail.showOnMap")}
             </Text>
           </Pressable>
           {canClose ? (
@@ -674,8 +683,8 @@ export default function WorkOrderDetail() {
                 alignItems: "center",
                 justifyContent: "center",
                 gap: 7,
-                backgroundColor: OLIVE_TEXT,
-                shadowColor: OLIVE_TEXT,
+                backgroundColor: palette.text,
+                shadowColor: palette.text,
                 shadowOpacity: 0.45,
                 shadowRadius: 12,
                 shadowOffset: { width: 0, height: 5 },
@@ -685,7 +694,7 @@ export default function WorkOrderDetail() {
               <Text
                 style={{ fontSize: 13, fontWeight: "700", color: "#FFFFFF", letterSpacing: -0.1 }}
               >
-                Mark Complete
+                {t("workOrders.detail.markComplete")}
               </Text>
             </Pressable>
           ) : null}
@@ -912,6 +921,8 @@ function Section({
 
 /** Small olive marker on fields the pending-edits overlay is holding. */
 function PendingSyncPill() {
+  const { t } = useTranslation();
+  const palette = useAccentPalette();
   return (
     <View
       style={{
@@ -921,13 +932,13 @@ function PendingSyncPill() {
         paddingHorizontal: 7,
         paddingVertical: 2,
         borderRadius: 999,
-        backgroundColor: `${OLIVE_TEXT}14`,
+        backgroundColor: `${palette.text}14`,
         borderWidth: 1,
-        borderColor: `${OLIVE_TEXT}38`,
+        borderColor: `${palette.text}38`,
       }}
     >
-      <MaterialCommunityIcons name="progress-check" size={10} color={OLIVE_TEXT} />
-      <Text style={{ fontSize: 9, fontWeight: "700", color: OLIVE_TEXT }}>PENDING SYNC</Text>
+      <MaterialCommunityIcons name="progress-check" size={10} color={palette.text} />
+      <Text style={{ fontSize: 9, fontWeight: "700", color: palette.text }}>{t("workOrders.detail.pendingSync").toUpperCase()}</Text>
     </View>
   );
 }
@@ -947,6 +958,7 @@ function OriginalReveal({
   hairline: string;
   t: (key: string) => string;
 }) {
+    const palette = useAccentPalette();
   return (
     <View style={{ marginTop: 9 }}>
       <Pressable
@@ -955,8 +967,8 @@ function OriginalReveal({
         hitSlop={6}
         style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
       >
-        <MaterialCommunityIcons name="translate" size={12} color={OLIVE_TEXT} />
-        <Text style={{ fontSize: 11, fontWeight: "800", color: OLIVE_TEXT }}>
+        <MaterialCommunityIcons name="translate" size={12} color={palette.text} />
+        <Text style={{ fontSize: 11, fontWeight: "800", color: palette.text }}>
           {revealed ? t("translation.hideOriginal") : t("translation.viewOriginal")}
         </Text>
       </Pressable>
@@ -999,6 +1011,8 @@ function TechnicianPicker({
   onPick: (name: string) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
+  const palette = useAccentPalette();
   const insets = useSafeAreaInsets();
   const sheetBg = dark ? "#1C2129" : "#FCFAF4";
   const ink = dark ? "#FFFFFF" : NAVY;
@@ -1007,7 +1021,7 @@ function TechnicianPicker({
       <Pressable
         style={{ flex: 1, backgroundColor: "rgba(9,27,84,0.30)" }}
         onPress={onClose}
-        accessibilityLabel="Close picker"
+        accessibilityLabel={t("workOrders.detail.closePicker")}
       />
       <View
         style={{
@@ -1059,7 +1073,7 @@ function TechnicianPicker({
                   backgroundColor: selected
                     ? dark
                       ? "rgba(255,255,255,0.06)"
-                      : "rgba(132,143,13,0.08)"
+                      : `${palette.text}14`
                     : "transparent",
                 }}
               >
@@ -1076,7 +1090,7 @@ function TechnicianPicker({
                 >
                   {name}
                 </Text>
-                {selected ? <Ionicons name="checkmark" size={16} color={OLIVE_TEXT} /> : null}
+                {selected ? <Ionicons name="checkmark" size={16} color={palette.text} /> : null}
               </Pressable>
             );
           })}
@@ -1128,17 +1142,39 @@ function Journey({
   onPressScheduled: () => void;
   onPressCompleted: () => void;
 }) {
+  const { t } = useTranslation();
+  const palette = useAccentPalette();
   // Reported is ResMan's record of when the resident called it in — not the
   // technician's to rewrite, so it is the one stop that doesn't respond.
+  // `id` is the React key and stays in English: a translated label would change
+  // the key with the language and remount every node on a language switch.
   const stops: {
+    id: string;
     label: string;
     ms: number | null;
     unsetText: string;
     onPress?: () => void;
   }[] = [
-    { label: "Reported", ms: wo.reportedAt, unsetText: "—" },
-    { label: "Scheduled", ms: scheduledAt, unsetText: "Set date", onPress: onPressScheduled },
-    { label: "Completed", ms: completedAt, unsetText: "Set date", onPress: onPressCompleted },
+    {
+      id: "reported",
+      label: t("workOrders.detail.journey.reported"),
+      ms: wo.reportedAt,
+      unsetText: t("workOrders.detail.journey.unset"),
+    },
+    {
+      id: "scheduled",
+      label: t("workOrders.detail.journey.scheduled"),
+      ms: scheduledAt,
+      unsetText: t("workOrders.detail.journey.setDate"),
+      onPress: onPressScheduled,
+    },
+    {
+      id: "completed",
+      label: t("workOrders.detail.journey.completed"),
+      ms: completedAt,
+      unsetText: t("workOrders.detail.journey.setDate"),
+      onPress: onPressCompleted,
+    },
   ];
   return (
     <View style={{ flexDirection: "row", marginTop: 2 }}>
@@ -1150,12 +1186,17 @@ function Journey({
         const Stop = s.onPress ? Pressable : View;
         return (
           <Stop
-            key={s.label}
+            key={s.id}
             onPress={s.onPress}
             accessibilityRole={s.onPress ? "button" : undefined}
             accessibilityLabel={
               s.onPress
-                ? `${s.label}: ${filled ? abbreviatedDate(s.ms, nowMs) : "not set"}. Tap to change.`
+                ? t("workOrders.detail.journey.changeA11y", {
+                    label: s.label,
+                    value: filled
+                      ? abbreviatedDate(s.ms, nowMs)
+                      : t("workOrders.detail.journey.notSet"),
+                  })
                 : undefined
             }
             hitSlop={s.onPress ? { top: 6, bottom: 10 } : undefined}
@@ -1167,7 +1208,7 @@ function Journey({
                   width: NODE,
                   height: NODE,
                   borderRadius: NODE / 2,
-                  backgroundColor: filled ? OLIVE : paper,
+                  backgroundColor: filled ? palette.fill : paper,
                   borderWidth: filled ? 0 : 2,
                   borderColor: dark ? "rgba(255,255,255,0.28)" : "rgba(9,27,84,0.28)",
                   borderStyle: filled ? "solid" : "dashed",
@@ -1188,7 +1229,7 @@ function Journey({
                       flex: 1,
                       height: 2,
                       borderRadius: 1,
-                      backgroundColor: OLIVE,
+                      backgroundColor: palette.fill,
                       marginHorizontal: 4,
                     }}
                   />
@@ -1232,7 +1273,7 @@ function Journey({
                       ? "#FFFFFF"
                       : NAVY
                     : s.onPress
-                      ? OLIVE_TEXT
+                      ? palette.text
                       : MUTED,
                   fontVariant: ["tabular-nums"],
                 }}
@@ -1243,7 +1284,7 @@ function Journey({
                 <Ionicons
                   name="chevron-down"
                   size={10}
-                  color={filled ? MUTED : OLIVE_TEXT}
+                  color={filled ? MUTED : palette.text}
                   style={{ marginTop: 1 }}
                 />
               ) : null}

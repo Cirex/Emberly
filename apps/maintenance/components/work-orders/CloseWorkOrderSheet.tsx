@@ -5,7 +5,8 @@ import { useTranslation } from "react-i18next";
 import { Alert, Image, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { capture } from "@/lib/analytics";
-import { MUTED, NAVY, OLIVE_TEXT } from "@/theme/tokens";
+import { MUTED, NAVY } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 const THUMB = 84;
 
@@ -35,6 +36,7 @@ export function CloseWorkOrderSheet({
   onConfirm: (photoUris: string[]) => void;
   onClose: () => void;
 }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [photos, setPhotos] = useState<string[]>([]);
@@ -214,7 +216,7 @@ export function CloseWorkOrderSheet({
               alignItems: "center",
               justifyContent: "center",
               gap: 7,
-              backgroundColor: OLIVE_TEXT,
+              backgroundColor: palette.text,
             }}
           >
             <Ionicons name="checkmark" size={16} color="#FFFFFF" />

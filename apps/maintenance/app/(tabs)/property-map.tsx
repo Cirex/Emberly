@@ -37,7 +37,8 @@ import { useLocalSearchParams, useFocusEffect } from "expo-router";
 import { useMyDay } from "@/lib/stores/my-day";
 import { useTour } from "@/lib/stores/tour";
 import { useUnits } from "@/lib/stores/units";
-import { CLASSIFICATION_TINT, MUTED, OLIVE, OLIVE_TEXT, STATUS_TINT, HEADER_TOP_PAD, screenHPad } from "@/theme/tokens";
+import { CLASSIFICATION_TINT, MUTED, STATUS_TINT, HEADER_TOP_PAD, screenHPad } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 const OCC_TINT: Record<string, string> = {
   Occupied: STATUS_TINT.ready,
@@ -49,6 +50,7 @@ const OCC_TINT: Record<string, string> = {
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
 export default function PropertyMapScreen() {
+  const palette = useAccentPalette();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
@@ -375,11 +377,11 @@ export default function PropertyMapScreen() {
         justifyContent: "center",
         borderTopWidth: first ? 0 : 1,
         borderTopColor: "rgba(9,27,84,0.09)",
-        backgroundColor: active ? "rgba(162,169,33,0.22)" : "transparent",
+        backgroundColor: active ? `${palette.fill}38` : "transparent",
         opacity: disabled ? 0.4 : 1,
       }}
     >
-      <Ionicons name={icon} size={18} color={active ? OLIVE_TEXT : "#3E4763"} />
+      <Ionicons name={icon} size={18} color={active ? palette.text : "#3E4763"} />
       {badge ? (
         <View
           pointerEvents="none"
@@ -391,7 +393,7 @@ export default function PropertyMapScreen() {
             height: 15,
             borderRadius: 8,
             paddingHorizontal: 3,
-            backgroundColor: OLIVE,
+            backgroundColor: palette.fill,
             alignItems: "center",
             justifyContent: "center",
           }}

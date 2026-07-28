@@ -3,7 +3,8 @@ import { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import type { StaffConfig } from "@/lib/stores/config";
 import { tagExpiryBadge, useTags, type ExpiryKind, type NewTag, type UnitTag } from "@/lib/stores/tags";
-import { OLIVE } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
+
 
 type ScannerConfig = StaffConfig;
 
@@ -34,6 +35,7 @@ export function TagEditorDialog({
   config: ScannerConfig;
   onClose: () => void;
 }) {
+  const palette = useAccentPalette();
   const tags = useTags((s) => s.byUnit[unitNumber] ?? NO_TAGS);
   const addTag = useTags((s) => s.add);
   const removeTag = useTags((s) => s.remove);
@@ -163,7 +165,7 @@ export function TagEditorDialog({
                   <Pressable
                     key={o.kind}
                     onPress={() => setKind(o.kind)}
-                    style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 11, borderRadius: 12, borderWidth: 1, borderColor: on ? OLIVE : "rgba(9,27,84,0.14)", backgroundColor: on ? "rgba(162,169,33,0.12)" : "transparent" }}
+                    style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 11, borderRadius: 12, borderWidth: 1, borderColor: on ? palette.fill : "rgba(9,27,84,0.14)", backgroundColor: on ? `${palette.fill}1F` : "transparent" }}
                   >
                     <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: on ? "#767B24" : "#70788F", alignItems: "center", justifyContent: "center" }}>
                       {on ? <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: "#767B24" }} /> : null}

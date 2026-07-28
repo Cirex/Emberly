@@ -9,7 +9,8 @@ import { Chip } from "@/components/work-orders/Chip";
 import type { ScoreCard } from "@/lib/derived/score-cards";
 import { useFieldMode } from "@/lib/stores/settings";
 import type { WorkOrdersBoardMode } from "@/lib/stores/work-orders-view";
-import { HAIRLINE, HEADER_TOP_PAD, MUTED, NAVY, OLIVE_GLASS, screenHPad } from "@/theme/tokens";
+import { HAIRLINE, HEADER_TOP_PAD, MUTED, NAVY, screenHPad } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 const MODES: { id: WorkOrdersBoardMode; labelKey: string; icon: string }[] = [
   { id: "open", labelKey: "workOrders.modes.open", icon: "file-tray-full-outline" },
@@ -58,6 +59,7 @@ export const GlassHeader = memo(function GlassHeader({
   onOpenInsights?: () => void;
   onHeight: (h: number) => void;
 }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
@@ -133,12 +135,12 @@ export const GlassHeader = memo(function GlassHeader({
                 width: 25,
                 height: 25,
                 borderRadius: 13,
-                backgroundColor: "rgba(132,143,13,0.15)",
+                backgroundColor: `${palette.text}26`,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Ionicons name={current.icon as never} size={14} color={OLIVE_GLASS} />
+              <Ionicons name={current.icon as never} size={14} color={palette.glass} />
             </View>
             <Text style={{ fontSize: 16, fontWeight: "800", letterSpacing: -0.3, color: NAVY }}>
               {t(current.labelKey)}
@@ -149,12 +151,12 @@ export const GlassHeader = memo(function GlassHeader({
                 height: 21,
                 paddingHorizontal: 7,
                 borderRadius: 999,
-                backgroundColor: "rgba(132,143,13,0.14)",
+                backgroundColor: `${palette.text}24`,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Text style={{ fontSize: 11, fontWeight: "800", color: OLIVE_GLASS, fontVariant: ["tabular-nums"] }}>
+              <Text style={{ fontSize: 11, fontWeight: "800", color: palette.glass, fontVariant: ["tabular-nums"] }}>
                 {count.toLocaleString()}
               </Text>
             </View>
@@ -298,19 +300,19 @@ export const GlassHeader = memo(function GlassHeader({
                   borderTopColor: "rgba(9,27,84,0.06)",
                 }}
               >
-                <Ionicons name={m.icon as never} size={15} color={selected ? OLIVE_GLASS : "#4C556F"} />
+                <Ionicons name={m.icon as never} size={15} color={selected ? palette.glass : "#4C556F"} />
                 <Text
                   style={{
                     flex: 1,
                     fontSize: 13.5,
                     fontWeight: "700",
-                    color: selected ? OLIVE_GLASS : NAVY,
+                    color: selected ? palette.glass : NAVY,
                     letterSpacing: -0.1,
                   }}
                 >
                   {t(m.labelKey)}
                 </Text>
-                {selected ? <Ionicons name="checkmark" size={15} color={OLIVE_GLASS} /> : null}
+                {selected ? <Ionicons name="checkmark" size={15} color={palette.glass} /> : null}
               </Pressable>
             );
           })}

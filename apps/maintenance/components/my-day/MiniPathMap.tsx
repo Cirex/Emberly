@@ -16,7 +16,8 @@ import { useMemo, useState } from "react";
 import { Platform, View } from "react-native";
 import { buildPlanPicture } from "@emberly/ui";
 import { PAGE_HEIGHT, PAGE_WIDTH, PLACED_UNITS } from "@/lib/map-data";
-import { OLIVE } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
+
 
 /**
  * The path preview strip on My Day: a static, non-interactive slice of the
@@ -51,6 +52,7 @@ export function MiniPathMap({
   /** 0 for the edge-to-edge hero — the strip loses its rounded container. */
   radius?: number;
 }) {
+  const palette = useAccentPalette();
   const HEIGHT = height;
   const dark = useColorScheme().colorScheme === "dark";
   const [width, setWidth] = useState(0);
@@ -137,14 +139,14 @@ export function MiniPathMap({
             <Picture picture={plan} />
           </Group>
           {routePath ? (
-            <Path path={routePath} style="stroke" strokeWidth={2} color="rgba(132,143,13,0.75)">
+            <Path path={routePath} style="stroke" strokeWidth={2} color={`${palette.text}BF`}>
               <DashPathEffect intervals={[6, 5]} />
             </Path>
           ) : null}
           {placed.map((s, i) => {
             const x = s.center.cx * view.scale + view.tx;
             const y = s.center.cy * view.scale + view.ty;
-            const fill = s.isDone ? DONE : s.isEmergency ? EMERGENCY : OLIVE;
+            const fill = s.isDone ? DONE : s.isEmergency ? EMERGENCY : palette.fill;
             const label = s.isDone
               ? String.fromCodePoint(IONICONS_GLYPHS["checkmark"])
               : s.isEmergency

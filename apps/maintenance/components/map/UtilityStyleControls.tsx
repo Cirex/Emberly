@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
 import type { LineStyle, LineWeight } from "@/lib/api/annotations";
 import { LINE_STYLES, LINE_WEIGHTS } from "@/lib/api/annotations";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 /**
  * The per-run presentation controls — style, weight, flow — shared by the
@@ -23,6 +24,7 @@ export function StyleChip({
   preview?: React.ReactNode;
   accessibilityLabel?: string;
 }) {
+  const palette = useAccentPalette();
   return (
     <Pressable
       onPress={onPress}
@@ -35,7 +37,7 @@ export function StyleChip({
         paddingHorizontal: 10,
         paddingVertical: 6,
         borderRadius: 999,
-        backgroundColor: selected ? "rgba(162,169,33,0.24)" : "rgba(9,27,84,0.06)",
+        backgroundColor: selected ? `${palette.fill}3D` : "rgba(9,27,84,0.06)",
       }}
     >
       {preview}

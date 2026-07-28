@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
-import { ACCENT_THEMES, NAVY, OLIVE_GLASS, OLIVE_GLASS_DARK } from "@/theme/tokens";
-import { useAccentHex } from "@/lib/hooks/use-accent";
+import { ACCENT_THEMES, NAVY } from "@/theme/tokens";
+import { useAccentHex, useAccentPalette } from "@/lib/hooks/use-accent";
 import { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
@@ -84,6 +84,7 @@ const SHADOW = {
  * When a screen has no search, the capsule springs out to take the whole row.
  */
 export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBarProps) {
+  const palette = useAccentPalette();
   const insets = useSafeAreaInsets();
   const dark = useColorScheme().colorScheme === "dark";
 
@@ -96,8 +97,8 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
   const accent =
     accentHexValue === ACCENT_THEMES.olive.hex
       ? dark
-        ? OLIVE_GLASS_DARK
-        : OLIVE_GLASS
+        ? palette.glassDark
+        : palette.glass
       : accentHexValue;
   const idleIcon = dark ? "rgba(255,255,255,0.62)" : "rgba(9,27,84,0.58)";
   const idleLabel = dark ? "rgba(255,255,255,0.72)" : "rgba(9,27,84,0.66)";

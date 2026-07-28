@@ -13,7 +13,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTour, type CompletedTour, type TourStop } from "@/lib/stores/tour";
-import { HAIRLINE_STRONG, MUTED, NAVY, OLIVE_TEXT } from "@/theme/tokens";
+import { HAIRLINE_STRONG, MUTED, NAVY } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 /**
  * The tour route bottom sheet — port of TourRouteSheet + TourHistorySheet
@@ -124,6 +125,7 @@ function StopRow({
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
 }) {
+  const palette = useAccentPalette();
   return (
     <View
       style={{
@@ -144,7 +146,7 @@ function StopRow({
             width: 28,
             height: 28,
             borderRadius: 14,
-            backgroundColor: stop.isDone ? GREEN : "rgba(162,169,33,0.92)",
+            backgroundColor: stop.isDone ? GREEN : `${palette.fill}EB`,
             alignItems: "center",
             justifyContent: "center",
           }}
@@ -180,10 +182,10 @@ function StopRow({
         <RowIconBtn
           icon={editingNote ? "chevron-up" : "document-text-outline"}
           label={editingNote ? "Hide note" : "Edit note"}
-          color={stop.note || editingNote ? OLIVE_TEXT : MUTED}
+          color={stop.note || editingNote ? palette.text : MUTED}
           onPress={onToggleNote}
         />
-        <RowIconBtn icon="location-outline" label="Show on map" color={OLIVE_TEXT} onPress={onLocate} />
+        <RowIconBtn icon="location-outline" label="Show on map" color={palette.text} onPress={onLocate} />
         <RowIconBtn icon="close" label="Remove stop" color={RED} onPress={onRemove} />
       </View>
 
@@ -267,6 +269,7 @@ export function TourSheet({
   onClose: () => void;
   onLocate: (unitNumber: string) => void;
 }) {
+    const palette = useAccentPalette();
   const insets = useSafeAreaInsets();
   const tour = useTour();
   const [showHistory, setShowHistory] = useState(false);
@@ -341,13 +344,13 @@ export function TourSheet({
                     {tour.stops.length > 0 ? (
                       <View
                         style={{
-                          backgroundColor: "rgba(162,169,33,0.18)",
+                          backgroundColor: `${palette.fill}2E`,
                           borderRadius: 999,
                           paddingHorizontal: 8,
                           paddingVertical: 2.5,
                         }}
                       >
-                        <Text style={{ fontSize: 10.5, fontWeight: "700", color: OLIVE_TEXT }}>
+                        <Text style={{ fontSize: 10.5, fontWeight: "700", color: palette.text }}>
                           {tour.stops.length} stop{tour.stops.length === 1 ? "" : "s"}
                         </Text>
                       </View>
@@ -359,7 +362,7 @@ export function TourSheet({
                   <HeaderIconBtn icon="time-outline" label="Tour history" onPress={() => setShowHistory(true)} />
                 ) : null}
                 {!historyView && tour.stops.length > 2 ? (
-                  <HeaderIconBtn icon="shuffle" label="Optimize route order" color={OLIVE_TEXT} onPress={tour.optimize} />
+                  <HeaderIconBtn icon="shuffle" label="Optimize route order" color={palette.text} onPress={tour.optimize} />
                 ) : null}
                 {!historyView && tour.stops.length > 0 ? (
                   <HeaderIconBtn icon="flag" label="Complete tour" color={GREEN} onPress={confirmComplete} />

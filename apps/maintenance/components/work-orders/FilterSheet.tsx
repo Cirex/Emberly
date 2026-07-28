@@ -17,7 +17,8 @@ import type { FilterSets } from "@/lib/derived/types";
 import { useDerivedSnapshot } from "@/lib/hooks/use-derived-snapshot";
 import { useShallow } from "zustand/react/shallow";
 import { activeFilterCount, useWorkOrdersView } from "@/lib/stores/work-orders-view";
-import { HAIRLINE_STRONG, MUTED, NAVY, OLIVE_TEXT } from "@/theme/tokens";
+import { HAIRLINE_STRONG, MUTED, NAVY } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 /**
  * The facet filter sheet — port of WorkOrderFilterPanel as a bottom sheet.
@@ -71,6 +72,7 @@ function SheetChip({
   leading?: React.ReactNode;
   onPress: () => void;
 }) {
+      const palette = useAccentPalette();
   return (
     <Pressable
       onPress={onPress}
@@ -83,9 +85,9 @@ function SheetChip({
         height: 30,
         paddingHorizontal: 11,
         borderRadius: 999,
-        backgroundColor: selected ? "rgba(162,169,33,0.85)" : "rgba(255,255,255,0.65)",
+        backgroundColor: selected ? `${palette.fill}D9` : "rgba(255,255,255,0.65)",
         borderWidth: 1,
-        borderColor: selected ? "rgba(162,169,33,0.5)" : HAIRLINE_STRONG,
+        borderColor: selected ? `${palette.fill}80` : HAIRLINE_STRONG,
       }}
     >
       {leading}
@@ -174,6 +176,7 @@ function DirectionButton({
   selected: boolean;
   onPress: () => void;
 }) {
+  const palette = useAccentPalette();
   return (
     <Pressable
       onPress={onPress}
@@ -187,7 +190,7 @@ function DirectionButton({
         gap: 6,
         paddingVertical: 9,
         borderRadius: 11,
-        backgroundColor: selected ? "rgba(162,169,33,0.9)" : "rgba(9,27,84,0.055)",
+        backgroundColor: selected ? `${palette.fill}E6` : "rgba(9,27,84,0.055)",
       }}
     >
       <Ionicons name={arrow} size={13} color={selected ? "#FFFFFF" : MUTED} />
@@ -223,6 +226,7 @@ function ChipWrapRow({ children }: { children: React.ReactNode }) {
 }
 
 export function FilterSheet() {
+  const palette = useAccentPalette();
   const insets = useSafeAreaInsets();
   const view = useWorkOrdersView(
     useShallow((s) => ({
@@ -290,13 +294,13 @@ export function FilterSheet() {
               {activeCount > 0 ? (
                 <View
                   style={{
-                    backgroundColor: "rgba(162,169,33,0.18)",
+                    backgroundColor: `${palette.fill}2E`,
                     borderRadius: 999,
                     paddingHorizontal: 8,
                     paddingVertical: 2.5,
                   }}
                 >
-                  <Text style={{ fontSize: 10.5, fontWeight: "700", color: OLIVE_TEXT }}>
+                  <Text style={{ fontSize: 10.5, fontWeight: "700", color: palette.text }}>
                     {activeCount} active
                   </Text>
                 </View>
@@ -304,7 +308,7 @@ export function FilterSheet() {
               <View style={{ flex: 1 }} />
               {activeCount > 0 ? (
                 <Pressable onPress={view.clearFilters} hitSlop={8} accessibilityRole="button">
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: OLIVE_TEXT }}>Clear</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: palette.text }}>Clear</Text>
                 </Pressable>
               ) : null}
               <Pressable
@@ -465,8 +469,8 @@ export function FilterSheet() {
                       paddingVertical: 7,
                       borderRadius: 12,
                       borderWidth: 1,
-                      borderColor: selected ? "rgba(162,169,33,0.5)" : HAIRLINE_STRONG,
-                      backgroundColor: selected ? "rgba(162,169,33,0.10)" : "rgba(255,255,255,0.65)",
+                      borderColor: selected ? `${palette.fill}80` : HAIRLINE_STRONG,
+                      backgroundColor: selected ? `${palette.fill}1A` : "rgba(255,255,255,0.65)",
                       opacity: disabled ? 0.4 : 1,
                     }}
                   >

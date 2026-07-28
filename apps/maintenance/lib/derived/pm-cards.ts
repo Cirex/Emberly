@@ -14,9 +14,6 @@ const t = i18n.t.bind(i18n);
  * shows is composed HERE so the components stay dumb renderers.
  */
 
-/** The Swift olive accent the tiles use; matches score-cards.ts. */
-const OLIVE = "#A2A921";
-
 /** Local midnight of a date-only "YYYY-MM-DD" string, or null when unset.
  *  Parsed locally on purpose — Date.parse would read it as UTC midnight and
  *  shift the due day in negative-offset timezones (see derived/types.ts). */
@@ -102,7 +99,7 @@ export function buildPreventiveScoreCards(
       value: totals.total.toLocaleString(),
       caption: t("preventive.captions.acrossTemplates", { count: templates.length }),
       icon: "sync-outline",
-      tint: OLIVE,
+      tint: null,
       interactive: false,
       action: null,
     },

@@ -32,7 +32,8 @@ import { PhotoMarkupSheet } from "./PhotoMarkupSheet";
 import { usePhotoMarkup } from "@/lib/stores/photo-markup";
 import { useDictation } from "@/lib/dictation/use-dictation";
 import { useSettings } from "@/lib/stores/settings";
-import { MUTED, NAVY, OLIVE_TEXT } from "@/theme/tokens";
+import { MUTED, NAVY } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 const SLATE = "#4C556F";
 const RED = "#D1382E";
@@ -77,6 +78,7 @@ export function MarkdownEditorSheet({
   onSave: (text: string, photoUris: string[]) => void;
   onClose: () => void;
 }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { height: windowH } = useWindowDimensions();
@@ -239,7 +241,7 @@ export function MarkdownEditorSheet({
               paddingHorizontal: 14,
               height: 30,
               borderRadius: 999,
-              backgroundColor: dirty ? OLIVE_TEXT : dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.08)",
+              backgroundColor: dirty ? palette.text : dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.08)",
               alignItems: "center",
               justifyContent: "center",
             }}
@@ -286,8 +288,8 @@ export function MarkdownEditorSheet({
                     shadowOffset: { width: 0, height: 2 },
                   }}
                 >
-                  <Ionicons name={icon} size={12} color={on ? OLIVE_TEXT : MUTED} />
-                  <Text style={{ fontSize: 11.5, fontWeight: "700", color: on ? OLIVE_TEXT : MUTED }}>{label}</Text>
+                  <Ionicons name={icon} size={12} color={on ? palette.text : MUTED} />
+                  <Text style={{ fontSize: 11.5, fontWeight: "700", color: on ? palette.text : MUTED }}>{label}</Text>
                 </Pressable>
               );
             })}
@@ -396,7 +398,7 @@ export function MarkdownEditorSheet({
             {/* Formatting toolbar — sits above the tracked keyboard overlap. */}
             <Toolbar dark={dark} hairline={hairline} bottomInset={kb === 0 ? Math.max(insets.bottom, 8) : 8}>
               <ToolButton on={active.bold} onPress={() => onToolbar("bold")} label="Bold">
-                <Text style={{ fontSize: 15, fontWeight: "800", color: active.bold ? OLIVE_TEXT : toolIdle(dark) }}>B</Text>
+                <Text style={{ fontSize: 15, fontWeight: "800", color: active.bold ? palette.text : toolIdle(dark) }}>B</Text>
               </ToolButton>
               <ToolButton
                 on={active.line === "h1" || active.line === "h2"}
@@ -407,7 +409,7 @@ export function MarkdownEditorSheet({
                   style={{
                     fontSize: 15,
                     fontWeight: "800",
-                    color: active.line === "h1" || active.line === "h2" ? OLIVE_TEXT : toolIdle(dark),
+                    color: active.line === "h1" || active.line === "h2" ? palette.text : toolIdle(dark),
                   }}
                 >
                   H{active.line === "h2" ? "2" : active.line === "h1" ? "1" : ""}
@@ -418,14 +420,14 @@ export function MarkdownEditorSheet({
                 <MaterialCommunityIcons
                   name="format-list-bulleted"
                   size={18}
-                  color={active.line === "bullet" ? OLIVE_TEXT : toolIdle(dark)}
+                  color={active.line === "bullet" ? palette.text : toolIdle(dark)}
                 />
               </ToolButton>
               <ToolButton on={active.line === "checkbox"} onPress={() => onToolbar("checkbox")} label="Checklist">
                 <MaterialCommunityIcons
                   name="checkbox-marked-outline"
                   size={18}
-                  color={active.line === "checkbox" ? OLIVE_TEXT : toolIdle(dark)}
+                  color={active.line === "checkbox" ? palette.text : toolIdle(dark)}
                 />
               </ToolButton>
               {allowPhotos || offersDictation ? (
@@ -524,6 +526,7 @@ function DictationBand({
   hairline: string;
   onDismissError: () => void;
 }) {
+              const palette = useAccentPalette();
   const { t } = useTranslation();
   if (error) {
     return (
@@ -583,7 +586,7 @@ function DictationBand({
           paddingVertical: 3,
         }}
       >
-        <Text style={{ fontSize: 10, fontWeight: "800", color: OLIVE_TEXT }}>
+        <Text style={{ fontSize: 10, fontWeight: "800", color: palette.text }}>
           {language.toUpperCase()}
         </Text>
       </View>
@@ -639,6 +642,7 @@ function ToolButton({
   label: string;
   children: React.ReactNode;
 }) {
+  const palette = useAccentPalette();
   return (
     <Pressable
       onPress={onPress}
@@ -652,7 +656,7 @@ function ToolButton({
         borderRadius: 12,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: on ? "rgba(132,143,13,0.14)" : "transparent",
+        backgroundColor: on ? `${palette.text}24` : "transparent",
       }}
     >
       {children}
@@ -666,7 +670,8 @@ function ToolButton({
 const LINE_PREFIX_RE = /^(\s*)(## |# (?!#)|- \[( |x|\*)\] |- (?!\[))/i;
 
 function HighlightedSource({ text, ink, dark }: { text: string; ink: string; dark: boolean }) {
-  const tokenTint = OLIVE_TEXT;
+  const palette = useAccentPalette();
+  const tokenTint = palette.text;
   const markerTint = dark ? "rgba(255,255,255,0.38)" : "rgba(9,27,84,0.35)";
   const lines = text.split("\n");
   return (

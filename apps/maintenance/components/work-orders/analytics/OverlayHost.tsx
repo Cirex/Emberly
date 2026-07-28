@@ -10,7 +10,8 @@ import type { DerivedSnapshot } from "@/lib/derived/snapshot";
 import { activeLocale } from "@/lib/i18n";
 import { BREAKDOWN_COPY, type TechnicianSummary } from "@/lib/derived/technician-summary";
 import { useWorkOrdersView, type AnalyticsOverlay } from "@/lib/stores/work-orders-view";
-import { CALLBACK_TINT, CLASSIFICATION_TINT, HAIRLINE, MUTED, NAVY, OLIVE, OLIVE_TEXT } from "@/theme/tokens";
+import { CALLBACK_TINT, CLASSIFICATION_TINT, HAIRLINE, MUTED, NAVY } from "@/theme/tokens";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 /**
  * The five analytics overlays (port of the Swift WorkspaceOverlay panels), in
@@ -121,6 +122,7 @@ function PanelHeader({
 // ---------------------------------------------------------------------------
 
 function OpenMonthlyPanel({ snapshot, onClose }: { snapshot: DerivedSnapshot; onClose: () => void }) {
+  const palette = useAccentPalette();
   const { months, metrics } = snapshot.monthlyClassification;
   const cls = ["Ruby", "Diamond", "Legacy"] as const;
   const clsTint = (c: string) =>
@@ -132,7 +134,7 @@ function OpenMonthlyPanel({ snapshot, onClose }: { snapshot: DerivedSnapshot; on
     <>
       <PanelHeader
         icon="list-outline"
-        tint={OLIVE_TEXT}
+        tint={palette.text}
         title="Open Work Orders"
         subtitle="Monthly open & closed by classification · rolling 6 months"
         onClose={onClose}
@@ -466,6 +468,7 @@ function TechRow({
   averageHeader: string;
   first: boolean;
 }) {
+  const palette = useAccentPalette();
   const rowMax = Math.max(...row.counts, 1);
   return (
     <View style={{ paddingVertical: 10, borderTopWidth: first ? 0 : 1, borderTopColor: HAIRLINE }}>
@@ -503,7 +506,7 @@ function TechRow({
                     style={{
                       height: `${(c / rowMax) * 100}%`,
                       borderRadius: 5,
-                      backgroundColor: isMax ? OLIVE : "rgba(9,27,84,0.28)",
+                      backgroundColor: isMax ? palette.fill : "rgba(9,27,84,0.28)",
                     }}
                   />
                 ) : null}
@@ -512,7 +515,7 @@ function TechRow({
                 style={{
                   fontSize: 9.5,
                   fontWeight: "700",
-                  color: isMax ? OLIVE_TEXT : "#4C556F",
+                  color: isMax ? palette.text : "#4C556F",
                   fontVariant: ["tabular-nums"],
                 }}
               >
@@ -538,6 +541,7 @@ function TechnicianPanel({
   period: "week" | "month";
   onClose: () => void;
 }) {
+      const palette = useAccentPalette();
   const copy = BREAKDOWN_COPY[period];
   const shortCols = period === "week" ? summary.columnLabels.map((l) => l.slice(0, 3)) : summary.columnLabels;
   const total = summary.rows.reduce((sum, r) => sum + r.total, 0);
@@ -563,7 +567,7 @@ function TechnicianPanel({
               {
                 label: "Avg / tech",
                 value: (total / Math.max(summary.rows.length, 1)).toFixed(1),
-                tint: OLIVE_TEXT,
+                tint: palette.text,
               },
             ]}
           />
@@ -595,6 +599,7 @@ const MIX_OTHER = "rgba(112,120,143,0.6)";
  * the days-to-close distribution, monthly callback rate, and category mix.
  */
 function ClosedInsightsPanel({ snapshot, onClose, width }: { snapshot: DerivedSnapshot; onClose: () => void; width: number }) {
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   const ins = snapshot.closedInsights;
   const locale = activeLocale();
@@ -610,7 +615,7 @@ function ClosedInsightsPanel({ snapshot, onClose, width }: { snapshot: DerivedSn
     <>
       <PanelHeader
         icon="stats-chart-outline"
-        tint={OLIVE_TEXT}
+        tint={palette.text}
         title={t("insights.title")}
         subtitle={t("insights.subtitle")}
         onClose={onClose}

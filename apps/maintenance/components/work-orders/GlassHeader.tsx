@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
+import { useColorScheme } from "nativewind";
 import { useRef, useState, memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
@@ -64,6 +65,13 @@ export const GlassHeader = memo(function GlassHeader({
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
   const field = useFieldMode();
+  // Same rule as WorkspaceBackdrop: field mode is bright paper whatever the
+  // system says, so it is light even in dark mode. Every surface below was
+  // hardcoded light before — warm-paper fill, `tint="light"` blur, white pill —
+  // which is why the header read as a lit slab floating on a near-black app.
+  const dark = useColorScheme().colorScheme === "dark" && !field;
+  const accent = palette.glassFor(dark);
+  const ink = dark ? "#FFFFFF" : NAVY;
   const [menuOpen, setMenuOpen] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   const pillRef = useRef<View>(null);
@@ -89,15 +97,21 @@ export const GlassHeader = memo(function GlassHeader({
         right: 0,
         zIndex: 20,
         borderBottomWidth: 1,
-        borderBottomColor: "rgba(255,255,255,0.55)",
-        backgroundColor: field ? "rgba(250,247,240,0.96)" : "rgba(250,247,240,0.42)",
-        shadowColor: NAVY,
-        shadowOpacity: 0.08,
+        borderBottomColor: dark ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.55)",
+        backgroundColor: dark
+          ? "rgba(18,22,29,0.52)"
+          : field
+            ? "rgba(250,247,240,0.96)"
+            : "rgba(250,247,240,0.42)",
+        shadowColor: dark ? "#000000" : NAVY,
+        shadowOpacity: dark ? 0.34 : 0.08,
         shadowRadius: 15,
         shadowOffset: { width: 0, height: 8 },
       }}
     >
-      {!field ? <BlurView intensity={42} tint="light" style={StyleSheet.absoluteFill} /> : null}
+      {!field ? (
+        <BlurView intensity={dark ? 34 : 42} tint={dark ? "dark" : "light"} style={StyleSheet.absoluteFill} />
+      ) : null}
       <View style={{ paddingTop: insets.top + HEADER_TOP_PAD }}>
         {/* Row 1: mode dropdown pill · funnel · account */}
         <View
@@ -121,11 +135,11 @@ export const GlassHeader = memo(function GlassHeader({
               paddingLeft: 9,
               paddingRight: 13,
               borderRadius: 999,
-              backgroundColor: "rgba(255,255,255,0.60)",
+              backgroundColor: dark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.60)",
               borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.78)",
-              shadowColor: NAVY,
-              shadowOpacity: 0.12,
+              borderColor: dark ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.78)",
+              shadowColor: dark ? "#000000" : NAVY,
+              shadowOpacity: dark ? 0.3 : 0.12,
               shadowRadius: 9,
               shadowOffset: { width: 0, height: 4 },
             }}
@@ -135,14 +149,14 @@ export const GlassHeader = memo(function GlassHeader({
                 width: 25,
                 height: 25,
                 borderRadius: 13,
-                backgroundColor: `${palette.text}26`,
+                backgroundColor: `${accent}26`,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Ionicons name={current.icon as never} size={14} color={palette.glass} />
+              <Ionicons name={current.icon as never} size={14} color={accent} />
             </View>
-            <Text style={{ fontSize: 16, fontWeight: "800", letterSpacing: -0.3, color: NAVY }}>
+            <Text style={{ fontSize: 16, fontWeight: "800", letterSpacing: -0.3, color: ink }}>
               {t(current.labelKey)}
             </Text>
             <View
@@ -151,12 +165,12 @@ export const GlassHeader = memo(function GlassHeader({
                 height: 21,
                 paddingHorizontal: 7,
                 borderRadius: 999,
-                backgroundColor: `${palette.text}24`,
+                backgroundColor: `${accent}24`,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Text style={{ fontSize: 11, fontWeight: "800", color: palette.glass, fontVariant: ["tabular-nums"] }}>
+              <Text style={{ fontSize: 11, fontWeight: "800", color: accent, fontVariant: ["tabular-nums"] }}>
                 {count.toLocaleString()}
               </Text>
             </View>
@@ -196,7 +210,7 @@ export const GlassHeader = memo(function GlassHeader({
                   <Ionicons
                     name="chevron-forward"
                     size={10}
-                    color="rgba(9,27,84,0.28)"
+                    color={dark ? "rgba(255,255,255,0.32)" : "rgba(9,27,84,0.28)"}
                     style={{ position: "absolute", top: 3, right: 4 }}
                   />
                 ) : null}
@@ -205,7 +219,7 @@ export const GlassHeader = memo(function GlassHeader({
                     fontSize: 24,
                     fontWeight: "800",
                     letterSpacing: -0.5,
-                    color: card.tint || NAVY,
+                    color: card.tint ?? accent,
                     fontVariant: ["tabular-nums"],
                   }}
                 >
@@ -259,7 +273,7 @@ export const GlassHeader = memo(function GlassHeader({
         <Pressable
           style={StyleSheet.absoluteFill}
           onPress={() => setMenuOpen(false)}
-          accessibilityLabel="Close mode menu"
+          accessibilityLabel={t("workOrders.detail.close")}
         />
         <View
           style={{
@@ -270,10 +284,10 @@ export const GlassHeader = memo(function GlassHeader({
             borderRadius: 18,
             overflow: "hidden",
             borderWidth: 1,
-            borderColor: "rgba(9,27,84,0.10)",
-            backgroundColor: "rgba(252,250,244,0.97)",
-            shadowColor: NAVY,
-            shadowOpacity: 0.28,
+            borderColor: dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.10)",
+            backgroundColor: dark ? "rgba(28,33,41,0.97)" : "rgba(252,250,244,0.97)",
+            shadowColor: dark ? "#000000" : NAVY,
+            shadowOpacity: dark ? 0.5 : 0.28,
             shadowRadius: 30,
             shadowOffset: { width: 0, height: 12 },
             elevation: 12,
@@ -297,22 +311,22 @@ export const GlassHeader = memo(function GlassHeader({
                   paddingHorizontal: 14,
                   minHeight: 44,
                   borderTopWidth: i === 0 ? 0 : 1,
-                  borderTopColor: "rgba(9,27,84,0.06)",
+                  borderTopColor: dark ? "rgba(255,255,255,0.07)" : "rgba(9,27,84,0.06)",
                 }}
               >
-                <Ionicons name={m.icon as never} size={15} color={selected ? palette.glass : "#4C556F"} />
+                <Ionicons name={m.icon as never} size={15} color={selected ? accent : dark ? "rgba(255,255,255,0.58)" : "#4C556F"} />
                 <Text
                   style={{
                     flex: 1,
                     fontSize: 13.5,
                     fontWeight: "700",
-                    color: selected ? palette.glass : NAVY,
+                    color: selected ? accent : ink,
                     letterSpacing: -0.1,
                   }}
                 >
                   {t(m.labelKey)}
                 </Text>
-                {selected ? <Ionicons name="checkmark" size={15} color={palette.glass} /> : null}
+                {selected ? <Ionicons name="checkmark" size={15} color={accent} /> : null}
               </Pressable>
             );
           })}

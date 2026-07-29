@@ -244,8 +244,6 @@ PODS:
     - ExpoModulesCore
   - ExpoLinking (57.0.2):
     - ExpoModulesCore
-  - ExpoLocation (57.0.2):
-    - ExpoModulesCore
   - ExpoLogBox (57.0.0):
     - React-Core
   - ExpoModulesCore (57.0.3):
@@ -2980,6 +2978,34 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - RNDateTimePicker (9.1.0):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
   - RNGestureHandler (2.32.0):
     - boost
     - DoubleConversion
@@ -3393,7 +3419,6 @@ DEPENDENCIES:
   - "ExpoKeepAwake (from `../../../node_modules/.bun/expo-keep-awake@57.0.0+f34356acd356d7e5/node_modules/expo-keep-awake/ios`)"
   - "ExpoLinearGradient (from `../../../node_modules/.bun/expo-linear-gradient@57.0.0+a74eebb1bd530098/node_modules/expo-linear-gradient/ios`)"
   - "ExpoLinking (from `../../../node_modules/.bun/expo-linking@57.0.2+a74eebb1bd530098/node_modules/expo-linking/ios`)"
-  - "ExpoLocation (from `../../../node_modules/.bun/expo-location@57.0.2+a74eebb1bd530098/node_modules/expo-location/ios`)"
   - "ExpoLogBox (from `../../../node_modules/.bun/@expo+log-box@57.0.0+e6013ef38e175120/node_modules/@expo/log-box`)"
   - "ExpoModulesCore (from `../../../node_modules/.bun/expo-modules-core@57.0.3+afa49333d9aab122/node_modules/expo-modules-core`)"
   - "ExpoModulesJSI (from `../../../node_modules/.bun/expo-modules-jsi@57.0.1+9da80eb6df22ec8a/node_modules/expo-modules-jsi/apple`)"
@@ -3486,10 +3511,11 @@ DEPENDENCIES:
   - "ReactCommon/turbomodule/core (from `../../../node_modules/.bun/react-native@0.86.0+9da80eb6df22ec8a/node_modules/react-native/ReactCommon`)"
   - "RNCAsyncStorage (from `../../../node_modules/.bun/@react-native-async-storage+async-storage@2.2.0+9da80eb6df22ec8a/node_modules/@react-native-async-storage/async-storage`)"
   - "RNCMaskedView (from `../../../node_modules/.bun/@react-native-masked-view+masked-view@0.3.2+9da80eb6df22ec8a/node_modules/@react-native-masked-view/masked-view`)"
+  - "RNDateTimePicker (from `../../../node_modules/.bun/@react-native-community+datetimepicker@9.1.0+a74eebb1bd530098/node_modules/@react-native-community/datetimepicker`)"
   - "RNGestureHandler (from `../../../node_modules/.bun/react-native-gesture-handler@2.32.0+9da80eb6df22ec8a/node_modules/react-native-gesture-handler`)"
   - "RNReanimated (from `../../../node_modules/.bun/react-native-reanimated@4.5.0+afa49333d9aab122/node_modules/react-native-reanimated`)"
   - "RNScreens (from `../../../node_modules/.bun/react-native-screens@4.25.2+9da80eb6df22ec8a/node_modules/react-native-screens`)"
-  - "RNSentry (from `../../../node_modules/.bun/@sentry+react-native@8.18.0+52ad15cb3d2f9378/node_modules/@sentry/react-native`)"
+  - "RNSentry (from `../../../node_modules/.bun/@sentry+react-native@8.18.0+15072f1f6f26e02b/node_modules/@sentry/react-native`)"
   - "RNSVG (from `../../../node_modules/.bun/react-native-svg@15.15.4+9da80eb6df22ec8a/node_modules/react-native-svg`)"
   - "RNWorklets (from `../../../node_modules/.bun/react-native-worklets@0.10.0+1ce329d0a749004e/node_modules/react-native-worklets`)"
   - SocketRocket (~> 0.7.1)
@@ -3548,8 +3574,6 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.bun/expo-linear-gradient@57.0.0+a74eebb1bd530098/node_modules/expo-linear-gradient/ios"
   ExpoLinking:
     :path: "../../../node_modules/.bun/expo-linking@57.0.2+a74eebb1bd530098/node_modules/expo-linking/ios"
-  ExpoLocation:
-    :path: "../../../node_modules/.bun/expo-location@57.0.2+a74eebb1bd530098/node_modules/expo-location/ios"
   ExpoLogBox:
     :path: "../../../node_modules/.bun/@expo+log-box@57.0.0+e6013ef38e175120/node_modules/@expo/log-box"
   ExpoModulesCore:
@@ -3733,6 +3757,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.bun/@react-native-async-storage+async-storage@2.2.0+9da80eb6df22ec8a/node_modules/@react-native-async-storage/async-storage"
   RNCMaskedView:
     :path: "../../../node_modules/.bun/@react-native-masked-view+masked-view@0.3.2+9da80eb6df22ec8a/node_modules/@react-native-masked-view/masked-view"
+  RNDateTimePicker:
+    :path: "../../../node_modules/.bun/@react-native-community+datetimepicker@9.1.0+a74eebb1bd530098/node_modules/@react-native-community/datetimepicker"
   RNGestureHandler:
     :path: "../../../node_modules/.bun/react-native-gesture-handler@2.32.0+9da80eb6df22ec8a/node_modules/react-native-gesture-handler"
   RNReanimated:
@@ -3740,7 +3766,7 @@ EXTERNAL SOURCES:
   RNScreens:
     :path: "../../../node_modules/.bun/react-native-screens@4.25.2+9da80eb6df22ec8a/node_modules/react-native-screens"
   RNSentry:
-    :path: "../../../node_modules/.bun/@sentry+react-native@8.18.0+52ad15cb3d2f9378/node_modules/@sentry/react-native"
+    :path: "../../../node_modules/.bun/@sentry+react-native@8.18.0+15072f1f6f26e02b/node_modules/@sentry/react-native"
   RNSVG:
     :path: "../../../node_modules/.bun/react-native-svg@15.15.4+9da80eb6df22ec8a/node_modules/react-native-svg"
   RNWorklets:
@@ -3773,7 +3799,6 @@ SPEC CHECKSUMS:
   ExpoKeepAwake: 8a96e2075b75641001f55393d7e6600a5b808f09
   ExpoLinearGradient: cb6781ae9bd07bcb2ab58221ce7612aadd81e1f4
   ExpoLinking: 24c7525db6e8ab5c347890b3498857babde8b306
-  ExpoLocation: f0127974a6e1edfb1ea255f55604addb51d020b5
   ExpoLogBox: b39a76aab749833d58111c3be1264bb90f3b92d4
   ExpoModulesCore: e2ba255f216b4bee7817a71409f4ce6762b35c32
   ExpoModulesJSI: 0fad44a0464a4469b83a06e34e529c13043f2f69
@@ -3865,6 +3890,7 @@ SPEC CHECKSUMS:
   ReactCommon: 00abba14a8d9028ee0d36efddcb8e13406af6845
   RNCAsyncStorage: 29f0230e1a25f36c20b05f65e2eb8958d6526e82
   RNCMaskedView: 5ef8c95cbab95334a32763b72896a7b7d07e6299
+  RNDateTimePicker: 73ffdd45f0ce1d00ff981031679a05206e619fdc
   RNGestureHandler: 83e66307c200b98c746bd03113c4403da5c9b486
   RNReanimated: 6419cdc198cc4f7fab7277a95ce4a32e19b1e124
   RNScreens: 425785601306f6420c0406772de2c1435f8e7c17

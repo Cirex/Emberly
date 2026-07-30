@@ -48,6 +48,11 @@ export async function syncUnitInfo(params: SyncUnitInfoParams): Promise<SyncUnit
   const lookup = new CsvHeaderLookup(rows[0]);
   const dataRows = rows.slice(1);
 
+  // Stamp `synced_at` on every enriched row: this job "saw" the unit even when
+  // it changed nothing, and the admin Units page reads max(synced_at) as its
+  // "Last sync". Left unset, the column keeps its insert-only default and the
+  // page reports a sync from whenever the unit first appeared.
+  const syncedAt = new Date().toISOString();
   const unitRows: Array<Record<string, unknown>> = [];
   const buildingsById = new Map<string, Record<string, unknown>>();
   let skipped = 0;
@@ -57,10 +62,14 @@ export async function syncUnitInfo(params: SyncUnitInfoParams): Promise<SyncUnit
       skipped += 1;
       continue;
     }
+    mapped.unit.synced_at = syncedAt;
     unitRows.push(mapped.unit);
     if (mapped.building) {
       const id = String(mapped.building.resman_building_id);
-      if (!buildingsById.has(id)) buildingsById.set(id, mapped.building);
+      if (!buildingsById.has(id)) {
+        mapped.building.synced_at = syncedAt;
+        buildingsById.set(id, mapped.building);
+      }
     }
   }
 

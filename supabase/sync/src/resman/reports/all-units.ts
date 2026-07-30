@@ -176,5 +176,14 @@ export function mapAllUnitsRow(
     tenant_names: normalizeTenantNames(lookup.value(row, "Residents")),
     source_url: ctx.sourceUrl,
     scraped_at: ctx.scrapedAt,
+    // `synced_at` too, not just `scraped_at`. resman_units is the only mirror
+    // table carrying both, and `synced_at` was left to its column default —
+    // which an ON CONFLICT DO UPDATE never re-applies, so it froze at the last
+    // INSERT (i.e. the last time a brand-new unit appeared) while the rows
+    // themselves refreshed every run. The admin Units page reads
+    // max(synced_at), so it reported a sync weeks old on current data.
+    // Every other ResMan table means "the scraper saw this row" by `synced_at`;
+    // units now agrees. `scraped_at` stays as the narrower "last All-Units pass".
+    synced_at: ctx.scrapedAt,
   };
 }

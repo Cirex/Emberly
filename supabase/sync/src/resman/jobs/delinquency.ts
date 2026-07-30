@@ -152,6 +152,11 @@ export async function syncDelinquency(params: SyncDelinquencyParams): Promise<Sy
   const unitByNumber = await loadUnitNumberIndex(supabase, propertyId);
 
   const enrichRows: Array<Record<string, unknown>> = [];
+  // Stamp `synced_at` on every enriched row: this job "saw" the unit even when
+  // it changed nothing, and the admin Units page reads max(synced_at) as its
+  // "Last sync". Left unset, the column keeps its insert-only default and the
+  // page reports a sync from whenever the unit first appeared.
+  const syncedAt = new Date().toISOString();
   let unmatched = 0;
   for (const row of dataRows) {
     const mapped = mapDelinquencyRow(lookup, row);
@@ -165,6 +170,7 @@ export async function syncDelinquency(params: SyncDelinquencyParams): Promise<Sy
       resman_unit_id: unitId,
       resman_property_id: propertyId,
       ...mapped.values,
+      synced_at: syncedAt,
     });
   }
 
@@ -177,6 +183,8 @@ export async function syncDelinquency(params: SyncDelinquencyParams): Promise<Sy
   // report returned real data rows (the empty/broken-fetch case returned above).
   const stillDelinquent = new Set(enrichRows.map((r) => r.resman_unit_id as string));
   const clearedRows = await buildClearedDelinquencyRows(supabase, propertyId, stillDelinquent);
+  // A unit whose balance cleared was still observed by this pass.
+  for (const row of clearedRows) row.synced_at = syncedAt;
   const cleared = clearedRows.length
     ? (await upsertMirror(supabase, "resman_units", clearedRows, { conflictColumn: "resman_unit_id" })).upserted
     : 0;

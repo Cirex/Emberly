@@ -53,6 +53,13 @@ export async function syncAvailableUnits(
   const { rows } = decodeCsvRows(bytes);
   const result = mapAvailableUnitsCsv(rows, { defaultPropertyId: propertyId });
 
+  // Stamp `synced_at` on every enriched row: this job "saw" the unit even when
+  // it changed nothing, and the admin Units page reads max(synced_at) as its
+  // "Last sync". Left unset, the column keeps its insert-only default and the
+  // page reports a sync from whenever the unit first appeared.
+  const syncedAt = new Date().toISOString();
+  for (const row of result.mapped) row.synced_at = syncedAt;
+
   const out = await upsertMirror(supabase, "resman_units", result.mapped, {
     conflictColumn: "resman_unit_id",
   });

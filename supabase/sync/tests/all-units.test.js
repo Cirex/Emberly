@@ -92,3 +92,15 @@ test("mapAllUnitsRow skips blank, no-number, no-id, and excluded placeholder row
   assert.equal(mapAllUnitsRow(lookup, row({ UnitId: "", Unit: "104" }), ctx), null); // no id
   assert.equal(mapAllUnitsRow(lookup, row({ UnitId: "x", Unit: "1x1 Lux" }), ctx), null); // excluded
 });
+
+test("mapAllUnitsRow stamps BOTH scraped_at and synced_at", () => {
+  // Regression guard. `synced_at timestamptz default now()` only fires on
+  // INSERT — an ON CONFLICT DO UPDATE never re-applies a column default — so
+  // when the mapper emitted only `scraped_at`, resman_units.synced_at froze at
+  // the moment the last brand-new unit appeared while the rows themselves
+  // refreshed every run. The admin Units page reads max(synced_at) and
+  // therefore reported a sync weeks stale on entirely current data.
+  const u = mapAllUnitsRow(lookup, row({ UnitId: "u-9", Unit: "909", Vacant: "false" }), ctx);
+  assert.equal(u.scraped_at, ctx.scrapedAt);
+  assert.equal(u.synced_at, ctx.scrapedAt, "synced_at must be written, not left to the column default");
+});

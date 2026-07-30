@@ -43,6 +43,22 @@ import type {
 const asRows = (rows: readonly unknown[]): Array<Record<string, unknown>> =>
   rows as Array<Record<string, unknown>>;
 
+/**
+ * Stamp `synced_at` on rows whose mapper doesn't set it.
+ *
+ * `synced_at timestamptz default now()` only fires on INSERT — an
+ * `ON CONFLICT DO UPDATE` never re-applies a column default. So a table seeded
+ * here but refreshed every run froze its `synced_at` at the moment its first
+ * row appeared, while the data stayed current. That is what made the admin
+ * pages report a sync weeks old. Buildings and floorplans were affected;
+ * the residents/leases/vehicles mappers already set it themselves.
+ */
+function stampSynced(rows: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const syncedAt = new Date().toISOString();
+  for (const row of rows) row.synced_at = syncedAt;
+  return rows;
+}
+
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 export interface SyncUnitDetailsParams {
@@ -335,8 +351,8 @@ export async function syncUnitDetails(params: SyncUnitDetailsParams): Promise<Sy
   //   wave 3: transactions + the 5 lease-tab tables (FK → leases / residents,
   //           all present by now) — mutually independent
   const [bOut, fOut, lOut] = await Promise.all([
-    upsertMirror(supabase, "resman_buildings", [...buildingsById.values()], { conflictColumn: "resman_building_id" }),
-    upsertMirror(supabase, "resman_floorplans", [...floorplansById.values()], { conflictColumn: "resman_floorplan_id" }),
+    upsertMirror(supabase, "resman_buildings", stampSynced([...buildingsById.values()]), { conflictColumn: "resman_building_id" }),
+    upsertMirror(supabase, "resman_floorplans", stampSynced([...floorplansById.values()]), { conflictColumn: "resman_floorplan_id" }),
     upsertMirror(supabase, "resman_leases", asRows(leaseRows), { conflictColumn: "resman_lease_id" }),
   ]);
   const rOut = await upsertMirror(supabase, "resman_residents", asRows(residentRows), {

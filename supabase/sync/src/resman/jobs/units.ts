@@ -89,6 +89,9 @@ export async function syncUnits(params: SyncUnitsParams): Promise<SyncUnitsResul
       resman_property_id: pid,
       resman_account_id: accountId,
       name: lookup.value(row, "PropertyName"),
+      // Same insert-only trap as resman_units: without this the column keeps
+      // its default and freezes at first insert.
+      synced_at: scrapedAt,
     });
   }
   const propOut = await upsertMirror(supabase, "resman_properties", [...propsById.values()], {

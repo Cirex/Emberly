@@ -254,8 +254,12 @@ create table admin_users (
 
 create index admin_users_active_idx on admin_users (active);
 create index admin_users_role_idx on admin_users (role);
+-- Keyed on lower(): ResMan matches usernames case-insensitively, so `rdeojeda`
+-- and `Rdeojeda` are one person. Indexing the raw string let the second
+-- spelling insert a second row with its own id and its own ROLE, making
+-- whichever spelling someone typed decide what they could see.
 create unique index admin_users_resman_username_idx
-  on admin_users (resman_username)
+  on admin_users (lower(resman_username))
   where resman_username is not null;
 create index admin_users_resman_person_id_idx
   on admin_users (resman_person_id)

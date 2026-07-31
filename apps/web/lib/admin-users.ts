@@ -24,6 +24,23 @@ interface AdminUserRow {
 }
 
 /**
+ * The stored form of a ResMan staff username.
+ *
+ * ResMan treats its usernames case-insensitively — the same person signs in as
+ * `rdeojeda` one day and `Rdeojeda` the next, and both succeed. We keyed
+ * admin_users on the raw string, so the second spelling missed the lookup and
+ * inserted a SECOND row for the same person: same GUID, same name, its own id
+ * and its own role. Whichever spelling they happened to type decided which
+ * account — and therefore which permissions — they logged into.
+ *
+ * Lowercase is the canonical form. The raw input still goes to ResMan for
+ * authentication; only what we store and match on is normalized.
+ */
+export function normalizeResmanUsername(username: string): string {
+  return username.trim().toLowerCase();
+}
+
+/**
  * Authenticate a ResMan staff username/password. On success, upserts the local
  * admin_users row (super_admin) and returns its AdminAuthContext.
  */
@@ -40,7 +57,7 @@ export async function authenticateResmanAdmin(
   }
   const supabase = client ?? (createUntypedAdminClient());
   const now = new Date().toISOString();
-  const resmanUsername = username.trim();
+  const resmanUsername = normalizeResmanUsername(username);
 
   // ResMan's landed page carries the authoritative identity. The full name is
   // what the staff apps match technicians by (work orders name "Ben Bloch", not

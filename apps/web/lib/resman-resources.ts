@@ -790,9 +790,67 @@ export const propertySnapshotsResource = defineResource({
   ],
 });
 
+/**
+ * Per-unit daily history — the drill-down `property-snapshots` cannot give.
+ *
+ * The property series answers "occupancy was 64% in June". This answers "which
+ * units were vacant that whole month", "how long has 1727 LP-3 been empty" and
+ * "whose balance has climbed three months running" — none of which the mirror
+ * can answer at all, because it upserts current state.
+ *
+ * It is also what makes `detect_anomalies` work on units rather than only on
+ * billing accounts: `resman_unit_id` is declared as an entity here, so a unit
+ * can be scored against its own past.
+ */
+export const unitSnapshotsResource = defineResource({
+  name: "unit-snapshots",
+  table: "unit_snapshots",
+  idColumn: "resman_unit_id",
+  selectColumns: [
+    "snapshot_date", "resman_unit_id", "unit_number", "resman_building_id",
+    "resman_floorplan_id", "occupancy_status", "occupied", "lease_status",
+    "availability", "balance", "current_month_balance", "market_rent",
+    "lease_rent", "times_late", "holding_unit", "excluded_from_occupancy",
+    "move_in_date", "move_out_date", "lease_end_date", "source", "created_at",
+  ],
+  filters: {
+    unit: "resman_unit_id",
+    building: "resman_building_id",
+    occupancy_status: "occupancy_status",
+    lease_status: "lease_status",
+    availability: "availability",
+    occupied: "occupied",
+    source: "source",
+  },
+  booleanFilters: ["occupied"],
+  order: { column: "snapshot_date", ascending: false },
+  searchable: ["unit_number"],
+  ranges: { snapshot_date: "snapshot_date", balance: "balance", market_rent: "market_rent" },
+  groupable: [
+    "occupancy_status", "occupied", "lease_status", "availability",
+    "resman_building_id", "holding_unit", "excluded_from_occupancy", "source",
+  ],
+  measures: ["balance", "current_month_balance", "market_rent", "lease_rent", "times_late"],
+  periods: { snapshot_date: { column: "snapshot_date", kind: "date" } },
+  entities: ["resman_unit_id", "resman_building_id"],
+  sortable: ["snapshot_date", "balance", "market_rent", "unit_number"],
+  relations: [
+    { name: "unit", resource: "units", localColumn: "resman_unit_id",
+      foreignColumn: "resman_unit_id", kind: "one",
+      note: "The unit's CURRENT state. This row is a past day — they will differ, which is the point." },
+  ],
+  notes: [
+    "History starts the day this table was created (2026-07-30). There is no backfill and none is possible: the mirror overwrote the past, so earlier days do not exist anywhere. A range before that returns nothing — which is missing history, NOT a period with no units.",
+    "One row per unit per day. Counting rows counts UNIT-DAYS, not units. For a unit count, filter to a single snapshot_date first.",
+    "`holding_unit` and `excluded_from_occupancy` are stored per row so an occupancy rate stays computable for a past date. Exclude them from rates, as elsewhere.",
+    "For property-level trends going back to 2024, use `property-snapshots` instead — this table is the drill-down, not the long series.",
+  ],
+});
+
 export const RESMAN_RESOURCES: readonly ResmanResource[] = [
   propertiesResource, buildingsResource, floorplansResource, unitsResource,
   leasesResource, residentsResource, transactionsResource, workOrdersResource,
   mlgwAccountsResource, mlgwBillsResource, mlgwPaymentsResource,
   guestPassesResource, entryLogsResource, propertySnapshotsResource,
+  unitSnapshotsResource,
 ];

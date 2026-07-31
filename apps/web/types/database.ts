@@ -2487,6 +2487,78 @@ export interface Database {
         };
         Relationships: [];
       };
+      unit_snapshots: {
+        Row: {
+          snapshot_date: string;
+          resman_unit_id: string;
+          unit_number: string | null;
+          resman_building_id: string | null;
+          resman_floorplan_id: string | null;
+          occupancy_status: string | null;
+          occupied: boolean | null;
+          lease_status: string | null;
+          availability: string | null;
+          balance: number | null;
+          current_month_balance: number | null;
+          market_rent: number | null;
+          lease_rent: number | null;
+          times_late: number | null;
+          holding_unit: boolean | null;
+          excluded_from_occupancy: boolean | null;
+          move_in_date: string | null;
+          move_out_date: string | null;
+          lease_end_date: string | null;
+          source: string;
+          created_at: string;
+        };
+        Insert: {
+          snapshot_date: string;
+          resman_unit_id: string;
+          unit_number?: string | null;
+          resman_building_id?: string | null;
+          resman_floorplan_id?: string | null;
+          occupancy_status?: string | null;
+          occupied?: boolean | null;
+          lease_status?: string | null;
+          availability?: string | null;
+          balance?: number | null;
+          current_month_balance?: number | null;
+          market_rent?: number | null;
+          lease_rent?: number | null;
+          times_late?: number | null;
+          holding_unit?: boolean | null;
+          excluded_from_occupancy?: boolean | null;
+          move_in_date?: string | null;
+          move_out_date?: string | null;
+          lease_end_date?: string | null;
+          source?: string;
+          created_at?: string;
+        };
+        Update: {
+          snapshot_date?: string;
+          resman_unit_id?: string;
+          unit_number?: string | null;
+          resman_building_id?: string | null;
+          resman_floorplan_id?: string | null;
+          occupancy_status?: string | null;
+          occupied?: boolean | null;
+          lease_status?: string | null;
+          availability?: string | null;
+          balance?: number | null;
+          current_month_balance?: number | null;
+          market_rent?: number | null;
+          lease_rent?: number | null;
+          times_late?: number | null;
+          holding_unit?: boolean | null;
+          excluded_from_occupancy?: boolean | null;
+          move_in_date?: string | null;
+          move_out_date?: string | null;
+          lease_end_date?: string | null;
+          source?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       property_snapshots: {
         Row: {
           snapshot_date: string;

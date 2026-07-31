@@ -13,6 +13,8 @@ can be reviewed in pull requests alongside the code they document.
 | `Deployment.md` | Deployment | End-to-end production runbook (Supabase, Sentry, PostHog, Coolify, EAS). |
 | `Environment-Variables.md` | Environment Variables | Every variable each app reads. |
 | `MCP-Server-Setup.md` | MCP Server Setup | Connect any AI client to the read-only staff MCP server. |
+| `Web-API.md` | Web API | **Generated** — every HTTP route, its guard, and its response shape. |
+| `Database.md` | Database | **Generated** — every table and column, and which joins are enforced. |
 | `_Sidebar.md` | (sidebar) | Wiki navigation. |
 | `_Footer.md` | (footer) | Wiki footer. |
 
@@ -26,6 +28,11 @@ resolves to the file whose name is the title with spaces replaced by dashes.
 - Page file names use dashes for spaces (`Environment-Variables.md`), because that is how the
   GitHub wiki stores and links them.
 - Files beginning with `_` (`_Sidebar.md`, `_Footer.md`) are wiki chrome, not pages.
+- **`Web-API.md` and `Database.md` are generated — never edit them by hand.** Run
+  `bun run docs` to rebuild both. Their prose comes from the source they describe (a route's
+  docblock, a table's comment block in `schema.sql`), so it is updated in the same edit as the
+  thing it documents rather than drifting in a separate file. `--check` on either generator
+  fails when the committed copy is stale, which is the CI-friendly form.
 
 ## Publishing to the wiki
 

@@ -21,7 +21,10 @@
     "resident:start": "bun run --filter '@emberly/resident' start",
     "sync:build": "bun run --filter '@emberly/sync' build",
     "version": "bun scripts/version.mjs",
-    "release": "scripts/release.sh"
+    "release": "scripts/release.sh",
+    "docs:api": "bun scripts/docs-api.mjs",
+    "docs:schema": "bun apps/web/scripts/docs-schema.mjs",
+    "docs": "bun run docs:api && bun run docs:schema"
   },
   "devDependencies": {
     "prettier": "^3.9.6",

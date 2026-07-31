@@ -5,6 +5,7 @@
 - [[Deployment]]
 - [[Environment Variables]]
 - [[MCP Server Setup]]
+- [[MCP Tools]]
 
 ---
 

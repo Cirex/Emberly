@@ -17,6 +17,9 @@ everywhere:
 
 The server is **read-only** — it never mutates ResMan/MLGW data.
 
+For what the tools actually *do* — searching, grouping, joining, and the handful of traps in
+this data that will otherwise give you a confidently wrong number — see [[MCP Tools]].
+
 ---
 
 ## 1. Mint a token (do this first)
@@ -25,7 +28,11 @@ Admin portal → **Access Tokens** → *Create token* → Token Type **MCP**. Th
 (`emcp_…`) is shown **once** at creation — only its hash is stored. The "token created" card
 also shows ready-to-paste setup snippets with the token filled in for each client below.
 
-- Scopes are optional (none = all resources).
+- **Scopes are required.** A token with no scopes can read *nothing*. Grant resources
+  explicitly (`units`, `work-orders`, …), or `*` for everything. This used to be the other
+  way round — an empty list meant full access — which made "I forgot to set scopes" and
+  "I meant to grant everything" indistinguishable. Existing tokens that list their resources
+  are unaffected.
 - Revoke at any time from the same page; the client loses access immediately.
 - The token is a secret embedded in the client config — store the config securely and
   rotate/revoke as needed.

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { secureCompare, verifyAdminKey } from "@/lib/auth";
 import { runMonitor } from "@/lib/monitor";
+import { notifyMonitorFindings } from "@/lib/monitor-notify";
 import { createUntypedAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -29,12 +30,19 @@ function hasCronBearer(request: NextRequest): boolean {
 
 async function run(): Promise<NextResponse> {
   try {
-    const result = await runMonitor(createUntypedAdminClient());
+    const client = createUntypedAdminClient();
+    const result = await runMonitor(client);
+    // Best-effort and AFTER the findings are durable: a push failure must never
+    // lose the finding that produced it.
+    const notified = await notifyMonitorFindings(client, result.findings, {
+      log: (message) => console.warn(message),
+    });
     // Never log the findings themselves: an anomaly summary carries a service
     // address, which is resident-identifying. Counts are enough for a log line.
     console.info(
       `[cron/monitor] ${result.findings.length} finding(s): ` +
-        `${result.opened} opened, ${result.updated} updated, ${result.resolved} resolved`,
+        `${result.opened} opened, ${result.updated} updated, ${result.resolved} resolved; ` +
+        `notified ${notified.notified} (${notified.sent} push sent${notified.skipped ? `, skipped: ${notified.skipped}` : ""})`,
     );
     return NextResponse.json({
       ok: true,
@@ -42,6 +50,7 @@ async function run(): Promise<NextResponse> {
       updated: result.updated,
       resolved: result.resolved,
       total: result.findings.length,
+      notified: notified,
       notes: result.notes,
     });
   } catch (error) {

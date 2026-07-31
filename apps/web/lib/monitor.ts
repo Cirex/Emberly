@@ -234,10 +234,11 @@ export async function runMonitor(client: UntypedSupabase): Promise<MonitorResult
   const now = new Date().toISOString();
   const { data: existingRows } = await client
     .from("monitor_findings")
-    .select("fingerprint, resolved_at")
+    .select("fingerprint, resolved_at, notified_at")
     .limit(2000);
   const existing = new Map(
-    ((existingRows ?? []) as { fingerprint: string; resolved_at: string | null }[]).map((r) => [r.fingerprint, r]),
+    ((existingRows ?? []) as { fingerprint: string; resolved_at: string | null; notified_at: string | null }[])
+      .map((r) => [r.fingerprint, r]),
   );
 
   let opened = 0;
@@ -260,6 +261,10 @@ export async function runMonitor(client: UntypedSupabase): Promise<MonitorResult
         // A finding that comes back after resolving is open again, not a new
         // row — the fingerprint is its identity.
         resolved_at: null,
+        // A problem RETURNING is news again, so clear the announcement stamp
+        // on recurrence. A finding that merely persists keeps its stamp and is
+        // therefore not re-announced.
+        ...(prior && prior.resolved_at !== null ? { notified_at: null } : {}),
       },
       { onConflict: "fingerprint" },
     );

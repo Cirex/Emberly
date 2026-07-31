@@ -254,6 +254,22 @@ resource. Schedule it after the sync pipeline.
 - **Severity is a ranking, not a p-value.** With a handful of baseline periods a `z` of 6 is a
   sort order. Read the baseline in the summary before acting.
 
+### Getting told
+
+A **critical** finding pushes a digest to the manager fleet. Three rules:
+
+- **New findings only.** `notified_at` records what has been announced, so a problem lasting a
+  week alerts on the night it appeared, not seven times. A finding that resolves and later
+  recurs has the stamp cleared — a returning problem is news again.
+- **One digest, not one push per finding.** Fourteen criticals is one notification. Fourteen
+  notifications is how an app gets muted.
+- **No detail in the body.** *"14 new critical findings — 14 anomalies. Open Emberly to review."*
+  An anomaly summary names a service address, and a push body renders on a locked screen in
+  public. The notification says how many and how bad; the app shows what.
+
+A send that fails leaves `notified_at` null so the next run retries. Devices Expo reports as
+unregistered are deactivated rather than retried forever.
+
 The first live run produced 34 anomalies and 9 staleness findings — and the staleness ones were
 **all false positives**, which is worth knowing because both causes are now designed out:
 

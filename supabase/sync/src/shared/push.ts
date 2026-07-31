@@ -10,11 +10,33 @@
  * failure never fails the sync job.
  */
 
-/** Expo push API endpoint (JSON array of messages, ≤100 per request). */
-export const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+import {
+  chunkPushMessages,
+  EXPO_PUSH_CHUNK,
+  EXPO_PUSH_URL,
+  sendExpoPushMessages,
+  type ExpoAnyPushMessage,
+  type ExpoDataPushMessage,
+  type ExpoPushData,
+  type ExpoPushMessage,
+  type SendExpoPushResult,
+} from "@emberly/core";
 
-/** Max messages per Expo push request. */
-export const EXPO_PUSH_CHUNK = 100;
+// The wire format and the send itself now live in @emberly/core, because the
+// web app sends monitor findings through the same API and a second hand-rolled
+// copy of a network protocol is how the two drift. Re-exported here so every
+// existing import of this module keeps working unchanged.
+export {
+  chunkPushMessages,
+  EXPO_PUSH_CHUNK,
+  EXPO_PUSH_URL,
+  sendExpoPushMessages,
+  type ExpoAnyPushMessage,
+  type ExpoDataPushMessage,
+  type ExpoPushData,
+  type ExpoPushMessage,
+  type SendExpoPushResult,
+};
 
 const TITLE_TRUNCATE = 120;
 
@@ -37,46 +59,6 @@ export interface EmergencyWorkOrder {
   unitNumber: string;
   title: string;
 }
-
-/**
- * The `data` blob Expo hands back to the device on tap. Deliberately a loose
- * record: the maintenance app's emergency pushes carry
- * `{ workOrderId, unitNumber }` while the manager app's alerts carry
- * `{ route, kind, id }` (manager/alerts.ts), and both go through the one
- * sender below.
- */
-export type ExpoPushData = Record<string, string | number | boolean | null>;
-
-export interface ExpoPushMessage {
-  to: string;
-  title: string;
-  body: string;
-  sound: "default";
-  priority: "high";
-  data: ExpoPushData;
-}
-
-/**
- * A SILENT push: no title, no body, no sound, so the OS hands it straight to
- * the app instead of the lock screen. Its only job is to tell a device that the
- * server has something new, so the app can run the sync tick it already has
- * — which is what turns a 60-second poll into "updates when the data updates"
- * without the phone holding a socket open.
- *
- * `_contentAvailable` is Expo's spelling of the APNs `content-available: 1`
- * flag; without it iOS drops a message that carries no user-visible content.
- * Priority stays "normal": these are not alerts, and "high" on a silent push is
- * how an app earns itself a delivery-rate throttle from Apple.
- */
-export interface ExpoDataPushMessage {
-  to: string;
-  data: ExpoPushData;
-  _contentAvailable: true;
-  priority: "normal";
-}
-
-/** Either shape the Expo sender accepts. */
-export type ExpoAnyPushMessage = ExpoPushMessage | ExpoDataPushMessage;
 
 /**
  * Newly-inserted Emergency work orders in an open status: rows whose id was
@@ -142,73 +124,3 @@ export function buildWorkOrdersChangedMessages(
   }));
 }
 
-/** Split messages into Expo-sized request chunks. */
-export function chunkPushMessages<T>(items: ReadonlyArray<T>, size = EXPO_PUSH_CHUNK): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size) as T[]);
-  return out;
-}
-
-type FetchLike = (
-  url: string,
-  init: { method: string; headers: Record<string, string>; body: string },
-) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
-
-export interface SendExpoPushResult {
-  /** Messages accepted by the Expo API (ticket status "ok"). */
-  sent: number;
-  /** Messages Expo rejected or that never reached the API. */
-  failed: number;
-  /** Tokens Expo reported as DeviceNotRegistered — deactivate these rows. */
-  invalidTokens: string[];
-}
-
-/**
- * POST the messages to the Expo push API in chunks. Never throws: transport
- * errors, non-2xx responses, and malformed bodies are counted as failures and
- * logged. Tickets come back in message order per request, so an error ticket
- * with `details.error === "DeviceNotRegistered"` maps back to its message's
- * token for deactivation.
- */
-export async function sendExpoPushMessages(
-  messages: ReadonlyArray<ExpoAnyPushMessage>,
-  deps: { fetchFn?: FetchLike; log?: (message: string) => void } = {},
-): Promise<SendExpoPushResult> {
-  const fetchFn = deps.fetchFn ?? (fetch as unknown as FetchLike);
-  const log = deps.log ?? (() => {});
-  const result: SendExpoPushResult = { sent: 0, failed: 0, invalidTokens: [] };
-
-  for (const chunk of chunkPushMessages(messages)) {
-    try {
-      const response = await fetchFn(EXPO_PUSH_URL, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify(chunk),
-      });
-      if (!response.ok) {
-        result.failed += chunk.length;
-        log(`[push] Expo push request failed with status ${response.status}`);
-        continue;
-      }
-      const body = (await response.json()) as { data?: unknown } | null;
-      const tickets = Array.isArray(body?.data) ? (body.data as Array<Record<string, unknown>>) : [];
-      for (let i = 0; i < chunk.length; i += 1) {
-        const ticket = tickets[i];
-        if (ticket?.status === "ok") {
-          result.sent += 1;
-          continue;
-        }
-        result.failed += 1;
-        const details = ticket?.details as { error?: unknown } | undefined;
-        if (details?.error === "DeviceNotRegistered") {
-          result.invalidTokens.push(chunk[i].to);
-        }
-      }
-    } catch (error) {
-      result.failed += chunk.length;
-      log(`[push] Expo push request threw: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  return result;
-}

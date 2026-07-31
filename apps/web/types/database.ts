@@ -2501,6 +2501,7 @@ export interface Database {
           first_seen_at: string;
           last_seen_at: string;
           resolved_at: string | null;
+          notified_at: string | null;
           created_at: string;
         };
         Insert: {
@@ -2516,6 +2517,7 @@ export interface Database {
           first_seen_at?: string;
           last_seen_at?: string;
           resolved_at?: string | null;
+          notified_at?: string | null;
           created_at?: string;
         };
         Update: {
@@ -2531,6 +2533,7 @@ export interface Database {
           first_seen_at?: string;
           last_seen_at?: string;
           resolved_at?: string | null;
+          notified_at?: string | null;
           created_at?: string;
         };
         Relationships: [];

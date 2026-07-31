@@ -1056,7 +1056,7 @@ export async function aggregateResource(
     const value = Number(rawMeasure);
     if (!Number.isFinite(value)) continue;
 
-    const key = `${periodLabel ?? ""} ${group ?? ""}`;
+    const key = `${periodLabel ?? ""}\u0000${group ?? ""}`;
     const cur = acc.get(key) ?? { group, period: periodLabel, n: 0, sum: 0, min: Infinity, max: -Infinity };
     cur.n += 1;
     cur.sum += value;

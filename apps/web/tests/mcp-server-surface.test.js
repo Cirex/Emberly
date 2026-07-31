@@ -726,6 +726,21 @@ test("the money and gate tables carry the capabilities their questions need", ()
  * expensive thing: units at the documented max limit measured 267 KB — about
  * 65k tokens, a third of a context window, for one call.
  */
+/**
+ * Rows out of a page, whichever encoding it arrived in.
+ *
+ * Budget assertions are about how MANY rows came back, not what shape they came
+ * in; reading `.length` off the payload made every one of them silently depend
+ * on the object encoding, and they failed as `undefined < 200` — which is
+ * `false`, so the trim test would have passed had the direction been reversed.
+ */
+function pageRows(payload) {
+  const d = payload.data;
+  if (Array.isArray(d)) return d;
+  assert.ok(Array.isArray(d?.rows), "a page is either an array of rows or a columnar block");
+  return d.rows.map((row) => Object.fromEntries(d.columns.map((c, i) => [c, row[i]])));
+}
+
 test("a wide page is trimmed to the byte budget and says how to get more", async () => {
   // Fat in a column the resource returns BY DEFAULT, so the budget is what
   // trims the page rather than the default projection doing it first.
@@ -739,8 +754,8 @@ test("a wide page is trimmed to the byte budget and says how to get more", async
     { staff: staff(["*"]), client: memClient({ resman_units: wide }) },
   );
   const payload = JSON.parse(res.result.content[0].text);
-  assert.ok(payload.data.length < 200, "the page shrank");
-  assert.ok(payload.data.length > 0, "but did not vanish");
+  assert.ok(pageRows(payload).length < 200, "the page shrank");
+  assert.ok(pageRows(payload).length > 0, "but did not vanish");
   assert.ok(res.result.content[0].text.length < 60_000, "response stays inside the budget");
   assert.match(payload.note, /trimmed/);
   assert.match(payload.note, /columns/, "the note names the fix");
@@ -754,8 +769,77 @@ test("a narrow page is returned whole, with no note", async () => {
     { staff: staff(["*"]), client: memClient({ resman_units: narrow }) },
   );
   const payload = JSON.parse(res.result.content[0].text);
-  assert.equal(payload.data.length, 200);
+  assert.equal(pageRows(payload).length, 200);
   assert.equal(payload.note, undefined, "nothing to warn about");
+});
+
+test("a big page is columnar, and the values land under the right columns", async () => {
+  // The whole design rests on this: positional rows are only safe if column j
+  // of every row means columns[j]. A row missing a key must occupy its slot,
+  // not shift its neighbours left.
+  const rows = Array.from({ length: 12 }, (_, i) => ({
+    resman_unit_id: `u${i}`,
+    number: `${100 + i}`,
+    // Absent on the odd rows, so a shift would show up as a unit number
+    // appearing in the balance column rather than as a missing value.
+    ...(i % 2 === 0 ? { balance: i * 10 } : {}),
+    occupancy_status: i % 2 === 0 ? "Occupied" : "Vacant",
+  }));
+  const res = await handleMcpMessage(
+    { id: 44, method: "tools/call", params: { name: "query_resource", arguments: { resource: "units", limit: 200 } } },
+    { staff: staff(["*"]), client: memClient({ resman_units: rows }) },
+  );
+  const payload = JSON.parse(res.result.content[0].text);
+  assert.ok(Array.isArray(payload.data.rows), "12 rows is over the columnar threshold");
+  assert.match(payload.data.format, /columns\[j\]/, "the payload explains its own encoding");
+  const back = pageRows(payload);
+  assert.equal(back.length, 12);
+  // Keyed by id rather than by position: the page comes back in the resource's
+  // sort order, and what is under test is column alignment, not row order.
+  const byId = new Map(back.map((r) => [r.resman_unit_id, r]));
+  for (let i = 0; i < 12; i += 1) {
+    const row = byId.get(`u${i}`);
+    assert.ok(row, `u${i} came back`);
+    assert.equal(row.number, `${100 + i}`);
+    assert.equal(row.occupancy_status, i % 2 === 0 ? "Occupied" : "Vacant");
+    assert.equal(row.balance, i % 2 === 0 ? i * 10 : null, "a missing value holds its slot");
+  }
+});
+
+test("a small page stays as objects, where keys cannot be mis-attributed", async () => {
+  const rows = Array.from({ length: 4 }, (_, i) => ({ resman_unit_id: `u${i}`, number: `${i}` }));
+  const res = await handleMcpMessage(
+    { id: 45, method: "tools/call", params: { name: "query_resource", arguments: { resource: "units" } } },
+    { staff: staff(["*"]), client: memClient({ resman_units: rows }) },
+  );
+  const payload = JSON.parse(res.result.content[0].text);
+  assert.ok(Array.isArray(payload.data), "under the threshold the saving is not worth the positional risk");
+  assert.equal(payload.data[0].resman_unit_id, "u0");
+});
+
+test("columnar rows are measured in the encoding actually sent", async () => {
+  // Measuring the object form and sending the columnar one would trim at about
+  // half the rows that fit — spending the saving on a shorter page instead of
+  // on more rows, which is the opposite of the point.
+  const wide = Array.from({ length: 400 }, (_, i) => ({
+    resman_unit_id: `unit-identifier-${i}`,
+    number: `${i}`,
+    tenant_names: "x".repeat(200),
+  }));
+  const res = await handleMcpMessage(
+    { id: 46, method: "tools/call", params: { name: "query_resource", arguments: { resource: "units", limit: 200 } } },
+    { staff: staff(["*"]), client: memClient({ resman_units: wide }) },
+  );
+  const payload = JSON.parse(res.result.content[0].text);
+  const kept = pageRows(payload).length;
+  const objectBytes = JSON.stringify(
+    pageRows(payload).map((r) => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null))),
+  ).length;
+  assert.ok(res.result.content[0].text.length <= 60_000, "still inside the budget");
+  assert.ok(
+    objectBytes > 48_000,
+    `kept ${kept} rows that would not have fitted as objects (${objectBytes}B) — the budget counted the real encoding`,
+  );
 });
 
 test("a single row larger than the whole budget is still returned", async () => {

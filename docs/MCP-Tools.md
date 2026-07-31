@@ -366,7 +366,26 @@ Rows cost context. Measured live: `query_resource` on units at the max limit of 
 **267 KB — about 65,000 tokens**, roughly a third of a 200k window for one call. The same rows
 projected to three columns is **13 KB**.
 
-Two things keep that under control.
+Three things keep that under control.
+
+**Large pages come back columnar.** Measured at 50 rows, repeated key names were **52%** of a
+`units` page, 50% of `leases`, 45% of `work-orders`, 43% of `transactions` — every row
+re-spelling `resman_building_id` and `occupancy_status`. A page of 10 rows or more sends the
+names once and the values positionally, which roughly halves it:
+
+```json
+{ "data": {
+    "format": "columnar: rows[i][j] is the value of columns[j]",
+    "columns": ["resman_unit_id", "number", "occupancy_status"],
+    "rows": [["u1", "101", "Occupied"], ["u2", "102", "Vacant"]] },
+  "pagination": { … } }
+```
+
+Below 10 rows `data` stays an array of row objects. The threshold exists because the two forms
+fail differently: a named key cannot be mis-attributed, whereas a positional row can be if a
+reader loses count across twelve columns. On a short page the saving is a few hundred bytes —
+not worth any added risk — so only pages large enough for the 50% to matter go positional.
+A missing value occupies its slot as `null` rather than shifting its neighbours left.
 
 **Wide resources return a curated default column set.** `units` returns 12 of 47 columns unless
 you ask otherwise — which fits **139 rows** in the budget instead of 35, a 4× improvement for
@@ -375,7 +394,10 @@ naming exactly what was omitted, and `columns: ["*"]` asks for everything. A *ty
 `columns` falls back to the default rather than to the full row: a mistake should not return
 the most expensive response available.
 
-**And row-returning tools trim to a 48 KB budget.** The page shrinks; the call does not fail:
+**And row-returning tools trim to a 48 KB budget.** The page shrinks; the call does not fail.
+Rows are measured in the encoding actually sent — measuring the object form while sending the
+columnar one would trim at about half the rows that fit, spending the saving on a shorter page
+instead of on more rows:
 
 ```json
 { "data": [ … 35 rows … ],

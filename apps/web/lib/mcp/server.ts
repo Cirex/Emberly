@@ -146,7 +146,54 @@ function json(value: unknown): string {
 const RESPONSE_BUDGET_BYTES = 48_000;
 
 /**
- * Trim a page to the byte budget.
+ * Row count at or above which a page is sent columnar rather than as objects.
+ *
+ * Measured on the live mirror at 50 rows: key names are 52% of a `units` page,
+ * 50% of `leases`, 45% of `work-orders`, 43% of `transactions`. Every row
+ * re-spells `resman_building_id` and `occupancy_status`. Sending the names once
+ * and the values positionally halves the page.
+ *
+ * It is a threshold rather than a blanket rule because the two forms fail
+ * differently. Named keys cannot be mis-attributed; a positional row can, if a
+ * reader loses count across twelve columns. On a short page the saving is a few
+ * hundred bytes — not worth any added risk — so short pages stay as objects and
+ * only pages large enough for the 50% to matter take the columnar form.
+ */
+const COLUMNAR_MIN_ROWS = 10;
+
+/** Positional encoding of a page, with the header adjacent to the values. */
+interface ColumnarPage {
+  /** Doubles as the format marker and its own explanation. */
+  format: string;
+  columns: string[];
+  rows: unknown[][];
+}
+
+/**
+ * Column order for a page: first appearance across the rows.
+ *
+ * A union rather than `Object.keys(rows[0])` because a row missing a key would
+ * otherwise shift every later value in that row left by one — silently, into a
+ * neighbouring column's meaning. PostgREST returns uniform keys today; this
+ * costs one pass and removes the failure mode rather than relying on that.
+ */
+function columnUnion(rows: Record<string, unknown>[]): string[] {
+  const seen = new Set<string>();
+  for (const row of rows) for (const key of Object.keys(row)) seen.add(key);
+  return [...seen];
+}
+
+function toColumnar(rows: Record<string, unknown>[], columns: string[]): ColumnarPage {
+  return {
+    format: "columnar: rows[i][j] is the value of columns[j]",
+    columns,
+    // `?? null` so an absent key occupies its slot instead of vanishing.
+    rows: rows.map((row) => columns.map((c) => row[c] ?? null)),
+  };
+}
+
+/**
+ * Trim a page to the byte budget and encode it.
  *
  * The page SHRINKS rather than the call failing, because a caller that asked
  * for 200 rows still wants rows — just not at the cost of everything else in
@@ -155,28 +202,43 @@ const RESPONSE_BUDGET_BYTES = 48_000;
  *
  * Rows are measured individually rather than by serialising the whole page and
  * cutting: a page of wide rows and a page of narrow ones fit very differently,
- * and the point is to be right about which.
+ * and the point is to be right about which. They are measured in the encoding
+ * that will ACTUALLY be sent — measuring the object form and sending the
+ * columnar one would trim at roughly half the rows that fit, quietly spending
+ * the saving on a shorter page instead of on more rows.
  */
 function fitToBudget(
   result: { data: Record<string, unknown>[]; pagination: { limit: number; offset: number; count: number; hasMore: boolean } },
   resource: ResmanResource,
   projected: boolean,
 ): Record<string, unknown> {
-  let used = 0;
+  const columnar = result.data.length >= COLUMNAR_MIN_ROWS;
+  const columns = columnar ? columnUnion(result.data) : [];
+  const measure = (row: Record<string, unknown>): number =>
+    columnar
+      ? JSON.stringify(columns.map((c) => row[c] ?? null)).length
+      : JSON.stringify(row).length;
+
+  let used = columnar ? JSON.stringify(columns).length : 0;
   const kept: Record<string, unknown>[] = [];
   for (const row of result.data) {
-    const size = JSON.stringify(row).length;
+    const size = measure(row);
     // Always keep at least one row: a single row over budget is a truth about
     // that row, and returning nothing would look like an empty result.
     if (kept.length > 0 && used + size > RESPONSE_BUDGET_BYTES) break;
     used += size;
     kept.push(row);
   }
-  if (kept.length === result.data.length) return result;
+
+  // Once columnar, stay columnar even if trimming drops the page back under the
+  // threshold: re-encoding as objects would grow the page it was just trimmed
+  // to fit.
+  const data: unknown = columnar ? toColumnar(kept, columns) : kept;
+  if (kept.length === result.data.length) return { ...result, data };
 
   const perRow = Math.max(1, Math.round(used / kept.length));
   return {
-    data: kept,
+    data,
     pagination: {
       ...result.pagination,
       returned: kept.length,
@@ -441,7 +503,17 @@ const TOOLS: McpTool[] = [
           notes_before_you_report: resource.notes,
           row_count: profile.row_count,
           last_synced_at: profile.last_synced_at,
-          distinct_values: profile.distinct_values,
+          // Tuples, not {value,count} objects. On `units` those two key names
+          // were re-spelled 61 times for 976 bytes that said nothing the header
+          // does not. The internal shape stays as objects — only the wire
+          // format is positional.
+          distinct_values_format: "[value, count], most common first",
+          distinct_values: Object.fromEntries(
+            Object.entries(profile.distinct_values).map(([column, entries]) => [
+              column,
+              entries.map((e) => [e.value, e.count]),
+            ]),
+          ),
           notes: [
             !profile.domain_exact && profile.sampled > 0 && profile.sampled < profile.row_count
               ? `distinct_values sampled ${profile.sampled} of ${profile.row_count} rows — indicative, not exhaustive.`
@@ -464,7 +536,7 @@ const TOOLS: McpTool[] = [
   {
     name: "query_resource",
     description:
-      "List rows from a resource. Supports equality filters, inclusive ranges (<param>_from / <param>_to), substring search across the resource's searchable columns, sorting, and a column projection. Read-only. Returns { data, pagination }. To COUNT rather than list, use aggregate_resource — it is exact and transfers no rows.",
+      "List rows from a resource. Supports equality filters, inclusive ranges (<param>_from / <param>_to), substring search across the resource's searchable columns, sorting, and a column projection. Read-only. Returns { data, pagination }, where `data` is an array of row objects for a small page and a columnar block { columns, rows } for a large one — in the columnar form rows[i][j] is the value of columns[j]. To COUNT rather than list, use aggregate_resource — it is exact and transfers no rows.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1269,8 +1341,20 @@ export async function handleMcpMessage(
       // Out-of-scope prompts are reported as unknown rather than forbidden: a
       // distinct "not authorized" would confirm which resources exist behind a
       // token that cannot read them.
-      if (!prompt || !promptVisible(ctx.staff, prompt)) return fail(-32602, `Unknown prompt "${name}"`);
+      if (!prompt || !promptVisible(ctx.staff, prompt)) {
+        void logAccessTokenUse(ctx.client, ctx.staff, {
+          tool: "prompts/get", args: { name }, ok: false, error: "unknown or out of scope",
+        });
+        return fail(-32602, `Unknown prompt "${name}"`);
+      }
       const args = (params.arguments ?? {}) as Record<string, string>;
+      // Audited like a tool call. Without this the log answered "which tools
+      // does anyone use" but not "does anyone use the prompts at all" — and the
+      // prompts cost ~376 tokens on every connection whether used or not.
+      // Arguments are redacted centrally by logAccessTokenUse.
+      void logAccessTokenUse(ctx.client, ctx.staff, {
+        tool: "prompts/get", args: { name, ...args }, ok: true,
+      });
       return reply({
         description: prompt.description,
         messages: [{ role: "user", content: { type: "text", text: prompt.build(args) } }],
@@ -1297,6 +1381,11 @@ export async function handleMcpMessage(
       });
     case "resources/read": {
       const uri = String(params.uri ?? "");
+      const known = uri === CATALOG_URI || uri === TRAPS_URI;
+      void logAccessTokenUse(ctx.client, ctx.staff, {
+        tool: "resources/read", args: { uri }, ok: known,
+        error: known ? undefined : "unknown uri",
+      });
       if (uri === CATALOG_URI) {
         return reply({ contents: [{ uri, mimeType: "application/json", text: catalogText(ctx.staff) }] });
       }

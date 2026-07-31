@@ -403,29 +403,18 @@ const TOOLS: McpTool[] = [
 
       const period = resolvePeriodArg(resource, args.period);
 
-      // A count grouping needs the domain of the group column. Learn it from
-      // the data rather than asking the caller — an omitted value would show up
-      // as a missing bucket, which reads like a real zero. The domain comes
-      // from a sample, so the engine reconciles against the true total and
-      // emits an "(other)" bucket for anything the sample missed.
-      let groupValues: (string | null)[] = [];
-      let domainComplete = true;
-      if (groupBy) {
-        const profile = await describeResourceData(resource, ctx.client);
-        groupValues = (profile.distinct_values[groupBy] ?? []).map((d) => d.value);
-        domainComplete = profile.domain_complete;
-        if (groupValues.length === 0) groupValues = [null];
-      }
-
+      // The domain is no longer fetched here. Grouping happens in Postgres, so
+      // the group set comes back exact; only the fallback path needs a domain,
+      // and it learns one itself when it has to.
       const result = await aggregateResource(
         resource,
         toParams(args, resource),
-        { groupBy, groupValues, metric, measure, period },
+        { groupBy, groupValues: [], metric, measure, period },
         ctx.client,
       );
       const notes = [
-        !domainComplete && metric === "count"
-          ? `Group values were learned from a sample of ${resource.name}; any row outside that sample is counted in the "(other)" bucket rather than dropped.`
+        result.engine === "scan" && groupBy && metric === "count"
+          ? `Grouped in the application rather than in SQL (mcp_aggregate unavailable), so group values came from a sample of ${resource.name}. Anything the sample missed is counted in the "(other)" bucket rather than dropped.`
           : null,
         // "No bucket held anything" — not "no buckets came back". A grouped
         // count over an empty table returns one bucket of zero, which would

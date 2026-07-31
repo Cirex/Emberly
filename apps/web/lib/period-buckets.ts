@@ -230,6 +230,50 @@ export function buildPeriodBuckets(
   return buckets;
 }
 
+/**
+ * Parse a bucket label back to the calendar date the period starts on.
+ *
+ * The SQL aggregate returns only the periods that HAVE rows, so filling the
+ * gaps in a series means walking the labels it did return — and that needs the
+ * label read back as a date. Inverse of `periodKey`.
+ */
+export function parsePeriodKey(key: string, interval: PeriodInterval): CalendarParts | null {
+  const quarter = /^(\d{4})-Q([1-4])$/.exec(key);
+  if (quarter) return { y: Number(quarter[1]), m: (Number(quarter[2]) - 1) * 3 + 1, d: 1 };
+  const year = /^(\d{4})$/.exec(key);
+  if (year) return { y: Number(year[1]), m: 1, d: 1 };
+  const month = /^(\d{4})-(\d{2})$/.exec(key);
+  if (month) return { y: Number(month[1]), m: Number(month[2]), d: 1 };
+  const parts = parseCalendarPrefix(key);
+  return parts ? periodStart(parts, interval) : null;
+}
+
+/**
+ * Fill the gaps in a set of period labels, so a series with nothing in March
+ * shows March at zero rather than skipping it. Only interior gaps exist by
+ * construction — the ends are the first and last periods that had data.
+ */
+export function fillPeriodGaps(present: readonly string[], interval: PeriodInterval): string[] {
+  if (present.length === 0) return [];
+  const sorted = [...new Set(present)].sort();
+  const first = parsePeriodKey(sorted[0], interval);
+  const last = parsePeriodKey(sorted[sorted.length - 1], interval);
+  if (!first || !last) return sorted;
+
+  const out: string[] = [];
+  let cursor = first;
+  const lastKey = periodKey(last, interval);
+  for (let guard = 0; guard <= MAX_PERIOD_BUCKETS; guard += 1) {
+    const key = periodKey(cursor, interval);
+    out.push(key);
+    if (key === lastKey) return out;
+    cursor = periodNext(cursor, interval);
+  }
+  // Past the ceiling the caller gets what it had, unfilled, rather than a
+  // response padded with hundreds of empty buckets.
+  return sorted;
+}
+
 /** The bucket label a stored value belongs to, or null when unparseable. */
 export function keyForValue(
   value: string,

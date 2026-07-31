@@ -134,3 +134,44 @@ test("parseCalendarPrefix accepts a date or a timestamp, rejects junk", () => {
   assert.deepEqual(parseCalendarPrefix("2026-01-05T13:00:00Z"), { y: 2026, m: 1, d: 5 });
   assert.equal(parseCalendarPrefix("last tuesday"), null);
 });
+
+// ------------------------------------------------------- label round-trip ---
+
+const { parsePeriodKey, fillPeriodGaps } = require("../lib/period-buckets");
+
+test("period labels round-trip back to the date they start on", () => {
+  // The SQL aggregate returns only periods that HAVE rows, so filling a series'
+  // gaps means reading its own labels back as dates.
+  assert.deepEqual(parsePeriodKey("2026-03", "month"), { y: 2026, m: 3, d: 1 });
+  assert.deepEqual(parsePeriodKey("2026-Q3", "quarter"), { y: 2026, m: 7, d: 1 });
+  assert.deepEqual(parsePeriodKey("2026", "year"), { y: 2026, m: 1, d: 1 });
+  assert.deepEqual(parsePeriodKey("2026-01-05", "day"), { y: 2026, m: 1, d: 5 });
+  assert.equal(parsePeriodKey("garbage", "month"), null);
+});
+
+test("every interval's label survives a key -> parse -> key round trip", () => {
+  for (const [interval, key] of [
+    ["day", "2026-01-05"], ["week", "2026-03-02"], ["month", "2026-11"],
+    ["quarter", "2026-Q4"], ["year", "2026"],
+  ]) {
+    assert.equal(periodKey(parsePeriodKey(key, interval), interval), key, `${interval} label is lossy`);
+  }
+});
+
+test("gaps in a series are filled between the first and last period present", () => {
+  // A month with no rows must appear at zero. A series that silently skips a
+  // month reads as continuous, hiding the gap the question is about.
+  assert.deepEqual(
+    fillPeriodGaps(["2026-01", "2026-04"], "month"),
+    ["2026-01", "2026-02", "2026-03", "2026-04"],
+  );
+  assert.deepEqual(fillPeriodGaps(["2025-Q4", "2026-Q2"], "quarter"), ["2025-Q4", "2026-Q1", "2026-Q2"]);
+  assert.deepEqual(fillPeriodGaps([], "month"), [], "nothing present, nothing to fill");
+  assert.deepEqual(fillPeriodGaps(["2026-05"], "month"), ["2026-05"], "a single period needs no filling");
+});
+
+test("gap filling refuses to pad past the bucket ceiling", () => {
+  // Two daily labels years apart would otherwise expand to thousands of rows.
+  const out = fillPeriodGaps(["2020-01-01", "2026-01-01"], "day");
+  assert.deepEqual(out, ["2020-01-01", "2026-01-01"], "returns what it had rather than padding");
+});

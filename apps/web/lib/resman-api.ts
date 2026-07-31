@@ -22,6 +22,7 @@ import {
   calendarInZone,
   keyForValue,
   MAX_PERIOD_BUCKETS,
+  fillPeriodGaps,
   parseCalendarPrefix,
   type PeriodBucket,
   type PeriodColumnKind,
@@ -415,6 +416,13 @@ export interface AggregateResult {
   period?: { column: string; interval: PeriodInterval; timezone: string | null };
   /** Rows matching the filters, regardless of which bucket they landed in. */
   total?: number;
+  /**
+   * Which strategy produced this. "sql" grouped in Postgres in one request and
+   * is exact; "scan" is the PostgREST fallback, whose group domain comes from a
+   * sample and which is therefore subject to the "(other)" bucket and the
+   * measure scan cap.
+   */
+  engine?: "sql" | "scan";
 }
 
 /** Bucket label for rows the declared group domain did not account for. */
@@ -499,6 +507,111 @@ export interface PeriodSpec {
  */
 type QueryBuilder = ReturnType<ReturnType<UntypedSupabase["from"]>["select"]>;
 
+/** One row of the SQL aggregate. */
+interface RpcAggregateRow {
+  grp: string | null;
+  period: string | null;
+  n: number | string;
+  val: number | string | null;
+}
+
+/**
+ * Group in POSTGRES, in one request.
+ *
+ * PostgREST cannot express GROUP BY, which is the single gap every workaround
+ * in the scan-based path below exists to paper over — the sampled domain, the
+ * per-group HEAD counts, the "(other)" reconciliation, the 20,000-row scan cap.
+ * `public.mcp_aggregate` (lib/supabase/deltas/2026-07-30-mcp-aggregate-rpc.sql)
+ * removes the gap: one grouped count over resman_transactions went from 33
+ * requests and 4.2s to 1 request and 165ms, and returned 39 categories where
+ * the 5,000-row sample had only ever seen 23.
+ *
+ * Returns null — rather than throwing — when the function is absent or the
+ * client cannot call it, so a database that has not taken the migration (and
+ * every test fake) falls through to the scan path instead of breaking.
+ */
+async function aggregateViaSql(
+  resource: ResmanResource,
+  searchParams: URLSearchParams,
+  opts: {
+    groupBy: string | null;
+    metric: "count" | "sum" | "avg" | "min" | "max";
+    measure: string | null;
+    period?: PeriodSpec | null;
+  },
+  client: UntypedSupabase,
+): Promise<AggregateResult | null> {
+  const rpc = (client as { rpc?: unknown }).rpc;
+  if (typeof rpc !== "function") return null;
+
+  const filters = [
+    ...resolveFilters(resource, searchParams).map((f) => ({ col: f.column, op: "eq", val: String(f.value) })),
+    ...resolveRanges(resource, searchParams).map((b) => ({ col: b.column, op: b.op, val: b.value })),
+  ];
+  const search = resolveSearch(resource, searchParams);
+  const period = opts.period ?? null;
+
+  let data: RpcAggregateRow[];
+  try {
+    const result = await (client as unknown as {
+      rpc: (name: string, args: Record<string, unknown>) => Promise<{ data: RpcAggregateRow[] | null; error: { message?: string; code?: string } | null }>;
+    }).rpc("mcp_aggregate", {
+      p_table: resource.table,
+      p_group_by: opts.groupBy,
+      p_period_column: period?.column ?? null,
+      p_period_interval: period?.interval ?? null,
+      // Only an INSTANT gets a zone. A plain DATE has none, and passing one
+      // would shift every boundary by the UTC offset.
+      p_period_tz: period && period.kind === "timestamp" ? period.timezone : null,
+      p_metric: opts.metric,
+      p_measure: opts.measure,
+      p_filters: filters,
+      p_search_columns: search ? [...search.columns] : null,
+      p_search_term: search ? search.term : null,
+    });
+    if (result.error) return null;
+    data = result.data ?? [];
+  } catch {
+    return null;
+  }
+
+  const buckets: AggregateBucket[] = data.map((row) => ({
+    group: row.grp,
+    ...(row.period ? { period: row.period } : {}),
+    count: Number(row.n) || 0,
+    ...(opts.metric === "count" ? {} : { value: row.val === null ? null : Number(row.val) }),
+  }));
+
+  // Gaps only need filling when there IS a series; SQL returns the periods that
+  // had rows, and a month that skips reads as continuous rather than empty.
+  if (period && !opts.groupBy) {
+    const present = buckets.map((b) => b.period).filter((p): p is string => Boolean(p));
+    const full = fillPeriodGaps(present, period.interval);
+    const seen = new Set(present);
+    for (const key of full) {
+      if (!seen.has(key)) buckets.push({ group: null, period: key, count: 0, value: null });
+    }
+  }
+  sortBuckets(buckets, opts.metric, Boolean(period));
+
+  return {
+    resource: resource.name,
+    group_by: opts.groupBy,
+    metric: opts.metric,
+    measure: opts.measure,
+    ...(period
+      ? { period: { column: period.column, interval: period.interval, timezone: period.kind === "timestamp" ? period.timezone : null } }
+      : {}),
+    buckets,
+    scanned: 0,
+    // No scan, so no cap, so nothing to truncate. The group domain is the real
+    // one rather than a sample, so there is no "(other)" bucket either.
+    truncated: false,
+    engine: "sql",
+    ...(opts.metric === "count" ? { total: buckets.reduce((sum, b) => sum + b.count, 0) } : {}),
+  };
+}
+
 export async function aggregateResource(
   resource: ResmanResource,
   searchParams: URLSearchParams,
@@ -511,6 +624,8 @@ export async function aggregateResource(
   },
   client: UntypedSupabase = pmClient(),
 ): Promise<AggregateResult> {
+  const sql = await aggregateViaSql(resource, searchParams, opts, client);
+  if (sql) return sql;
   const applyPredicates = (q: ReturnType<ReturnType<UntypedSupabase["from"]>["select"]>) => {
     let query = q;
     for (const { column, value } of resolveFilters(resource, searchParams)) query = query.eq(column, value);
@@ -568,7 +683,16 @@ export async function aggregateResource(
   };
 
   if (opts.metric === "count") {
-    const groups: (string | null)[] = opts.groupBy ? [...opts.groupValues] : [null];
+    // The domain is learned HERE, not by the caller, and only when the SQL path
+    // was unavailable — it costs a count, a freshness probe and a paged 5,000-row
+    // sample, which is most of why a grouped count used to cost 33 requests.
+    let groupValues = opts.groupValues;
+    if (opts.groupBy && groupValues.length === 0) {
+      const profile = await describeResourceData(resource, client);
+      groupValues = (profile.distinct_values[opts.groupBy] ?? []).map((d) => d.value);
+      if (groupValues.length === 0) groupValues = [null];
+    }
+    const groups: (string | null)[] = opts.groupBy ? [...groupValues] : [null];
     const slots: { group: string | null; bucket: PeriodBucket | null }[] = [];
     for (const bucket of period ? periodBuckets : [null]) {
       for (const group of groups) slots.push({ group, bucket });
@@ -610,7 +734,7 @@ export async function aggregateResource(
     }
 
     sortBuckets(buckets, opts.metric, Boolean(period));
-    return { ...base, buckets, scanned: 0, truncated: false, ...(total !== null ? { total } : {}) };
+    return { ...base, buckets, scanned: 0, truncated: false, engine: "scan", ...(total !== null ? { total } : {}) };
   }
 
   if (!opts.measure) throw new Error(`Metric "${opts.metric}" requires a measure column.`);
@@ -684,7 +808,7 @@ export async function aggregateResource(
   }
   sortBuckets(buckets, opts.metric, Boolean(period));
 
-  return { ...base, buckets, scanned: rows.length, truncated: scanTruncated };
+  return { ...base, buckets, scanned: rows.length, truncated: scanTruncated, engine: "scan" };
 }
 
 /**

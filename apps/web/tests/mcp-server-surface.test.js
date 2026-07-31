@@ -7,6 +7,8 @@ const { aggregateRelated, aggregateResource } = require("../lib/resman-api");
 const {
   unitsResource,
   transactionsResource,
+  workOrdersResource,
+  entryLogsResource,
   mlgwPaymentsResource,
   RESMAN_RESOURCES,
 } = require("../lib/resman-resources");
@@ -319,6 +321,132 @@ function memClient(tables) {
     }),
   };
 }
+
+// ---------------------------------------------------------- SQL grouping ---
+
+/** A client whose `rpc` records its arguments and replays canned rows. */
+function rpcClient(rows, { fail = false } = {}) {
+  const calls = [];
+  return {
+    calls,
+    rpc(name, args) {
+      calls.push({ name, args });
+      if (fail) return Promise.resolve({ data: null, error: { message: "function does not exist", code: "42883" } });
+      return Promise.resolve({ data: rows, error: null });
+    },
+    from: () => ({
+      select: () => ({
+        eq() { return this; }, is() { return this; }, not() { return this; },
+        gte() { return this; }, lte() { return this; }, lt() { return this; },
+        or() { return this; }, order() { return this; }, limit() { return this; },
+        range() { return this; },
+        then: (resolve) => resolve({ data: [], error: null, count: 0 }),
+      }),
+    }),
+  };
+}
+
+test("grouping happens in Postgres when the RPC is available", async () => {
+  // One request instead of 33, and the group set is EXACT rather than sampled —
+  // on the live mirror this returned 39 transaction categories where the
+  // 5,000-row sample had only ever seen 23.
+  const client = rpcClient([
+    { grp: "Occupied", period: null, n: 508, val: null },
+    { grp: "Vacant", period: null, n: 325, val: null },
+  ]);
+  const result = await aggregateResource(
+    unitsResource,
+    new URLSearchParams(),
+    { groupBy: "occupancy_status", groupValues: [], metric: "count", measure: null },
+    client,
+  );
+  assert.equal(result.engine, "sql");
+  assert.equal(client.calls.length, 1, "one round trip");
+  assert.equal(client.calls[0].args.p_table, "resman_units");
+  assert.equal(client.calls[0].args.p_group_by, "occupancy_status");
+  assert.deepEqual(result.buckets.map((b) => [b.group, b.count]), [["Occupied", 508], ["Vacant", 325]]);
+  assert.equal(result.total, 833);
+  // The sampled-domain workaround is unnecessary when the domain is exact.
+  assert.ok(!result.buckets.some((b) => b.group === "(other)"));
+});
+
+test("filters, ranges and search are handed to SQL, not re-implemented", async () => {
+  const client = rpcClient([]);
+  await aggregateResource(
+    workOrdersResource,
+    new URLSearchParams({ status: "Not Started", reported_from: "2026-01-01", q: "comcast" }),
+    { groupBy: "status", groupValues: [], metric: "count", measure: null },
+    client,
+  );
+  const { p_filters, p_search_columns, p_search_term } = client.calls[0].args;
+  assert.deepEqual(p_filters, [
+    { col: "status", op: "eq", val: "Not Started" },
+    { col: "date_reported", op: "gte", val: "2026-01-01" },
+  ]);
+  assert.equal(p_search_term, "comcast");
+  assert.deepEqual([...p_search_columns], [...workOrdersResource.searchable]);
+});
+
+test("a DATE period is sent with no timezone; a TIMESTAMP period carries one", async () => {
+  // Passing a zone for a plain DATE would shift every boundary by the offset.
+  const dateClient = rpcClient([]);
+  await aggregateResource(
+    workOrdersResource, new URLSearchParams(),
+    { groupBy: null, groupValues: [], metric: "count", measure: null,
+      period: { column: "date_reported", kind: "date", interval: "month", timezone: "America/Chicago" } },
+    dateClient,
+  );
+  assert.equal(dateClient.calls[0].args.p_period_tz, null);
+
+  const tsClient = rpcClient([]);
+  await aggregateResource(
+    entryLogsResource, new URLSearchParams(),
+    { groupBy: null, groupValues: [], metric: "count", measure: null,
+      period: { column: "entered_at", kind: "timestamp", interval: "day", timezone: "America/Chicago" } },
+    tsClient,
+  );
+  assert.equal(tsClient.calls[0].args.p_period_tz, "America/Chicago");
+});
+
+test("the SQL path fills the gaps SQL leaves in a series", async () => {
+  // GROUP BY returns only periods that HAVE rows, so a month with none simply
+  // vanishes — and a series that skips a month reads as continuous.
+  const client = rpcClient([
+    { grp: null, period: "2026-01", n: 2, val: 150 },
+    { grp: null, period: "2026-04", n: 1, val: 25 },
+  ]);
+  const result = await aggregateResource(
+    transactionsResource, new URLSearchParams(),
+    { groupBy: null, groupValues: [], metric: "sum", measure: "charges",
+      period: { column: "date", kind: "date", interval: "month", timezone: "America/Chicago" } },
+    client,
+  );
+  assert.deepEqual(
+    result.buckets.map((b) => [b.period, b.value]),
+    [["2026-01", 150], ["2026-02", null], ["2026-03", null], ["2026-04", 25]],
+  );
+});
+
+test("an unavailable RPC falls back to the scan path rather than failing", async () => {
+  // A database that has not taken the migration must still answer.
+  const client = rpcClient([], { fail: true });
+  const result = await aggregateResource(
+    unitsResource, new URLSearchParams(),
+    { groupBy: null, groupValues: [], metric: "count", measure: null },
+    client,
+  );
+  assert.equal(result.engine, "scan", "degrades instead of breaking");
+});
+
+test("a client with no rpc at all still works", async () => {
+  const result = await aggregateResource(
+    unitsResource, new URLSearchParams(),
+    { groupBy: "occupancy_status", groupValues: ["Occupied"], metric: "count", measure: null },
+    memClient({ resman_units: [{ resman_unit_id: "u", occupancy_status: "Occupied" }] }),
+  );
+  assert.equal(result.engine, "scan");
+  assert.equal(result.buckets[0].count, 1);
+});
 
 // -------------------------------------------------------- server row cap ---
 

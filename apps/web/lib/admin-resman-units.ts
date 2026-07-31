@@ -18,6 +18,17 @@ export type ResmanUnitRow = {
   number: string;
   classification: string;
   occupancy_status: ResmanOccupancy | null;
+  /**
+   * Is somebody living here — the PHYSICAL view, and the one occupancy and
+   * vacancy rates are built from. Disagrees with `occupancy_status` by the
+   * whole Notice bucket: a household under eviction or having given notice is
+   * still in the apartment, so it is `occupied: true` with status `Notice`.
+   */
+  occupied: boolean | null;
+  /** ResMan bookkeeping placeholder, not a real apartment. */
+  holding_unit: boolean | null;
+  /** Flagged out of the occupancy count (models, offices, down units). */
+  excluded_from_occupancy: boolean | null;
   lease_status: string | null;
   tenant_names: string[];
   bedrooms: number | null;
@@ -31,9 +42,19 @@ export type ResmanUnitRow = {
 };
 
 export type ResmanUnitsStats = {
+  /** Every row in the mirror, rentable or not. */
   total: number;
+  /**
+   * Real, rentable apartments — total minus holding units and units flagged out
+   * of the occupancy count. THE denominator for occupancy and vacancy rates.
+   * Dividing by `total` counted 15 excluded units as vacant stock.
+   */
+  rentable: number;
+  /** Rentable units with someone living in them. Includes the Notice bucket. */
   occupied: number;
+  /** Rentable units with nobody living in them. */
   vacant: number;
+  /** Under eviction or notice given — a SUBSET of `occupied`, not a third bucket. */
   notice: number;
   withBalance: number;
   /** Distinct street codes across the portfolio (the "CW" in "1709 CW-1"). */
@@ -51,7 +72,19 @@ export type ResmanUnitsResult = {
 };
 
 const SELECT =
-  "resman_unit_id, number, classification, occupancy_status, lease_status, tenant_names, bedrooms, bathrooms, market_rent, lease_rent, balance, times_late, lease_end_date, synced_at";
+  "resman_unit_id, number, classification, occupancy_status, occupied, holding_unit, excluded_from_occupancy, lease_status, tenant_names, bedrooms, bathrooms, market_rent, lease_rent, balance, times_late, lease_end_date, synced_at";
+
+/**
+ * Is this a real, rentable apartment?
+ *
+ * Matches the `rentable` scope declared in lib/resman-resources.ts, which is the
+ * one definition the MCP server, the snapshots and this page all have to share —
+ * three different denominators for "occupancy" is how you get three different
+ * answers to the same question.
+ */
+function isRentable(u: ResmanUnitRow): boolean {
+  return u.holding_unit !== true && u.excluded_from_occupancy !== true;
+}
 
 /**
  * The whole mirror (<1k rows) is fetched once per page load and filtered in
@@ -90,11 +123,19 @@ export async function listResmanUnits(
     if (chunk.length < pageSize) break;
   }
 
+  // Occupancy and vacancy are measured over rentable stock only, using the
+  // PHYSICAL `occupied` flag rather than the leasing `occupancy_status`.
+  // Counting status === "Occupied" dropped the 58 Notice units — households
+  // still living in the apartment — and dividing by every row added 15
+  // non-rentable ones to the denominator. Together they read 56.9% occupied
+  // where the truth is 64.5%.
+  const rentable = rows.filter(isRentable);
   const stats: ResmanUnitsStats = {
     total: rows.length,
-    occupied: rows.filter((u) => u.occupancy_status === "Occupied").length,
-    vacant: rows.filter((u) => u.occupancy_status === "Vacant").length,
-    notice: rows.filter((u) => u.occupancy_status === "Notice").length,
+    rentable: rentable.length,
+    occupied: rentable.filter((u) => u.occupied === true).length,
+    vacant: rentable.filter((u) => u.occupied !== true).length,
+    notice: rentable.filter((u) => u.occupancy_status === "Notice").length,
     withBalance: rows.filter((u) => (u.balance ?? 0) > 0).length,
     streets: new Set(rows.map((u) => u.number.split(" ")[1]?.split("-")[0]).filter(Boolean)).size,
     lastSyncedAt: rows.reduce<string | null>(

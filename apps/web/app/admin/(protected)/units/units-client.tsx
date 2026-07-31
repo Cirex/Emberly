@@ -153,7 +153,9 @@ export function UnitsClient({
   }
 
   const { units, total, limit, stats, classificationOptions } = result;
-  const pct = (n: number) => (stats.total > 0 ? (n / stats.total) * 100 : 0);
+  // Rentable stock, not every row: holding units and units flagged out of the
+  // occupancy count are not vacant apartments waiting to be leased.
+  const pct = (n: number) => (stats.rentable > 0 ? (n / stats.rentable) * 100 : 0);
   const showingFrom = total === 0 ? 0 : (page - 1) * limit + 1;
   const showingTo = Math.min(total, page * limit);
   const today = new Date().toISOString().slice(0, 10);
@@ -174,10 +176,18 @@ export function UnitsClient({
       {/* Stats + occupancy mix */}
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 min-[57.5rem]:grid-cols-[repeat(4,1fr)_1.35fr]">
         {[
-          { label: "Total", value: stats.total, detail: `across ${stats.streets} streets` },
-          { label: "Occupied", value: stats.occupied, detail: `${pct(stats.occupied).toFixed(1)}%`, color: "var(--color-ok)" },
-          { label: "Vacant", value: stats.vacant, detail: `${pct(stats.vacant).toFixed(1)}%` },
-          { label: "Notice", value: stats.notice, detail: "incl. evictions", color: "var(--color-warn)" },
+          {
+            label: "Total",
+            value: stats.total,
+            // Says which number the percentages below are actually out of.
+            detail:
+              stats.rentable === stats.total
+                ? `across ${stats.streets} streets`
+                : `${stats.rentable.toLocaleString()} rentable · ${stats.streets} streets`,
+          },
+          { label: "Occupied", value: stats.occupied, detail: `${pct(stats.occupied).toFixed(1)}% of rentable`, color: "var(--color-ok)" },
+          { label: "Vacant", value: stats.vacant, detail: `${pct(stats.vacant).toFixed(1)}% of rentable` },
+          { label: "Notice", value: stats.notice, detail: "of the occupied, incl. evictions", color: "var(--color-warn)" },
         ].map((s) => (
           <div key={s.label} className="card px-4 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-primary/45">{s.label}</p>
@@ -189,20 +199,38 @@ export function UnitsClient({
         ))}
         <div className="card px-4 py-3">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-primary/45">Occupancy mix</p>
+          {/*
+            Occupied and vacant partition the rentable stock, so the bar sums to
+            100%. Notice is drawn INSIDE the occupied segment rather than beside
+            it: those households are still in the apartment, and giving them
+            their own segment counted them twice and pushed the bar past full.
+          */}
           <div className="mt-3 flex h-2.5 overflow-hidden rounded-full">
-            <span style={{ width: `${pct(stats.occupied)}%`, background: "var(--color-ok)" }} />
+            {/*
+              Notice sits at the RIGHT of the occupied run, against the vacant
+              boundary — it is the occupied stock on its way out. On the left it
+              took the bar's rounded end cap and read as a leading bucket of its
+              own, which is the reading this nesting exists to prevent.
+            */}
+            <span className="flex justify-end" style={{ width: `${pct(stats.occupied)}%`, background: "var(--color-ok)" }}>
+              <span
+                style={{
+                  width: `${stats.occupied > 0 ? (stats.notice / stats.occupied) * 100 : 0}%`,
+                  background: "var(--color-warn)",
+                }}
+              />
+            </span>
             <span style={{ width: `${pct(stats.vacant)}%`, background: "#C9CCE0" }} />
-            <span style={{ width: `${pct(stats.notice)}%`, background: "var(--color-warn)" }} />
           </div>
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-[3px]" style={{ background: "var(--color-ok)" }} /> occupied
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-[3px]" style={{ background: "#C9CCE0" }} /> vacant
+              <span className="h-2 w-2 rounded-[3px]" style={{ background: "var(--color-warn)" }} /> on notice
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-[3px]" style={{ background: "var(--color-warn)" }} /> notice
+              <span className="h-2 w-2 rounded-[3px]" style={{ background: "#C9CCE0" }} /> vacant
             </span>
           </div>
         </div>

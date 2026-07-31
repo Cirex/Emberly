@@ -1,17 +1,23 @@
 /**
  * Read-only staff MCP server for the ResMan/MLGW mirror data.
  *
- * Six tools over the existing query engine (lib/resman-api):
+ * Seven tools over the existing query engine (lib/resman-api):
  *   - list_resources     — catalog: what exists and what each can do
  *   - describe_resource  — one resource in depth: columns, capabilities, the
  *                          VALUES its groupable columns actually hold, row
  *                          count, and data freshness
  *   - query_resource     — rows, with equality filters, ranges, substring
  *                          search, sort, projection and pagination
- *   - aggregate_resource — group-and-measure, so counting questions cost one
- *                          call instead of paging the table into the model
+ *   - aggregate_resource — group-and-measure, optionally bucketed over a
+ *                          calendar interval, so counting and trend questions
+ *                          cost one call instead of paging the table
+ *   - aggregate_related  — group one resource by ANOTHER's attribute
  *   - get_resource       — one row by id
  *   - related_resource   — walk a DECLARED relation to another resource
+ *
+ * Plus two MCP primitives beyond tools: `prompts` (canned analyses that encode
+ * the traps in this data) and `resources` (a scope-filtered schema catalog and
+ * a data-traps sheet, attachable as context instead of a round trip).
  *
  * The design rule throughout is that a caller names a CAPABILITY, never a raw
  * column or expression: every searchable, groupable, sortable and joinable
@@ -29,11 +35,17 @@
 import { logAccessTokenUse } from "../access-tokens";
 import { checkRateLimit } from "../rate-limit";
 import {
+  DEFAULT_TIMEZONE,
+  PERIOD_INTERVALS,
+  type PeriodInterval,
+} from "../period-buckets";
+import {
   aggregateRelated,
   aggregateResource,
   describeResourceData,
   getResource,
   listResource,
+  type PeriodSpec,
 } from "../resman-api";
 import { RESMAN_RESOURCES, type ResmanResource } from "../resman-resources";
 import type { UntypedSupabase } from "../supabase/types";
@@ -116,6 +128,28 @@ function json(value: unknown): string {
 }
 
 /**
+ * Distinguish "your filters matched nothing" from "this table has never held a
+ * row", which look identical in an empty response and mean opposite things.
+ *
+ * The gate log is the live example: `entry_logs` is empty, so "who came through
+ * last night" returns `[]` and reads as "nobody came through" when the truth is
+ * that the scanners have never been used. Costs one HEAD count, and only when
+ * the result was empty anyway.
+ */
+async function emptinessNote(
+  resource: ResmanResource,
+  ctx: ToolCtx,
+): Promise<string | null> {
+  const { count, error } = await ctx.client
+    .from(resource.table)
+    .select(resource.idColumn, { count: "exact", head: true });
+  if (error || count === null) return null;
+  return count === 0
+    ? `The ${resource.name} resource is EMPTY — 0 rows in total, before any filter. This is not a filtered-out result: nothing has ever been recorded here. Say so rather than reporting a zero.`
+    : null;
+}
+
+/**
  * Flatten a tool's structured arguments into the query string the REST engine
  * already understands, so both doors run exactly one implementation of
  * filtering, ranging, searching and paging.
@@ -139,6 +173,34 @@ function toParams(args: Record<string, unknown>, resource: ResmanResource): URLS
   return params;
 }
 
+/**
+ * Validate the `period` argument against the resource's declared period
+ * columns. Same rule as everywhere else: the caller names a declared capability,
+ * never an arbitrary column, so no date column becomes bucketable by accident.
+ */
+function resolvePeriodArg(resource: ResmanResource, raw: unknown): PeriodSpec | null {
+  if (!raw || typeof raw !== "object") return null;
+  const arg = raw as Record<string, unknown>;
+  const name = String(arg.column ?? "");
+  const declared = resource.periods[name];
+  if (!declared) {
+    const available = Object.keys(resource.periods).join(", ") || "(none)";
+    throw new McpToolError(`"${name}" is not a period column on ${resource.name}. Available: ${available}.`);
+  }
+  const interval = arg.interval ? String(arg.interval) : "month";
+  if (!PERIOD_INTERVALS.includes(interval as PeriodInterval)) {
+    throw new McpToolError(`Unknown interval "${interval}". Use one of: ${PERIOD_INTERVALS.join(", ")}.`);
+  }
+  const timezone = arg.timezone ? String(arg.timezone) : DEFAULT_TIMEZONE;
+  // Reject an unknown zone here rather than letting Intl throw mid-aggregate.
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone });
+  } catch {
+    throw new McpToolError(`Unknown timezone "${timezone}".`);
+  }
+  return { column: declared.column, kind: declared.kind, interval: interval as PeriodInterval, timezone };
+}
+
 const TOOLS: McpTool[] = [
   {
     name: "list_resources",
@@ -154,6 +216,7 @@ const TOOLS: McpTool[] = [
         searchable: r.searchable,
         groupable: r.groupable,
         measures: r.measures,
+        periods: Object.keys(r.periods),
         relations: r.relations.map((rel) => `${rel.name} -> ${rel.resource} (${rel.kind})`),
       }));
       // Columns are deliberately NOT included here — thirteen resources' worth
@@ -196,6 +259,9 @@ const TOOLS: McpTool[] = [
             groupable: resource.groupable,
             measures: resource.measures,
             sortable: resource.sortable,
+            periods: Object.entries(resource.periods).map(([name, p]) => ({
+              column: name, kind: p.kind, intervals: PERIOD_INTERVALS,
+            })),
           },
           relations: resource.relations,
           row_count: profile.row_count,
@@ -206,6 +272,12 @@ const TOOLS: McpTool[] = [
               ? `distinct_values sampled ${profile.sampled} of ${profile.row_count} rows — indicative, not exhaustive.`
               : null,
             "last_synced_at is when the scraper last saw these rows, not when they last changed.",
+            profile.domain_complete
+              ? null
+              : "distinct_values are from a sample, so a rare value may be missing. A count aggregate reconciles against the true total and reports any shortfall as an \"(other)\" bucket.",
+            profile.row_count === 0
+              ? "This resource is EMPTY — 0 rows. A query against it returns nothing because nothing has ever been recorded, not because the filters excluded it."
+              : null,
           ].filter(Boolean),
         }),
       };
@@ -252,13 +324,14 @@ const TOOLS: McpTool[] = [
       const resource = resolveResource(ctx.staff, String(args.resource ?? ""));
       const params = toParams(args, resource);
       const result = await listResource(resource, params, ctx.client);
-      return { resource: resource.name, text: json(result) };
+      const note = result.data.length === 0 ? await emptinessNote(resource, ctx) : null;
+      return { resource: resource.name, text: json(note ? { ...result, note } : result) };
     },
   },
   {
     name: "aggregate_resource",
     description:
-      "Group and measure over a resource — 'how many units by occupancy_status', 'total balance by building'. Honours the same filters, ranges and search as query_resource. count is EXACT and reads no rows; sum/avg/min/max scan up to 20,000 rows and set truncated:true if they hit that ceiling. Prefer this over paging rows and counting them yourself.",
+      "Group and measure over a resource — 'how many units by occupancy_status', 'total balance by building', 'utility spend by month'. Honours the same filters, ranges and search as query_resource. Pass `period` to bucket over time (day/week/month/quarter/year) instead of, or as well as, a categorical group_by. count is EXACT and reads no rows; sum/avg/min/max scan up to 20,000 rows and set truncated:true if they hit that ceiling. Prefer this over paging rows and counting them yourself.",
     inputSchema: {
       type: "object",
       properties: {
@@ -267,6 +340,22 @@ const TOOLS: McpTool[] = [
           type: "string",
           description:
             "Column to group by — must be in the resource's groupable list (see describe_resource). Omit for a single total.",
+        },
+        period: {
+          type: "object",
+          description:
+            "Bucket over time. `column` must be one of the resource's period columns (see describe_resource). Combines with group_by to give a series per category.",
+          properties: {
+            column: { type: "string", description: "Period column name, e.g. 'bill_date', 'reported', 'entered'." },
+            interval: { type: "string", enum: [...PERIOD_INTERVALS], description: "Bucket size (default month)." },
+            timezone: {
+              type: "string",
+              description:
+                "IANA zone for bucketing TIMESTAMP columns (default America/Chicago, the property's zone). Ignored for plain DATE columns, which have no timezone.",
+            },
+          },
+          required: ["column"],
+          additionalProperties: false,
         },
         metric: {
           type: "string",
@@ -302,23 +391,38 @@ const TOOLS: McpTool[] = [
         }
       }
 
+      const period = resolvePeriodArg(resource, args.period);
+
       // A count grouping needs the domain of the group column. Learn it from
       // the data rather than asking the caller — an omitted value would show up
-      // as a missing bucket, which reads like a real zero.
+      // as a missing bucket, which reads like a real zero. The domain comes
+      // from a sample, so the engine reconciles against the true total and
+      // emits an "(other)" bucket for anything the sample missed.
       let groupValues: (string | null)[] = [];
+      let domainComplete = true;
       if (groupBy) {
         const profile = await describeResourceData(resource, ctx.client);
         groupValues = (profile.distinct_values[groupBy] ?? []).map((d) => d.value);
+        domainComplete = profile.domain_complete;
         if (groupValues.length === 0) groupValues = [null];
       }
 
       const result = await aggregateResource(
         resource,
         toParams(args, resource),
-        { groupBy, groupValues, metric, measure },
+        { groupBy, groupValues, metric, measure, period },
         ctx.client,
       );
-      return { resource: resource.name, text: json(result) };
+      const notes = [
+        !domainComplete && metric === "count"
+          ? `Group values were learned from a sample of ${resource.name}; any row outside that sample is counted in the "(other)" bucket rather than dropped.`
+          : null,
+        // "No bucket held anything" — not "no buckets came back". A grouped
+        // count over an empty table returns one bucket of zero, which would
+        // otherwise slip past this check and read as a real zero.
+        result.buckets.every((b) => b.count === 0) ? await emptinessNote(resource, ctx) : null,
+      ].filter(Boolean);
+      return { resource: resource.name, text: json(notes.length ? { ...result, notes } : result) };
     },
   },
   {
@@ -541,6 +645,7 @@ const PROMPTS: McpPrompt[] = [
         "2. aggregate_resource grouping by `status`, then by `priority`, to size the backlog.",
         "3. query_resource with a `reported_to` range to pull the oldest still-open orders, sorted by `date_reported` ascending.",
         "4. Group by `category` and by `technician` to show where the backlog sits.",
+        "5. For the trend, aggregate_resource with period { column: \"reported\", interval: \"month\" } and group_by `status` — that separates a backlog that is GROWING from one that is merely old.",
         "",
         "`date_completed` is entered by hand: a blank means nobody typed it, not that the job is unfinished. Say which you are reporting.",
       ].join("\n"),
@@ -576,10 +681,11 @@ const PROMPTS: McpPrompt[] = [
         `Summarise utility spend from ${args.from ?? "<from>"} to ${args.to ?? "<to>"}.`,
         "",
         `1. aggregate_resource on \`mlgw/bills\` with ranges { bill_date_from: "${args.from ?? ""}", bill_date_to: "${args.to ?? ""}" }, metric sum, measure \`amount_due\`.`,
-        "2. Repeat per utility: `electric_total`, `gas_total`, `water_total`, `sewer_total`.",
-        "3. Repeat with the `_usage` measures. Spend and consumption move apart when rates change — report both or neither.",
-        "4. aggregate_resource group_by `is_house_account` on `mlgw/accounts` to separate common-area accounts from unit accounts.",
-        "5. For a per-unit view use aggregate_related from `units` over the `utility_accounts` relation — but note that relation is matched BY ADDRESS, so an unmatched account is invisible to it. Check the `(unmatched)` bucket it returns.",
+        `2. Add period { column: "bill_date", interval: "month" } to the same call for the month-by-month trend. Gaps come back as explicit zeros — a zero month is a billing gap, not a cheap month, so check it before calling it a saving.`,
+        "3. Repeat per utility: `electric_total`, `gas_total`, `water_total`, `sewer_total`.",
+        "4. Repeat with the `_usage` measures. Spend and consumption move apart when rates change — report both or neither.",
+        "5. aggregate_resource group_by `is_house_account` on `mlgw/accounts` to separate common-area accounts from unit accounts.",
+        "6. For a per-unit view use aggregate_related from `units` over the `utility_accounts` relation — but note that relation is matched BY ADDRESS, so an unmatched account is invisible to it. Check the `(unmatched)` bucket it returns.",
       ].join("\n"),
   },
   {
@@ -596,8 +702,9 @@ const PROMPTS: McpPrompt[] = [
         "",
         `1. aggregate_resource on \`entry-logs\` with ranges { entered_from: "${args.from ?? ""}"${args.to ? `, entered_to: "${args.to}"` : ""} }, group_by \`entry_type\`.`,
         "2. Group by `scanner_id` to show which gate.",
-        "3. query_resource on `entry-logs` over the same range, sorted by `entered_at`, for the individual scans.",
-        "4. For guest entries, follow the `guest_pass` relation — a null guest_pass_id means a resident scan, not a missing pass.",
+        "3. For a by-night breakdown add period { column: \"entered\", interval: \"day\" }. That column is a TIMESTAMP, so it buckets in the property's local zone — a 10:30pm scan belongs to that evening, not to the next UTC day.",
+        "4. query_resource on `entry-logs` over the same range, sorted by `entered_at`, for the individual scans.",
+        "5. For guest entries, follow the `guest_pass` relation — a null guest_pass_id means a resident scan, not a missing pass.",
         "",
         "Report residents by unit rather than by name unless the question is about a specific person.",
       ].join("\n"),
@@ -674,6 +781,7 @@ function catalogText(staff: McpStaff): string {
       groupable: r.groupable,
       measures: r.measures,
       sortable: r.sortable,
+      periods: Object.entries(r.periods).map(([name, p]) => ({ column: name, kind: p.kind })),
       relations: r.relations.map((rel) => ({
         name: rel.name, target: rel.resource, kind: rel.kind, note: rel.note,
       })),

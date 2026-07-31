@@ -17,6 +17,16 @@ import {
   requireResmanApiKey,
   tokenForbiddenForResource,
 } from "./resman-api-auth";
+import {
+  buildPeriodBuckets,
+  calendarInZone,
+  keyForValue,
+  MAX_PERIOD_BUCKETS,
+  parseCalendarPrefix,
+  type PeriodBucket,
+  type PeriodColumnKind,
+  type PeriodInterval,
+} from "./period-buckets";
 import type { ResmanResource } from "./resman-resources";
 import { createUntypedAdminClient } from "./supabase/admin";
 import type { UntypedSupabase } from "./supabase/types";
@@ -327,7 +337,7 @@ const DISTINCT_SAMPLE = 5_000;
 export async function describeResourceData(
   resource: ResmanResource,
   client: UntypedSupabase = pmClient(),
-): Promise<ResourceProfile & { sampled: number }> {
+): Promise<ResourceProfile & { sampled: number; domain_complete: boolean }> {
   const { count, error: countError } = await client
     .from(resource.table)
     .select(resource.idColumn, { count: "exact", head: true });
@@ -373,12 +383,18 @@ export async function describeResourceData(
     last_synced_at: lastSynced,
     distinct_values: distinct,
     sampled,
+    // The sample saw every row, so the reported domains are exhaustive rather
+    // than indicative. When false, a count aggregate's "(other)" bucket is what
+    // accounts for any value the sample missed.
+    domain_complete: resource.groupable.length === 0 || sampled >= (count ?? 0),
   };
 }
 
 /** A single aggregate bucket. `value` is null for a metric with nothing to measure. */
 export interface AggregateBucket {
   group: string | null;
+  /** Calendar bucket label, when the aggregate is bucketed over time. */
+  period?: string;
   count: number;
   value?: number | null;
 }
@@ -393,7 +409,14 @@ export interface AggregateResult {
   scanned: number;
   /** True when the measure scan hit its cap — the numbers are then INCOMPLETE. */
   truncated: boolean;
+  /** The time bucketing applied, when any. */
+  period?: { column: string; interval: PeriodInterval; timezone: string | null };
+  /** Rows matching the filters, regardless of which bucket they landed in. */
+  total?: number;
 }
+
+/** Bucket label for rows the declared group domain did not account for. */
+const OTHER_BUCKET = "(other)";
 
 /** Hard ceiling on rows a measure aggregate will pull to compute in-process. */
 const AGGREGATE_SCAN_CAP = 20_000;
@@ -415,6 +438,20 @@ const AGGREGATE_SCAN_CAP = 20_000;
  * Group values come from the caller-supplied `groupValues` (normally taken from
  * describe_resource's distincts), so this never has to guess the domain.
  */
+export interface PeriodSpec {
+  column: string;
+  kind: PeriodColumnKind;
+  interval: PeriodInterval;
+  timezone: string;
+}
+
+/**
+ * A supabase-js query builder. `UntypedSupabase.from` returns `any`, so this is
+ * an alias for readability rather than real type safety — the runtime shape is
+ * the PostgREST filter builder.
+ */
+type QueryBuilder = ReturnType<ReturnType<UntypedSupabase["from"]>["select"]>;
+
 export async function aggregateResource(
   resource: ResmanResource,
   searchParams: URLSearchParams,
@@ -423,6 +460,7 @@ export async function aggregateResource(
     groupValues: readonly (string | null)[];
     metric: "count" | "sum" | "avg" | "min" | "max";
     measure: string | null;
+    period?: PeriodSpec | null;
   },
   client: UntypedSupabase = pmClient(),
 ): Promise<AggregateResult> {
@@ -437,55 +475,140 @@ export async function aggregateResource(
     return query;
   };
 
-  const base = { resource: resource.name, group_by: opts.groupBy, metric: opts.metric, measure: opts.measure };
+  const period = opts.period ?? null;
+  const base = {
+    resource: resource.name,
+    group_by: opts.groupBy,
+    metric: opts.metric,
+    measure: opts.measure,
+    ...(period
+      ? {
+          period: {
+            column: period.column,
+            interval: period.interval,
+            // A plain DATE has no timezone, and reporting one would imply a
+            // conversion that did not happen.
+            timezone: period.kind === "timestamp" ? period.timezone : null,
+          },
+        }
+      : {}),
+  };
+
+  // Time buckets are resolved up front so both strategies below share them.
+  let periodBuckets: PeriodBucket[] = [];
+  if (period) {
+    periodBuckets = await resolvePeriodBuckets(resource, searchParams, period, applyPredicates, client);
+  }
+
+  /**
+   * Rows matching the filters, irrespective of bucket.
+   *
+   * This is the backstop for a real hole in the count strategy: group values
+   * come from `describeResourceData`, which learns them from a 5,000-row
+   * SAMPLE. A value outside that sample would simply have no bucket, and a
+   * missing bucket reads exactly like a genuine zero — the failure that
+   * describe_resource exists to prevent. Reconciling against the true total
+   * turns every unaccounted row into an explicit "(other)" bucket instead.
+   *
+   * One HEAD query, no rows transferred.
+   */
+  const totalOf = async (): Promise<number | null> => {
+    const { count, error } = await applyPredicates(
+      client.from(resource.table).select(resource.idColumn, { count: "exact", head: true }),
+    );
+    if (error) throw error;
+    return count ?? null;
+  };
 
   if (opts.metric === "count") {
-    const buckets: AggregateBucket[] = [];
     const groups: (string | null)[] = opts.groupBy ? [...opts.groupValues] : [null];
-    for (const group of groups) {
+    const slots: { group: string | null; bucket: PeriodBucket | null }[] = [];
+    for (const bucket of period ? periodBuckets : [null]) {
+      for (const group of groups) slots.push({ group, bucket });
+    }
+    if (slots.length > MAX_PERIOD_BUCKETS * 4) {
+      throw new Error(
+        `That grouping would need ${slots.length} separate counts. Use a coarser interval, narrow the range, or drop the group_by.`,
+      );
+    }
+
+    const buckets: AggregateBucket[] = [];
+    for (const slot of slots) {
       let q = applyPredicates(
         client.from(resource.table).select(resource.idColumn, { count: "exact", head: true }),
       );
       if (opts.groupBy) {
-        q = group === null ? q.is(opts.groupBy, null) : q.eq(opts.groupBy, group);
+        q = slot.group === null ? q.is(opts.groupBy, null) : q.eq(opts.groupBy, slot.group);
+      }
+      // Half-open [from, to): `lt`, never `lte`, or a row on a boundary is
+      // counted in two adjacent periods.
+      if (slot.bucket && period) {
+        q = q.gte(period.column, slot.bucket.from).lt(period.column, slot.bucket.to);
       }
       const { count, error } = await q;
       if (error) throw error;
-      buckets.push({ group, count: count ?? 0 });
+      buckets.push({
+        group: slot.group,
+        ...(slot.bucket ? { period: slot.bucket.key } : {}),
+        count: count ?? 0,
+      });
     }
-    buckets.sort((a, b) => b.count - a.count);
-    return { ...base, buckets, scanned: 0, truncated: false };
+
+    const total = await totalOf();
+    const accounted = buckets.reduce((n, b) => n + b.count, 0);
+    if (total !== null && total > accounted) {
+      // Rows whose group value fell outside the sampled domain, or whose period
+      // column is null so they belong to no calendar bucket.
+      buckets.push({ group: OTHER_BUCKET, count: total - accounted });
+    }
+
+    sortBuckets(buckets, opts.metric, Boolean(period));
+    return { ...base, buckets, scanned: 0, truncated: false, ...(total !== null ? { total } : {}) };
   }
 
   if (!opts.measure) throw new Error(`Metric "${opts.metric}" requires a measure column.`);
-  const columns = opts.groupBy ? [opts.groupBy, opts.measure] : [opts.measure];
+  const columns = [opts.measure];
+  if (opts.groupBy) columns.push(opts.groupBy);
+  if (period) columns.push(period.column);
   const { data, error } = await applyPredicates(
-    client.from(resource.table).select(columns.join(",")),
+    client.from(resource.table).select([...new Set(columns)].join(",")),
   ).limit(AGGREGATE_SCAN_CAP);
   if (error) throw error;
 
   const rows = (data ?? []) as Record<string, unknown>[];
-  const acc = new Map<string | null, { n: number; sum: number; min: number; max: number }>();
+  // A measure scan derives its buckets from the rows themselves, so it is
+  // immune to the sampled-domain problem the count path has to reconcile.
+  const acc = new Map<string, { group: string | null; period?: string; n: number; sum: number; min: number; max: number }>();
   for (const row of rows) {
     const group = opts.groupBy ? ((row[opts.groupBy] ?? null) as string | null) : null;
+    let periodLabel: string | undefined;
+    if (period) {
+      const raw = row[period.column];
+      if (raw === null || raw === undefined || raw === "") continue;
+      periodLabel = keyForValue(String(raw), period.interval, period.kind, period.timezone) ?? undefined;
+      if (!periodLabel) continue;
+    }
     // Null/empty must be rejected BEFORE Number(): `Number(null)` and
     // `Number("")` are both 0, not NaN, so a Number.isFinite guard alone lets
     // every missing value in as a real zero — which silently halves an average
     // over a nullable column. SQL excludes nulls from aggregates; so do we.
-    const raw = row[opts.measure];
-    if (raw === null || raw === undefined || raw === "") continue;
-    const value = Number(raw);
+    const rawMeasure = row[opts.measure];
+    if (rawMeasure === null || rawMeasure === undefined || rawMeasure === "") continue;
+    const value = Number(rawMeasure);
     if (!Number.isFinite(value)) continue;
-    const cur = acc.get(group) ?? { n: 0, sum: 0, min: Infinity, max: -Infinity };
+
+    const key = `${periodLabel ?? ""} ${group ?? ""}`;
+    const cur = acc.get(key) ?? { group, period: periodLabel, n: 0, sum: 0, min: Infinity, max: -Infinity };
     cur.n += 1;
     cur.sum += value;
     cur.min = Math.min(cur.min, value);
     cur.max = Math.max(cur.max, value);
-    acc.set(group, cur);
+    acc.set(key, cur);
   }
 
-  const buckets: AggregateBucket[] = [...acc.entries()].map(([group, a]) => ({
-    group,
+  const buckets: AggregateBucket[] = [...acc.values()].map((a) => ({
+    group: a.group,
+    ...(a.period ? { period: a.period } : {}),
     count: a.n,
     value:
       opts.metric === "sum" ? a.sum
@@ -493,9 +616,82 @@ export async function aggregateResource(
       : opts.metric === "min" ? a.min
       : a.max,
   }));
-  buckets.sort((x, y) => (y.value ?? 0) - (x.value ?? 0));
+
+  // Zero-fill the gaps in a time series. A measure scan builds its buckets from
+  // the rows it saw, so a month with no bills simply vanishes — and a series
+  // that silently skips a month reads as continuous, hiding exactly the gap a
+  // trend question is asking about. The count path already fills, because it
+  // iterates the calendar; this makes the two agree.
+  //
+  // Only when there is no categorical group_by: filling a grouped series would
+  // need the group domain, which a measure scan never learns.
+  if (period && !opts.groupBy) {
+    const present = new Set(buckets.map((b) => b.period));
+    for (const bucket of periodBuckets) {
+      if (!present.has(bucket.key)) {
+        buckets.push({ group: null, period: bucket.key, count: 0, value: null });
+      }
+    }
+  }
+  sortBuckets(buckets, opts.metric, Boolean(period));
 
   return { ...base, buckets, scanned: rows.length, truncated: rows.length >= AGGREGATE_SCAN_CAP };
+}
+
+/**
+ * Time series read chronologically; everything else reads largest-first.
+ * Sorting a monthly series by value would make a trend unreadable.
+ */
+function sortBuckets(buckets: AggregateBucket[], metric: string, timeSeries: boolean): void {
+  if (timeSeries) {
+    buckets.sort((a, b) =>
+      (a.period ?? "").localeCompare(b.period ?? "") || String(a.group ?? "").localeCompare(String(b.group ?? "")),
+    );
+    return;
+  }
+  buckets.sort((a, b) => (metric === "count" ? b.count - a.count : (b.value ?? 0) - (a.value ?? 0)));
+}
+
+/**
+ * Work out which calendar buckets to build.
+ *
+ * Prefers the caller's own range bounds on the period column — they asked for a
+ * window, so that is the window. Otherwise the data's own min/max is used, so
+ * "spend by month" over an unbounded table still returns the months that exist
+ * rather than requiring the caller to know them first.
+ */
+async function resolvePeriodBuckets(
+  resource: ResmanResource,
+  searchParams: URLSearchParams,
+  period: PeriodSpec,
+  applyPredicates: (q: QueryBuilder) => QueryBuilder,
+  client: UntypedSupabase,
+): Promise<PeriodBucket[]> {
+  const bounds = resolveRanges(resource, searchParams).filter((b) => b.column === period.column);
+  let from = bounds.find((b) => b.op === "gte")?.value ?? null;
+  let to = bounds.find((b) => b.op === "lte")?.value ?? null;
+
+  const edge = async (ascending: boolean): Promise<string | null> => {
+    // Postgres sorts NULLs last ascending and FIRST descending, so without the
+    // not-null filter the descending edge is a null row, not the newest date.
+    const { data, error } = await applyPredicates(client.from(resource.table).select(period.column))
+      .not(period.column, "is", null)
+      .order(period.column, { ascending })
+      .limit(1);
+    if (error) throw error;
+    const value = (data as Record<string, unknown>[] | null)?.[0]?.[period.column];
+    return value === null || value === undefined ? null : String(value);
+  };
+
+  if (!from) from = await edge(true);
+  if (!to) to = await edge(false);
+  if (!from || !to) return [];
+
+  const first = period.kind === "date" ? parseCalendarPrefix(from) : calendarInZone(from, period.timezone);
+  const last = period.kind === "date" ? parseCalendarPrefix(to) : calendarInZone(to, period.timezone);
+  if (!first || !last) return [];
+
+  return buildPeriodBuckets(first, last, period.interval, period.kind, period.timezone);
 }
 
 export interface RelatedAggregateResult extends AggregateResult {

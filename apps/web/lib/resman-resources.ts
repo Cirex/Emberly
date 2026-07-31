@@ -90,6 +90,16 @@ interface ResmanResourceDef<T extends TableName> {
   groupable?: readonly ColumnOf<T>[];
   /** Numeric columns sum/avg/min/max may target. */
   measures?: readonly ColumnOf<T>[];
+  /**
+   * Date columns a time-series aggregate may bucket by (day/week/month/…),
+   * keyed by the name the caller uses.
+   *
+   * `kind` is not cosmetic. A "date" is a plain calendar date with no timezone,
+   * and converting it would be wrong. A "timestamp" is an instant, and which
+   * day it falls on depends on where you stand — those are bucketed in the
+   * property's local zone, because a UTC boundary cuts a Memphis night in half.
+   */
+  periods?: Readonly<Record<string, { column: ColumnOf<T>; kind: "date" | "timestamp" }>>;
   /** Columns the caller may sort by (beyond the resource's default order). */
   sortable?: readonly ColumnOf<T>[];
   /**
@@ -140,6 +150,7 @@ export interface ResmanResource {
   ranges: Readonly<Record<string, string>>;
   groupable: readonly string[];
   measures: readonly string[];
+  periods: Readonly<Record<string, { column: string; kind: "date" | "timestamp" }>>;
   sortable: readonly string[];
   relations: readonly ResmanRelation[];
 }
@@ -162,6 +173,7 @@ function defineResource<T extends TableName>(def: ResmanResourceDef<T>): ResmanR
     ranges: def.ranges ?? {},
     groupable: def.groupable ?? [],
     measures: def.measures ?? [],
+    periods: def.periods ?? {},
     // The default sort column is always sortable — asking for the order the
     // resource already uses should never be rejected.
     sortable: def.sortable ?? [def.order.column],
@@ -301,6 +313,11 @@ export const unitsResource = defineResource({
     "deposit_held", "deposit_required", "times_late", "bedrooms", "bathrooms",
   ],
   sortable: ["number", "market_rent", "lease_rent", "balance", "lease_end_date", "move_in_date"],
+  periods: {
+    move_in: { column: "move_in_date", kind: "date" },
+    move_out: { column: "move_out_date", kind: "date" },
+    lease_end: { column: "lease_end_date", kind: "date" },
+  },
   relations: [
     { name: "current_lease", resource: "leases", localColumn: "current_lease_id",
       foreignColumn: "resman_lease_id", kind: "one",
@@ -350,6 +367,12 @@ export const leasesResource = defineResource({
   groupable: ["status", "approval_status", "is_current_lease", "is_most_recent_lease", "leasing_agent", "resman_property_id"],
   measures: ["market_rent", "resident_rent", "hap_rent", "monthly_charge", "balance", "collection_balance"],
   sortable: ["start_date", "end_date", "balance", "move_out_date"],
+  periods: {
+    start: { column: "start_date", kind: "date" },
+    end: { column: "end_date", kind: "date" },
+    move_out: { column: "move_out_date", kind: "date" },
+    signed: { column: "signed_date", kind: "date" },
+  },
   relations: [
     { name: "unit", resource: "units", localColumn: "resman_unit_id", foreignColumn: "resman_unit_id", kind: "one" },
     { name: "residents", resource: "residents", localColumn: "resman_lease_id", foreignColumn: "resman_lease_id", kind: "many" },
@@ -428,6 +451,7 @@ export const transactionsResource = defineResource({
   groupable: ["transaction_type", "category", "resman_property_id"],
   measures: ["charges", "credits", "balance"],
   sortable: ["date", "charges", "credits"],
+  periods: { date: { column: "date", kind: "date" } },
   relations: [
     { name: "unit", resource: "units", localColumn: "resman_unit_id", foreignColumn: "resman_unit_id", kind: "one" },
     { name: "lease", resource: "leases", localColumn: "resman_lease_id", foreignColumn: "resman_lease_id", kind: "one" },
@@ -468,6 +492,11 @@ export const workOrdersResource = defineResource({
   ],
   measures: [],
   sortable: ["date_reported", "date_scheduled", "date_completed", "number"],
+  periods: {
+    reported: { column: "date_reported", kind: "date" },
+    scheduled: { column: "date_scheduled", kind: "date" },
+    completed: { column: "date_completed", kind: "date" },
+  },
   relations: [
     { name: "unit", resource: "units", localColumn: "resman_unit_id", foreignColumn: "resman_unit_id", kind: "one" },
     { name: "lease", resource: "leases", localColumn: "resman_lease_id", foreignColumn: "resman_lease_id", kind: "one" },
@@ -559,6 +588,10 @@ export const mlgwBillsResource = defineResource({
     "solid_waste_fee_total", "sewer_charge_total", "average_temperature",
   ],
   sortable: ["bill_date", "due_date", "amount_due"],
+  periods: {
+    bill_date: { column: "bill_date", kind: "date" },
+    due_date: { column: "due_date", kind: "date" },
+  },
   relations: [
     { name: "account", resource: "mlgw/accounts", localColumn: "mlgw_account_id",
       foreignColumn: "id", kind: "one" },
@@ -591,6 +624,7 @@ export const mlgwPaymentsResource = defineResource({
   groupable: ["status", "payment_method", "resman_property_id"],
   measures: ["amount"],
   sortable: ["paid_date", "amount"],
+  periods: { paid_date: { column: "paid_date", kind: "date" } },
   relations: [
     { name: "account", resource: "mlgw/accounts", localColumn: "mlgw_account_id",
       foreignColumn: "id", kind: "one" },
@@ -627,6 +661,10 @@ export const guestPassesResource = defineResource({
   ranges: { created: "created_at", expires: "expires_at", used: "used_at" },
   groupable: ["status", "email_delivery_status"],
   sortable: ["created_at", "expires_at", "used_at"],
+  periods: {
+    created: { column: "created_at", kind: "timestamp" },
+    used: { column: "used_at", kind: "timestamp" },
+  },
   relations: [
     { name: "entries", resource: "entry-logs", localColumn: "id",
       foreignColumn: "guest_pass_id", kind: "many",
@@ -660,6 +698,7 @@ export const entryLogsResource = defineResource({
   // by how often they come and go. Search it instead.
   groupable: ["entry_type", "scanner_id", "property_name"],
   sortable: ["entered_at"],
+  periods: { entered: { column: "entered_at", kind: "timestamp" } },
   relations: [
     { name: "guest_pass", resource: "guest-passes", localColumn: "guest_pass_id",
       foreignColumn: "id", kind: "one",

@@ -3,7 +3,7 @@ const test = require("node:test");
 
 const { handleMcpMessage } = require("../lib/mcp/server");
 const { redactAuditArgs } = require("../lib/access-tokens");
-const { aggregateRelated } = require("../lib/resman-api");
+const { aggregateRelated, aggregateResource } = require("../lib/resman-api");
 const { unitsResource, transactionsResource, RESMAN_RESOURCES } = require("../lib/resman-resources");
 
 /**
@@ -282,6 +282,171 @@ test("every resource declares at least one capability beyond listing", () => {
       r.measures.length + r.relations.length;
     assert.ok(total > 0, `${r.name} declares no capabilities — it can only be listed`);
   }
+});
+
+// ------------------------------------------- in-memory PostgREST-ish fake ---
+
+/**
+ * A client that actually applies the predicates, so the count strategy (one
+ * HEAD query per bucket) is exercised rather than stubbed.
+ */
+function memClient(tables) {
+  const build = (rows, state) => ({
+    eq: (c, v) => build(rows.filter((r) => String(r[c]) === String(v)), state),
+    is: (c, v) => build(rows.filter((r) => (v === null ? r[c] === null || r[c] === undefined : r[c] === v)), state),
+    not: (c) => build(rows.filter((r) => r[c] !== null && r[c] !== undefined), state),
+    gte: (c, v) => build(rows.filter((r) => r[c] != null && String(r[c]) >= String(v)), state),
+    lte: (c, v) => build(rows.filter((r) => r[c] != null && String(r[c]) <= String(v)), state),
+    lt: (c, v) => build(rows.filter((r) => r[c] != null && String(r[c]) < String(v)), state),
+    or: () => build(rows, state),
+    order: (c, opts) => {
+      const sorted = [...rows].sort((a, b) => String(a[c] ?? "").localeCompare(String(b[c] ?? "")));
+      return build(opts && opts.ascending === false ? sorted.reverse() : sorted, state);
+    },
+    limit: (n) => build(rows.slice(0, n), state),
+    range: () => build(rows, state),
+    maybeSingle: () => Promise.resolve({ data: rows[0] ?? null, error: null }),
+    then: (resolve) => resolve({ data: state.head ? null : rows, error: null, count: rows.length }),
+  });
+  return {
+    from: (table) => ({
+      select: (_cols, opts) => build(tables[table] ?? [], { head: Boolean(opts && opts.head) }),
+    }),
+  };
+}
+
+// ------------------------------------------------ sampled-domain backstop ---
+
+test("a group value outside the sampled domain lands in (other), not nowhere", async () => {
+  // describe_resource learns group values from a 5,000-row SAMPLE. Before the
+  // reconciliation, a value the sample missed simply had no bucket — and a
+  // missing bucket reads exactly like a genuine zero.
+  const units = [
+    ...Array.from({ length: 5 }, () => ({ resman_unit_id: "u", occupancy_status: "Occupied" })),
+    ...Array.from({ length: 3 }, () => ({ resman_unit_id: "u", occupancy_status: "Vacant" })),
+    ...Array.from({ length: 2 }, () => ({ resman_unit_id: "u", occupancy_status: "Notice" })),
+  ];
+  const result = await aggregateResource(
+    unitsResource,
+    new URLSearchParams(),
+    // "Notice" deliberately absent — this is what a sample that missed it looks like.
+    { groupBy: "occupancy_status", groupValues: ["Occupied", "Vacant"], metric: "count", measure: null },
+    memClient({ resman_units: units }),
+  );
+  const byGroup = Object.fromEntries(result.buckets.map((b) => [b.group, b.count]));
+  assert.equal(byGroup.Occupied, 5);
+  assert.equal(byGroup.Vacant, 3);
+  assert.equal(byGroup["(other)"], 2, "the unaccounted rows are surfaced, not lost");
+  assert.equal(result.total, 10, "buckets reconcile against the true total");
+});
+
+test("no (other) bucket appears when the domain accounts for every row", async () => {
+  const units = [
+    { resman_unit_id: "u", occupancy_status: "Occupied" },
+    { resman_unit_id: "u", occupancy_status: "Vacant" },
+  ];
+  const result = await aggregateResource(
+    unitsResource,
+    new URLSearchParams(),
+    { groupBy: "occupancy_status", groupValues: ["Occupied", "Vacant"], metric: "count", measure: null },
+    memClient({ resman_units: units }),
+  );
+  assert.ok(!result.buckets.some((b) => b.group === "(other)"));
+});
+
+// ------------------------------------------------------ period bucketing ---
+
+test("a count aggregate buckets by month in chronological order", async () => {
+  const rows = [
+    { resman_ledger_entry_id: "1", date: "2026-01-05", charges: 100 },
+    { resman_ledger_entry_id: "2", date: "2026-01-20", charges: 50 },
+    { resman_ledger_entry_id: "3", date: "2026-03-02", charges: 25 },
+  ];
+  const result = await aggregateResource(
+    transactionsResource,
+    new URLSearchParams(),
+    {
+      groupBy: null, groupValues: [], metric: "count", measure: null,
+      period: { column: "date", kind: "date", interval: "month", timezone: "America/Chicago" },
+    },
+    memClient({ resman_transactions: rows }),
+  );
+  assert.deepEqual(
+    result.buckets.map((b) => [b.period, b.count]),
+    [["2026-01", 2], ["2026-02", 0], ["2026-03", 1]],
+    "February is present with a zero — a gap in a series is information",
+  );
+  assert.equal(result.period.interval, "month");
+  assert.equal(result.period.timezone, null, "a DATE column reports no timezone, because none was applied");
+});
+
+test("a measure aggregate buckets by month and excludes nulls", async () => {
+  const rows = [
+    { resman_ledger_entry_id: "1", date: "2026-01-05", charges: 100 },
+    { resman_ledger_entry_id: "2", date: "2026-01-20", charges: null },
+    { resman_ledger_entry_id: "3", date: "2026-02-02", charges: 40 },
+  ];
+  const result = await aggregateResource(
+    transactionsResource,
+    new URLSearchParams(),
+    {
+      groupBy: null, groupValues: [], metric: "sum", measure: "charges",
+      period: { column: "date", kind: "date", interval: "month", timezone: "America/Chicago" },
+    },
+    memClient({ resman_transactions: rows }),
+  );
+  assert.deepEqual(result.buckets.map((b) => [b.period, b.value]), [["2026-01", 100], ["2026-02", 40]]);
+});
+
+test("period only accepts a DECLARED period column", async () => {
+  const res = await handleMcpMessage(
+    {
+      id: 20, method: "tools/call",
+      params: { name: "aggregate_resource", arguments: { resource: "units", period: { column: "created_at" } } },
+    },
+    { staff: staff(["*"]), client: fakeClient() },
+  );
+  assert.equal(res.result.isError, true);
+  assert.match(res.result.content[0].text, /not a period column on units/);
+});
+
+test("period rejects an unknown interval and an unknown timezone", async () => {
+  const bad = async (period) =>
+    (await handleMcpMessage(
+      { id: 21, method: "tools/call", params: { name: "aggregate_resource", arguments: { resource: "work-orders", period } } },
+      { staff: staff(["*"]), client: fakeClient() },
+    )).result.content[0].text;
+  assert.match(await bad({ column: "reported", interval: "fortnight" }), /Unknown interval/);
+  assert.match(await bad({ column: "reported", timezone: "Mars/Olympus" }), /Unknown timezone/);
+});
+
+// ------------------------------------------------------ empty vs filtered ---
+
+test("an empty resource says so instead of returning a bare empty list", async () => {
+  // entry_logs is empty in production, so "who came through the gate last
+  // night" returns [] — which reads as "nobody came through" rather than
+  // "the scanners have never been used".
+  const res = await handleMcpMessage(
+    { id: 22, method: "tools/call", params: { name: "query_resource", arguments: { resource: "entry-logs" } } },
+    { staff: staff(["*"]), client: memClient({ entry_logs: [] }) },
+  );
+  const payload = JSON.parse(res.result.content[0].text);
+  assert.deepEqual(payload.data, []);
+  assert.match(payload.note, /EMPTY/);
+  assert.match(payload.note, /not a filtered-out result/);
+});
+
+test("a table with rows but no matches gets no emptiness note", async () => {
+  const res = await handleMcpMessage(
+    {
+      id: 23, method: "tools/call",
+      params: { name: "query_resource", arguments: { resource: "entry-logs", filters: { entry_type: "guest" } } },
+    },
+    { staff: staff(["*"]), client: memClient({ entry_logs: [{ id: "1", entry_type: "resident" }] }) },
+  );
+  const payload = JSON.parse(res.result.content[0].text);
+  assert.deepEqual(payload.data, []);
+  assert.equal(payload.note, undefined, "a genuine no-match must not be mislabelled as an empty table");
 });
 
 test("the money and gate tables carry the capabilities their questions need", () => {

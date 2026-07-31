@@ -22,7 +22,7 @@ gate-log tables were list-only, which made utility spend and gate activity unask
 | `list_resources` | What exists, and what each resource can do. Start here. |
 | `describe_resource` | One resource in depth — columns, capabilities, **the values its columns actually hold**, row count, freshness. |
 | `query_resource` | Rows: filters, ranges, substring search, sort, projection, paging. |
-| `aggregate_resource` | Counting and totalling within one resource. One call instead of paging a table. |
+| `aggregate_resource` | Counting and totalling within one resource, optionally **bucketed over time**. |
 | `aggregate_related` | Totalling one resource **grouped by another's** attribute — charges by building, work orders by occupancy. |
 | `get_resource` | One row by id. |
 | `related_resource` | Walk a declared relation to another resource. |
@@ -58,6 +58,10 @@ Clients that support MCP **prompts** can skip straight to a canned analysis; see
 `truncated: true` if they hit that ceiling. **Check that flag.** A truncated average is not a
 smaller average — it is a wrong one.
 
+Counts reconcile against the true row total and report it as `total`. Anything the group domain
+did not account for appears as an explicit **`(other)`** bucket — see
+[Sampled group domains](#sampled-group-domains).
+
 Nulls are excluded, as in SQL. A unit with no `market_rent` does not count as £0.
 
 Filters, ranges and search all apply to aggregates exactly as they do to queries:
@@ -66,6 +70,51 @@ Filters, ranges and search all apply to aggregates exactly as they do to queries
 { "resource": "units", "group_by": "resman_building_id", "metric": "avg",
   "measure": "market_rent", "filters": { "occupancy_status": "Occupied" } }
 ```
+
+---
+
+## Time series
+
+`period` buckets an aggregate over a calendar interval, so a trend is one call
+instead of twelve range-filtered ones:
+
+```json
+{ "resource": "mlgw/bills", "metric": "sum", "measure": "amount_due",
+  "period": { "column": "bill_date", "interval": "month" } }
+```
+
+`interval` is `day` / `week` / `month` (default) / `quarter` / `year`. Weeks start Monday.
+Only columns in a resource's `periods` list are bucketable — `describe_resource` lists them.
+
+It **combines with `group_by`** to give a series per category:
+
+```json
+{ "resource": "work-orders", "metric": "count", "group_by": "status",
+  "period": { "column": "reported", "interval": "month" },
+  "ranges": { "reported_from": "2026-01-01", "reported_to": "2026-06-30" } }
+```
+
+Four things to know:
+
+- **Gaps are filled with explicit zeros.** A month with no rows appears as `count: 0`, not as a
+  missing bucket. A series that silently skips a month reads as continuous, which hides exactly
+  the gap a trend question is asking about.
+- **Buckets are half-open** — `[from, to)` — so a row on a boundary is never counted twice.
+- **Windows come from your ranges** when you give them, and from the data's own min/max when you
+  don't. So "spend by month" works without knowing which months exist.
+- **Over 120 buckets is refused**, not clamped. `count` costs one query per bucket, and a
+  silently shortened window answers a different question than the one asked.
+
+### Dates vs timestamps
+
+The two are bucketed differently, and the difference is declared per column:
+
+- **`date`** — a plain calendar date (`bill_date`, `date_reported`). It carries no timezone, so
+  none is applied. The response reports `timezone: null` to say so.
+- **`timestamp`** — an instant (`entered_at`, `created_at`). Which day it falls on depends on
+  where you stand, so these bucket in **America/Chicago**, the property's zone. A 10:30pm
+  Memphis scan is `04:30Z` the next day; bucketing it in UTC files a Monday night under Tuesday.
+  Override with `timezone` if you need a different one.
 
 ---
 
@@ -247,6 +296,27 @@ MLGW knows nothing about ResMan unit ids; the link is inferred from the service 
 account whose address didn't match is **invisible** to that relation — so a per-unit utility
 figure is a lower bound. `aggregate_related` returns an `(unmatched)` bucket; report it.
 
+### Sampled group domains
+
+`describe_resource` learns each groupable column's values from a **5,000-row sample**, and
+reports `domain_complete`. When that is false, a rare value could be missing from the domain —
+and a **missing bucket reads exactly like a real zero**.
+
+Count aggregates close this: they reconcile the buckets against an exact total and put
+everything unaccounted into an **`(other)`** bucket. If `(other)` is large, the domain missed
+something and you should look before reporting. Measure aggregates build their buckets from the
+rows they scan, so they were never affected.
+
+`(other)` also collects rows whose period column is null — they belong to no calendar bucket.
+
+### An empty table is not a zero
+
+`query_resource` and `aggregate_resource` add a `note` when the resource has **no rows at all**,
+because an empty result otherwise looks identical to a filtered-out one. This is live today:
+`entry-logs` has 0 rows, so "who came through the gate last night" would read as "nobody came
+through" rather than "the scanners have never been used". Repeat the distinction; don't report
+the zero.
+
 ### Manual fields are sparse
 
 Vehicle registration, `holding_unit` and similar are entered by hand in ResMan. A blank means
@@ -292,6 +362,7 @@ searchable: ["title", "notes"],          // full scan — keep short
 ranges:     { reported: "date_reported" },
 groupable:  ["status", "priority"],      // LOW-CARDINALITY only
 measures:   ["market_rent", "balance"],  // numeric only
+periods:    { reported: { column: "date_reported", kind: "date" } },  // kind matters — see below
 sortable:   ["date_reported", "number"],
 relations:  [{ name: "unit", resource: "units",
                localColumn: "resman_unit_id", foreignColumn: "resman_unit_id", kind: "one" }],
@@ -309,6 +380,8 @@ Rules the tests enforce (`apps/web/tests/mcp-capabilities.test.js`,
   target exposes as a filter.
 - **Every resource must declare at least one capability.** A resource reachable only as an
   undifferentiated list is how the MLGW and gate tables sat for a release.
+- **A `periods` entry must name the right `kind`.** `date` for a plain DATE column, `timestamp`
+  for an instant. Getting this wrong shifts every bucket boundary by the UTC offset.
 
 If a new free-text argument is ever added to a tool, add its key to `REDACTED_ARG_KEYS` in
 `apps/web/lib/access-tokens.ts`.

@@ -49,6 +49,7 @@ import {
   getResource,
   listResource,
   scanForSeries,
+  type RelatedFilter,
   type PeriodSpec,
 } from "../resman-api";
 import { RESMAN_RESOURCES, type ResmanResource } from "../resman-resources";
@@ -277,6 +278,83 @@ function assertScope(resource: ResmanResource, raw: unknown): void {
   }
 }
 
+/**
+ * Resolve the `related` argument to a cross-resource filter.
+ *
+ * The target is scope-checked INDEPENDENTLY, exactly as `related_resource`
+ * does: filtering units by a property of work orders reveals something about
+ * work orders, so a token that cannot read them cannot use them as a sieve.
+ */
+function resolveRelatedArg(
+  staff: McpStaff,
+  parent: ResmanResource,
+  raw: unknown,
+): RelatedFilter | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const arg = raw as Record<string, unknown>;
+  const name = String(arg.relation ?? "");
+  const relation = parent.relations.find((r) => r.name === name);
+  if (!relation) {
+    throw new McpToolError(
+      `Unknown relation "${name}" on ${parent.name}. Available: ${parent.relations.map((r) => r.name).join(", ") || "(none)"}.`,
+    );
+  }
+  if (relation.kind !== "many") {
+    throw new McpToolError(
+      `Relation "${name}" is a "one" hop, so filtering by it is just a filter on ${parent.name} itself. Use filters instead.`,
+    );
+  }
+  if (!relation.joinable) {
+    throw new McpToolError(
+      `Relation "${name}" cannot be used as a filter: it is not backed by a foreign key ` +
+      `(${parent.name} -> ${relation.resource} is inferred, not constrained), and the filter is a real join. ` +
+      `Use related_resource to walk it, or aggregate_related to aggregate across it.`,
+    );
+  }
+  const target = resolveResource(staff, relation.resource);
+  const exists = arg.exists === undefined ? true : Boolean(arg.exists);
+
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries((arg.filters ?? {}) as Record<string, unknown>)) {
+    if (value !== undefined && value !== null) params.set(key, String(value));
+  }
+  for (const [key, value] of Object.entries((arg.ranges ?? {}) as Record<string, unknown>)) {
+    if (value !== undefined && value !== null) params.set(key, String(value));
+  }
+  if (typeof arg.scope === "string" && arg.scope) {
+    assertScope(target, arg.scope);
+    params.set("scope", arg.scope);
+  }
+  // "Has no OPEN work order" needs the join filtered BEFORE the null test,
+  // which a left-join-is-null cannot express. Refusing beats answering "has no
+  // work orders at all" to a question about open ones.
+  if (!exists && [...params.keys()].length > 0) {
+    throw new McpToolError(
+      `exists:false asks for rows with NO ${relation.name} at all, so it cannot be combined with filters on them. Drop the child filters, or invert the question.`,
+    );
+  }
+  return { relation, target, exists, params };
+}
+
+const RELATED_SCHEMA = {
+  type: "object",
+  description:
+    "Filter by a property of a RELATED resource — 'units that have an open work order', 'units with no utility account'. Uses a real join, so the count is exact. The related resource is scope-checked separately.",
+  properties: {
+    relation: { type: "string", description: "A declared 'many' relation (see describe_resource)." },
+    exists: {
+      type: "boolean",
+      description:
+        "true (default) = has at least one matching related row. false = has NONE at all, and cannot be combined with child filters.",
+    },
+    scope: { type: "string", description: "A canonical scope on the RELATED resource, e.g. 'open' on work-orders." },
+    filters: { type: "object", additionalProperties: { type: ["string", "boolean"] } },
+    ranges: { type: "object", additionalProperties: { type: ["string", "number"] } },
+  },
+  required: ["relation"],
+  additionalProperties: false,
+} as const;
+
 const TOOLS: McpTool[] = [
   {
     name: "list_resources",
@@ -330,6 +408,7 @@ const TOOLS: McpTool[] = [
           resource: resource.name,
           id_column: resource.idColumn,
           columns: resource.publicColumns,
+          default_columns: resource.defaultColumns.length > 0 ? resource.defaultColumns : "(all)",
           capabilities: {
             filters: resource.filters,
             ranges: Object.keys(resource.ranges).map((p) => `${p}_from / ${p}_to`),
@@ -343,7 +422,9 @@ const TOOLS: McpTool[] = [
             entities: resource.entities,
             scopes: Object.entries(resource.scopes).map(([name, sc]) => ({ name, description: sc.description })),
           },
-          relations: resource.relations,
+          // `joinable` decides whether a hop can be used as a `related` FILTER, not
+          // just walked — surfaced so a caller does not have to try it to find out.
+          relations: resource.relations.map((r) => ({ ...r, joinable: r.joinable === true })),
           // Caveats first: a note that arrives after the number has already
           // been read has not done its job.
           notes_before_you_report: resource.notes,
@@ -395,6 +476,7 @@ const TOOLS: McpTool[] = [
           description:
             "A named CANONICAL subset (see describe_resource 'scopes'), e.g. 'rentable' on units — the correct denominator for any occupancy rate, excluding holding units and units flagged out of the count. Narrows in addition to your own filters; use it rather than reproducing the definition by hand.",
         },
+        related: RELATED_SCHEMA,
         columns: {
           type: "array",
           items: { type: "string" },
@@ -412,14 +494,29 @@ const TOOLS: McpTool[] = [
     async run(args, ctx) {
       const resource = resolveResource(ctx.staff, String(args.resource ?? ""));
       assertScope(resource, args.scope);
+      const related = resolveRelatedArg(ctx.staff, resource, args.related);
       const params = toParams(args, resource);
-      const result = await listResource(resource, params, ctx.client);
+      const result = await listResource(resource, params, ctx.client, false, related);
       if (result.data.length === 0) {
         const note = await emptinessNote(resource, ctx);
         return { resource: resource.name, text: json(note ? { ...result, note } : result) };
       }
       const projected = Array.isArray(args.columns) && args.columns.length > 0;
-      return { resource: resource.name, text: json(fitToBudget(result, resource, projected)) };
+      const payload = fitToBudget(result, resource, projected);
+      // Say what was left out. A trimmed row set that looks complete is the
+      // same failure as a filtered result that looks like a real zero.
+      const omitted = !projected && resource.defaultColumns.length > 0
+        ? resource.publicColumns.filter((c) => !resource.defaultColumns.includes(c))
+        : [];
+      return {
+        resource: resource.name,
+        text: json(omitted.length === 0 ? payload : {
+          ...payload,
+          columns_note:
+            `Returned this resource's default ${resource.defaultColumns.length} of ${resource.publicColumns.length} columns. ` +
+            `Omitted: ${omitted.join(", ")}. Pass 'columns' for specific ones, or ["*"] for all.`,
+        }),
+      };
     },
   },
   {
@@ -465,6 +562,7 @@ const TOOLS: McpTool[] = [
           description:
             "A named CANONICAL subset (see describe_resource 'scopes'), e.g. 'rentable' on units — the correct denominator for any occupancy rate, excluding holding units and units flagged out of the count. Narrows in addition to your own filters; use it rather than reproducing the definition by hand.",
         },
+        related: RELATED_SCHEMA,
       },
       required: ["resource"],
       additionalProperties: false,
@@ -492,6 +590,7 @@ const TOOLS: McpTool[] = [
       }
 
       const period = resolvePeriodArg(resource, args.period);
+      const related = resolveRelatedArg(ctx.staff, resource, args.related);
 
       // The domain is no longer fetched here. Grouping happens in Postgres, so
       // the group set comes back exact; only the fallback path needs a domain,
@@ -499,7 +598,7 @@ const TOOLS: McpTool[] = [
       const result = await aggregateResource(
         resource,
         toParams(args, resource),
-        { groupBy, groupValues: [], metric, measure, period },
+        { groupBy, groupValues: [], metric, measure, period, related },
         ctx.client,
       );
       const notes = [

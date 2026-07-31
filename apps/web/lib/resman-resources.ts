@@ -35,6 +35,19 @@ interface ResmanResourceDef<T extends TableName> {
    * queried-but-internal column from the response.
    */
   publicColumns?: readonly string[];
+  /**
+   * Columns returned when the caller does NOT project.
+   *
+   * A units row is 59 columns and ~1.3 KB, so an unprojected page spends most
+   * of its byte budget on fields nobody read — the budget then trims the page
+   * to 35 rows. A curated default returns the columns that answer the common
+   * question and fits several times more rows. The response always names what
+   * was omitted, and `columns: ["*"]` asks for everything.
+   *
+   * Only worth declaring on WIDE resources; absent, the full public row is the
+   * default, which is right for a narrow one.
+   */
+  defaultColumns?: readonly string[];
   /** Optional post-query projection: derive fields, then response is limited to publicColumns. */
   derive?: (row: Record<string, unknown>) => Record<string, unknown>;
   /** Query-param -> column map for equality filters. */
@@ -161,6 +174,17 @@ interface ResmanResourceDef<T extends TableName> {
     kind: "one" | "many";
     /** Why this hop exists / what to watch for. Surfaced by describe_resource. */
     note?: string;
+    /**
+     * Can this hop be used as a FILTER (`related` on query/aggregate)?
+     *
+     * True only where a real FOREIGN KEY exists, because the filter is a
+     * PostgREST `!inner` embed and PostgREST resolves embeds from the FK graph.
+     * Relations inferred another way — units -> utility_accounts is matched by
+     * ADDRESS, units -> transactions has no constraint — can still be walked
+     * and aggregated across, just not joined. Declared rather than discovered
+     * so the refusal is a clear sentence instead of a raw PGRST200.
+     */
+    joinable?: boolean;
   }[];
 }
 
@@ -190,6 +214,7 @@ export interface ResmanRelation {
   foreignColumn: string;
   kind: "one" | "many";
   note?: string;
+  joinable?: boolean;
 }
 
 /** Erased resource shape consumed by the generic engine. */
@@ -199,6 +224,7 @@ export interface ResmanResource {
   idColumn: string;
   selectColumns: readonly string[];
   publicColumns: readonly string[];
+  defaultColumns: readonly string[];
   derive?: (row: Record<string, unknown>) => Record<string, unknown>;
   filters: Readonly<Record<string, string>>;
   booleanFilters: readonly string[];
@@ -229,6 +255,7 @@ function defineResource<T extends TableName>(def: ResmanResourceDef<T>): ResmanR
     idColumn: def.idColumn,
     selectColumns: def.selectColumns,
     publicColumns: def.publicColumns ?? def.selectColumns,
+    defaultColumns: def.defaultColumns ?? [],
     derive: def.derive,
     filters: def.filters ?? {},
     booleanFilters: def.booleanFilters ?? [],
@@ -336,6 +363,9 @@ export const floorplansResource = defineResource({
 export const unitsResource = defineResource({
   name: "units",
   table: "resman_units",
+  defaultColumns: [
+    "resman_unit_id", "number", "resman_building_id", "occupancy_status", "occupied", "lease_status", "availability", "market_rent", "balance", "tenant_names", "lease_end_date", "move_out_date",
+  ],
   idColumn: "resman_unit_id",
   selectColumns: [
     "resman_unit_id", "resman_property_id", "resman_building_id", "resman_floorplan_id",
@@ -447,9 +477,10 @@ export const unitsResource = defineResource({
       foreignColumn: "resman_lease_id", kind: "one",
       note: "Denormalized pointer with no FK. It can lag the leases table — 14 units currently disagree on lease status between the two sources." },
     { name: "leases", resource: "leases", localColumn: "resman_unit_id",
-      foreignColumn: "resman_unit_id", kind: "many", note: "Every lease this unit has ever had." },
+      foreignColumn: "resman_unit_id", kind: "many", joinable: true,
+      note: "Every lease this unit has ever had." },
     { name: "work_orders", resource: "work-orders", localColumn: "resman_unit_id",
-      foreignColumn: "resman_unit_id", kind: "many" },
+      foreignColumn: "resman_unit_id", kind: "many", joinable: true },
     { name: "transactions", resource: "transactions", localColumn: "resman_unit_id",
       foreignColumn: "resman_unit_id", kind: "many" },
     { name: "utility_accounts", resource: "mlgw/accounts", localColumn: "resman_unit_id",
@@ -465,6 +496,9 @@ export const unitsResource = defineResource({
 export const leasesResource = defineResource({
   name: "leases",
   table: "resman_leases",
+  defaultColumns: [
+    "resman_lease_id", "resman_unit_id", "unit_number", "status", "start_date", "end_date", "move_out_date", "resident_rent", "balance", "is_current_lease",
+  ],
   idColumn: "resman_lease_id",
   selectColumns: [
     "resman_lease_id", "unit_lease_group_id", "resman_property_id", "resman_unit_id",
@@ -510,7 +544,7 @@ export const leasesResource = defineResource({
   },
   relations: [
     { name: "unit", resource: "units", localColumn: "resman_unit_id", foreignColumn: "resman_unit_id", kind: "one" },
-    { name: "residents", resource: "residents", localColumn: "resman_lease_id", foreignColumn: "resman_lease_id", kind: "many" },
+    { name: "residents", resource: "residents", localColumn: "resman_lease_id", foreignColumn: "resman_lease_id", kind: "many", joinable: true },
     { name: "transactions", resource: "transactions", localColumn: "resman_lease_id", foreignColumn: "resman_lease_id", kind: "many" },
   ],
 });
@@ -563,6 +597,9 @@ export const residentsResource = defineResource({
 export const transactionsResource = defineResource({
   name: "transactions",
   table: "resman_transactions",
+  defaultColumns: [
+    "resman_ledger_entry_id", "resman_unit_id", "date", "transaction_type", "category", "ledger_description", "charges", "credits", "balance",
+  ],
   idColumn: "resman_ledger_entry_id",
   selectColumns: [
     "resman_ledger_entry_id", "resman_property_id", "resman_unit_id", "resman_lease_id",
@@ -597,6 +634,9 @@ export const transactionsResource = defineResource({
 export const workOrdersResource = defineResource({
   name: "work-orders",
   table: "resman_work_orders",
+  defaultColumns: [
+    "resman_work_order_id", "number", "unit_number", "status", "priority", "category", "title", "technician", "date_reported", "date_scheduled", "date_completed",
+  ],
   idColumn: "resman_work_order_id",
   selectColumns: [
     "resman_work_order_id", "number", "resman_unit_id", "unit_lease_group_id",
@@ -709,6 +749,9 @@ export const mlgwAccountsResource = defineResource({
 export const mlgwBillsResource = defineResource({
   name: "mlgw/bills",
   table: "mlgw_bills",
+  defaultColumns: [
+    "id", "mlgw_account_id", "bill_date", "due_date", "amount_due", "balance_forward", "electric_total", "gas_total", "water_total", "sewer_total", "is_current",
+  ],
   idColumn: "id",
   selectColumns: [
     "id", "document_key", "mlgw_account_id", "resman_property_id", "document_id",
@@ -832,7 +875,7 @@ export const guestPassesResource = defineResource({
   },
   relations: [
     { name: "entries", resource: "entry-logs", localColumn: "id",
-      foreignColumn: "guest_pass_id", kind: "many",
+      foreignColumn: "guest_pass_id", kind: "many", joinable: true,
       note: "Scans made against this pass. A pass with no entries was issued but never used." },
   ],
 });
@@ -936,6 +979,9 @@ export const propertySnapshotsResource = defineResource({
 export const unitSnapshotsResource = defineResource({
   name: "unit-snapshots",
   table: "unit_snapshots",
+  defaultColumns: [
+    "snapshot_date", "resman_unit_id", "unit_number", "occupancy_status", "occupied", "availability", "balance", "market_rent",
+  ],
   idColumn: "resman_unit_id",
   selectColumns: [
     "snapshot_date", "resman_unit_id", "unit_number", "resman_building_id",

@@ -111,8 +111,13 @@ test("naming a withheld column yields nothing, not the column", () => {
   assert.equal(kept, null, "no valid column survives -> full public row, never the hidden one");
 });
 
-test("a typo degrades to the full row rather than an empty one", () => {
-  assert.equal(resolveProjection(unitsResource, params({ columns: "numbr" })), null);
+test("a typo degrades to the resource's default columns, never to an empty row", () => {
+  // It used to degrade to the FULL row. That was the wrong direction: a typo
+  // should not quietly return the widest, most expensive response available.
+  assert.deepEqual(resolveProjection(unitsResource, params({ columns: "numbr" })), unitsResource.defaultColumns);
+  // A resource with no declared default still falls back to everything.
+  const narrow = RESMAN_RESOURCES.find((r) => r.defaultColumns.length === 0);
+  assert.equal(resolveProjection(narrow, params({ columns: "nope" })), null);
 });
 
 // ------------------------------------------------------------- aggregate ---

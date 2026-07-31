@@ -247,10 +247,18 @@ export function resolveProjection(
   searchParams: URLSearchParams,
 ): readonly string[] | null {
   const raw = searchParams.get("columns")?.trim();
-  if (!raw) return null;
+  // No projection asked for: fall back to the resource's curated default when
+  // it declares one. A units row is 59 columns; most questions want a dozen,
+  // and the caller who wants the rest can say so.
+  if (!raw) return resource.defaultColumns.length > 0 ? resource.defaultColumns : null;
   const asked = new Set(raw.split(",").map((c) => c.trim()).filter(Boolean));
+  // The explicit escape hatch — "give me everything this resource exposes".
+  if (asked.has("*")) return null;
   const kept = resource.publicColumns.filter((c) => asked.has(c));
-  return kept.length > 0 ? kept : null;
+  // A projection that matched nothing falls back to the DEFAULT, not the full
+  // row: a typo should not quietly become the widest possible response.
+  if (kept.length > 0) return kept;
+  return resource.defaultColumns.length > 0 ? resource.defaultColumns : null;
 }
 
 /**
@@ -296,18 +304,100 @@ export function shapeRow(resource: ResmanResource, row: Record<string, unknown>)
   return out;
 }
 
+/**
+ * A filter on a resource by a property of a RELATED one.
+ *
+ * "Occupied units with an open work order reported before July" is an ordinary
+ * question that previously took three calls and manual stitching: relations
+ * could be walked and aggregated across, but never filtered on.
+ *
+ * Implemented with PostgREST's `!inner` embed, which does the join in Postgres
+ * and — crucially — reports an EXACT count of matching PARENTS, with no
+ * duplicate parent rows. The embedded child column is discarded by `shapeRow`,
+ * since it is not in `publicColumns`, so the join changes which rows come back
+ * and nothing about which columns do.
+ */
+export interface RelatedFilter {
+  relation: { name: string; resource: string; foreignColumn: string; kind: "one" | "many" };
+  target: ResmanResource;
+  /** false asks for parents with NO matching child — a LEFT join that is null. */
+  exists: boolean;
+  /** Filters/ranges/scope for the CHILD, in the target's own vocabulary. */
+  params: URLSearchParams;
+}
+
+/**
+ * The select fragment that joins the child in.
+ *
+ * One tiny column is embedded rather than `*`: the join exists to narrow the
+ * parent set, and pulling child rows back would be pure payload.
+ */
+function relatedSelect(related: RelatedFilter): string {
+  const join = related.exists ? "!inner" : "!left";
+  return `${related.target.table}${join}(${related.target.idColumn})`;
+}
+
+/** Apply the child-side predicates, namespaced onto the embedded table. */
+function applyRelated(query: QueryBuilder, related: RelatedFilter): QueryBuilder {
+  const table = related.target.table;
+  let out = query;
+  if (!related.exists) {
+    // "Has none" is a left join with a null child. Child predicates are
+    // meaningless here — "has no OPEN work order" would need the join to be
+    // filtered before the null test, which PostgREST cannot express — so the
+    // tool layer refuses that combination rather than answering it wrongly.
+    return out.is(table, null);
+  }
+  for (const { column, value } of resolveFilters(related.target, related.params)) {
+    out = out.eq(`${table}.${column}`, value);
+  }
+  for (const b of resolveRanges(related.target, related.params)) {
+    out = b.op === "gte" ? out.gte(`${table}.${b.column}`, b.value) : out.lte(`${table}.${b.column}`, b.value);
+  }
+  const { filters, any } = resolveScope(related.target, related.params.get("scope"));
+  for (const pred of filters) {
+    const col = `${table}.${pred.column}`;
+    out =
+      pred.op === "eq" ? out.eq(col, pred.value)
+      : pred.op === "neq" ? out.neq(col, pred.value)
+      : pred.op === "gte" ? out.gte(col, pred.value)
+      : pred.op === "lte" ? out.lte(col, pred.value)
+      : pred.op === "in" ? out.in(col, [...(pred.values ?? [])])
+      : pred.op === "is_null" ? out.is(col, null)
+      : out.not(col, "is", null);
+  }
+  if (any.length > 0) {
+    // PostgREST scopes an embedded or() with the table prefix on the clause.
+    out = out.or(any.map((pred) => {
+      switch (pred.op) {
+        case "eq": return `${pred.column}.eq.${pred.value}`;
+        case "neq": return `${pred.column}.neq.${pred.value}`;
+        case "gte": return `${pred.column}.gte.${pred.value}`;
+        case "lte": return `${pred.column}.lte.${pred.value}`;
+        case "in": return `${pred.column}.in.(${(pred.values ?? []).join(",")})`;
+        case "is_null": return `${pred.column}.is.null`;
+        default: return `${pred.column}.not.is.null`;
+      }
+    }).join(","), { referencedTable: table });
+  }
+  return out;
+}
+
 /** Executes a list query for a resource. Client is injectable for tests. */
 export async function listResource(
   resource: ResmanResource,
   searchParams: URLSearchParams,
   client: UntypedSupabase = pmClient(),
-  scanner = false
+  scanner = false,
+  related?: RelatedFilter,
 ): Promise<ListResult> {
   const { limit, offset } = parseListParams(searchParams);
 
-  let query = client
-    .from(resource.table)
-    .select(resource.selectColumns.join(","), { count: "exact" });
+  const selectColumns = related
+    ? `${resource.selectColumns.join(",")},${relatedSelect(related)}`
+    : resource.selectColumns.join(",");
+  let query = client.from(resource.table).select(selectColumns, { count: "exact" });
+  if (related) query = applyRelated(query, related);
 
   // Applied before user filters, so no query-string combination can widen a
   // scanner's view past it. Counts reflect the trimmed set.
@@ -696,13 +786,18 @@ export async function aggregateResource(
     metric: "count" | "sum" | "avg" | "min" | "max";
     measure: string | null;
     period?: PeriodSpec | null;
+    related?: RelatedFilter;
   },
   client: UntypedSupabase = pmClient(),
 ): Promise<AggregateResult> {
-  const sql = await aggregateViaSql(resource, searchParams, opts, client);
+  // A cross-resource filter is a JOIN, which mcp_aggregate does not express.
+  // PostgREST does, natively and with an exact parent count, so those queries
+  // take the scan path deliberately rather than losing the filter.
+  const sql = opts.related ? null : await aggregateViaSql(resource, searchParams, opts, client);
   if (sql) return sql;
   const applyPredicates = (q: ReturnType<ReturnType<UntypedSupabase["from"]>["select"]>) => {
     let query = q;
+    if (opts.related) query = applyRelated(query, opts.related);
     for (const { column, value } of resolveFilters(resource, searchParams)) query = query.eq(column, value);
     query = applyScope(query, resource, searchParams.get("scope"));
     for (const b of resolveRanges(resource, searchParams)) {
@@ -752,7 +847,10 @@ export async function aggregateResource(
    */
   const totalOf = async (): Promise<number | null> => {
     const { count, error } = await applyPredicates(
-      client.from(resource.table).select(resource.idColumn, { count: "exact", head: true }),
+      client.from(resource.table).select(
+        opts.related ? `${resource.idColumn},${relatedSelect(opts.related)}` : resource.idColumn,
+        { count: "exact", head: true },
+      ),
     );
     if (error) throw error;
     return count ?? null;
@@ -782,7 +880,10 @@ export async function aggregateResource(
     const buckets: AggregateBucket[] = [];
     for (const slot of slots) {
       let q = applyPredicates(
-        client.from(resource.table).select(resource.idColumn, { count: "exact", head: true }),
+        client.from(resource.table).select(
+          opts.related ? `${resource.idColumn},${relatedSelect(opts.related)}` : resource.idColumn,
+          { count: "exact", head: true },
+        ),
       );
       if (opts.groupBy) {
         q = slot.group === null ? q.is(opts.groupBy, null) : q.eq(opts.groupBy, slot.group);
@@ -821,8 +922,11 @@ export async function aggregateResource(
   // large a limit is asked for, so a single call would compute this sum over a
   // prefix of the table and report it as complete.
   const scanColumns = [...new Set([...columns, resource.idColumn])];
+  const scanSelect = opts.related
+    ? `${scanColumns.join(",")},${relatedSelect(opts.related)}`
+    : scanColumns.join(",");
   const { rows, truncated: scanTruncated } = await fetchPaged(
-    () => applyPredicates(client.from(resource.table).select(scanColumns.join(","))),
+    () => applyPredicates(client.from(resource.table).select(scanSelect)),
     resource.idColumn,
   );
   // A measure scan derives its buckets from the rows themselves, so it is

@@ -3,7 +3,7 @@ const test = require("node:test");
 
 const { handleMcpMessage } = require("../lib/mcp/server");
 const { redactAuditArgs } = require("../lib/access-tokens");
-const { aggregateRelated, aggregateResource } = require("../lib/resman-api");
+const { aggregateRelated, aggregateResource, resolveProjection } = require("../lib/resman-api");
 const {
   unitsResource,
   transactionsResource,
@@ -725,10 +725,12 @@ test("the money and gate tables carry the capabilities their questions need", ()
  * 65k tokens, a third of a context window, for one call.
  */
 test("a wide page is trimmed to the byte budget and says how to get more", async () => {
+  // Fat in a column the resource returns BY DEFAULT, so the budget is what
+  // trims the page rather than the default projection doing it first.
   const wide = Array.from({ length: 200 }, (_, i) => ({
     resman_unit_id: `u${i}`,
     number: `unit-${i}`,
-    notes: "x".repeat(1200), // ~1.3 KB/row, matching live units
+    tenant_names: "x".repeat(1200), // ~1.3 KB/row, matching live units
   }));
   const res = await handleMcpMessage(
     { id: 40, method: "tools/call", params: { name: "query_resource", arguments: { resource: "units", limit: 200 } } },
@@ -856,6 +858,118 @@ test("every declared scope filters on columns the resource actually queries", ()
           `${resource.name}.${name} filters on ${filter.column}, which the resource never queries`,
         );
       }
+    }
+  }
+});
+
+// ------------------------------------------------- cross-resource filters ---
+
+/**
+ * "Occupied units with an open work order reported before July" — an ordinary
+ * question that used to take three calls and manual stitching. It is a
+ * PostgREST `!inner` embed, so the join runs in Postgres and the parent count
+ * stays exact.
+ */
+test("a related filter is refused on a relation with no foreign key", async () => {
+  // units -> mlgw/accounts is matched by ADDRESS. PostgREST resolves embeds
+  // from the FK graph, so this cannot be a join however it is phrased — and a
+  // clear sentence beats a raw PGRST200.
+  const res = await handleMcpMessage(
+    { id: 50, method: "tools/call",
+      params: { name: "query_resource", arguments: { resource: "units", related: { relation: "utility_accounts" } } } },
+    { staff: staff(["*"]), client: fakeClient() },
+  );
+  assert.equal(res.result.isError, true);
+  assert.match(res.result.content[0].text, /not backed by a foreign key/);
+  assert.match(res.result.content[0].text, /aggregate_related/, "names what to use instead");
+});
+
+test("the related resource is scope-checked independently of the parent", async () => {
+  // Filtering units BY work orders reveals something about work orders.
+  const res = await handleMcpMessage(
+    { id: 51, method: "tools/call",
+      params: { name: "query_resource", arguments: { resource: "units", related: { relation: "work_orders" } } } },
+    { staff: staff(["units"]), client: fakeClient() },
+  );
+  assert.equal(res.result.isError, true);
+  assert.match(res.result.content[0].text, /Not authorized for resource "work-orders"/);
+});
+
+test("exists:false cannot carry child filters", async () => {
+  // A left-join-is-null cannot express "has no OPEN work order" — it can only
+  // say "has no work orders at all". Refusing beats answering a different
+  // question than the one asked.
+  const res = await handleMcpMessage(
+    { id: 52, method: "tools/call",
+      params: { name: "query_resource",
+        arguments: { resource: "units", related: { relation: "work_orders", exists: false, scope: "open" } } } },
+    { staff: staff(["*"]), client: fakeClient() },
+  );
+  assert.equal(res.result.isError, true);
+  assert.match(res.result.content[0].text, /cannot be combined with filters/);
+});
+
+test("a 'one' hop is refused as a related filter", async () => {
+  const res = await handleMcpMessage(
+    { id: 53, method: "tools/call",
+      params: { name: "query_resource", arguments: { resource: "units", related: { relation: "current_lease" } } } },
+    { staff: staff(["*"]), client: fakeClient() },
+  );
+  assert.equal(res.result.isError, true);
+  assert.match(res.result.content[0].text, /"one" hop/);
+});
+
+test("every joinable relation targets a resource that exists", () => {
+  // `joinable` is a claim about the live FK graph. It cannot be checked without
+  // a database, so at minimum keep it structurally honest.
+  const names = new Set(RESMAN_RESOURCES.map((r) => r.name));
+  for (const resource of RESMAN_RESOURCES) {
+    for (const relation of resource.relations) {
+      if (!relation.joinable) continue;
+      assert.equal(relation.kind, "many", `${resource.name}.${relation.name}: only 'many' hops are filterable`);
+      assert.ok(names.has(relation.resource), `${resource.name}.${relation.name} -> unknown ${relation.resource}`);
+    }
+  }
+});
+
+// --------------------------------------------------- default column sets ---
+
+test("an unprojected page returns the curated default and says what it omitted", async () => {
+  const rows = Array.from({ length: 5 }, (_, i) => ({
+    resman_unit_id: `u${i}`, number: `${i}`, occupancy_status: "Occupied",
+    notes: "x".repeat(50), source_url: "http://example/very/long/path",
+  }));
+  const res = await handleMcpMessage(
+    { id: 54, method: "tools/call", params: { name: "query_resource", arguments: { resource: "units" } } },
+    { staff: staff(["*"]), client: memClient({ resman_units: rows }) },
+  );
+  const payload = JSON.parse(res.result.content[0].text);
+  assert.ok(!("notes" in payload.data[0]), "a non-default column is not returned");
+  assert.ok("number" in payload.data[0], "a default column is");
+  assert.match(payload.columns_note, /Omitted:/);
+  assert.match(payload.columns_note, /\["\*"\] for all/);
+});
+
+test("columns:['*'] asks for the full public row", () => {
+  const params = new URLSearchParams({ columns: "*" });
+  assert.equal(resolveProjection(unitsResource, params), null, "null means every public column");
+});
+
+test("no projection falls back to the default, and a typo does too", () => {
+  const byDefault = resolveProjection(unitsResource, new URLSearchParams());
+  assert.deepEqual(byDefault, unitsResource.defaultColumns);
+  // A typo must not quietly widen the response to everything.
+  const typo = resolveProjection(unitsResource, new URLSearchParams({ columns: "numbr" }));
+  assert.deepEqual(typo, unitsResource.defaultColumns);
+});
+
+test("every default column is one the resource actually exposes", () => {
+  for (const resource of RESMAN_RESOURCES) {
+    for (const column of resource.defaultColumns) {
+      assert.ok(
+        resource.publicColumns.includes(column),
+        `${resource.name} defaults to ${column}, which is not a public column`,
+      );
     }
   }
 });

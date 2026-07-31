@@ -120,6 +120,38 @@ The two are bucketed differently, and the difference is declared per column:
 
 ---
 
+## Filtering by a related resource
+
+`related` filters one resource by a property of another — the thing that used to take three
+calls and manual stitching:
+
+```json
+{ "resource": "units", "scope": "occupied",
+  "related": { "relation": "work_orders", "scope": "open", "ranges": { "reported_to": "2026-07-01" } } }
+```
+
+Live, that narrows 566 occupied units → 114 with an open work order → **38** whose order was
+reported before July. It works on `query_resource` and `aggregate_resource` alike, so you can
+group the result (by building, say) in the same call.
+
+- **The count is exact.** It compiles to a PostgREST `!inner` embed, so the join runs in
+  Postgres and parents never duplicate.
+- **`exists: false`** finds parents with *no* matching child — 139 rentable units have no lease
+  record at all. It **cannot carry child filters**: a left-join-is-null can only say "has none
+  at all", never "has no *open* one", and answering the wrong question quietly is worse than
+  refusing.
+- **The related resource is scope-checked separately.** Filtering units by work orders reveals
+  something about work orders.
+
+**Only FK-backed relations can be filtered.** PostgREST resolves embeds from the foreign-key
+graph, so `units → work_orders`, `units → leases`, `leases → residents` and
+`guest-passes → entries` work, while `units → utility_accounts` (matched by *address*) and
+`units → transactions` (no constraint) cannot. `describe_resource` reports `joinable` per
+relation, and asking anyway gets a sentence explaining why plus what to use instead —
+`related_resource` to walk it, `aggregate_related` to aggregate across it.
+
+---
+
 ## Aggregating across a relation
 
 `aggregate_resource` groups by a column on the resource being measured. When the grouping
@@ -325,7 +357,16 @@ Rows cost context. Measured live: `query_resource` on units at the max limit of 
 **267 KB — about 65,000 tokens**, roughly a third of a 200k window for one call. The same rows
 projected to three columns is **13 KB**.
 
-So row-returning tools trim to a **48 KB budget**. The page shrinks; the call does not fail:
+Two things keep that under control.
+
+**Wide resources return a curated default column set.** `units` returns 12 of 47 columns unless
+you ask otherwise — which fits **139 rows** in the budget instead of 35, a 4× improvement for
+the columns most questions actually read. Every trimmed response carries a `columns_note`
+naming exactly what was omitted, and `columns: ["*"]` asks for everything. A *typo* in
+`columns` falls back to the default rather than to the full row: a mistake should not return
+the most expensive response available.
+
+**And row-returning tools trim to a 48 KB budget.** The page shrinks; the call does not fail:
 
 ```json
 { "data": [ … 35 rows … ],

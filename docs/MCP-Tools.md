@@ -371,6 +371,21 @@ Scopes only ever **narrow**, and they apply *in addition to* your own filters. A
 scope is refused rather than ignored — ignoring it would answer a wider question than the one
 asked. `describe_resource` lists what each resource has.
 
+The definitions that used to be prose are now declared, so you no longer have to know them:
+
+| Resource | Scope | Live |
+|---|---|---|
+| units | `rentable` / `occupied` / `vacant` | 876 / 566 / 310 |
+| units | `delinquent` — balance **or** a stated reason | 167 |
+| work-orders | `open` — the sync's own status set, not a guess | 432 |
+| work-orders | `unscheduled_open` — open with no date committed | 295 |
+| leases | `current` / `terminal` | 498 |
+| monitor-findings | `open` / `resolved` / `unannounced` | 39 / 4 |
+
+A scope may carry one **OR group** (that is how `delinquent` works — a balance *or* a reason,
+not both). One group deep, deliberately: nesting would rebuild a query language behind a
+capability name.
+
 ---
 
 ## Searching
@@ -546,6 +561,10 @@ file; that is a data-entry rate, not a car-ownership rate. Say which you are rep
 ---
 
 ## Scopes, budget and audit
+
+**Permission changes are logged too.** `access_token_changes` records every mint, scope change
+and revoke, written by a database **trigger** rather than application code — the gap that
+motivated it was a direct SQL `UPDATE` that left no trace anywhere.
 
 A token reads only the resources in its scope list. **An empty list grants nothing** — use
 `*` for everything. See [[MCP Server Setup]]. A relation's target is checked independently of

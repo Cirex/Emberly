@@ -268,3 +268,87 @@ test("groupable columns never include free text or a person's name", () => {
     }
   }
 });
+
+// ------------------------------------------------- notes vs declarations ---
+
+/**
+ * Notes are prose; capabilities are code; nothing made them agree.
+ *
+ * Two shipped defects came from exactly that gap: monitor-findings told callers
+ * to "fetch the finding by id when the detail matters" while `detail` was not
+ * in selectColumns, and to "filter on resolved_at" while resolved_at was not a
+ * filter. Both instructed something no code path could do.
+ */
+
+/** Words a note uses when it is telling the caller to DO something. */
+const SCOPE_CLAIM = /(?:use )?scope '([a-z_]+)'/gi;
+const COLUMN_CLAIM = /`([a-z_]+)`/g;
+
+test("every scope a note tells you to use actually exists", () => {
+  for (const resource of RESMAN_RESOURCES) {
+    for (const note of resource.notes) {
+      for (const [, name] of note.matchAll(SCOPE_CLAIM)) {
+        assert.ok(
+          resource.scopes[name],
+          `${resource.name} note promises scope '${name}', which the resource does not declare`,
+        );
+      }
+    }
+  }
+});
+
+test("every column a note names in backticks is one the resource returns", () => {
+  // Catches a note describing a column that was renamed, withheld, or never
+  // queried — the shape of the `detail` bug.
+  for (const resource of RESMAN_RESOURCES) {
+    const known = new Set([
+      ...resource.publicColumns,
+      ...resource.selectColumns,
+      ...Object.keys(resource.filters),
+      ...Object.keys(resource.ranges),
+      ...Object.keys(resource.periods),
+      ...Object.keys(resource.scopes),
+      ...resource.relations.map((r) => r.name),
+    ]);
+    for (const note of resource.notes) {
+      for (const [, token] of note.matchAll(COLUMN_CLAIM)) {
+        // Only judge snake_case identifiers; prose in backticks is not a claim.
+        if (!/^[a-z][a-z0-9_]*$/.test(token) || !token.includes("_")) continue;
+        assert.ok(
+          known.has(token),
+          `${resource.name} note references \`${token}\`, which the resource does not expose`,
+        );
+      }
+    }
+  }
+});
+
+test("scope predicates only name columns the resource queries", () => {
+  for (const resource of RESMAN_RESOURCES) {
+    for (const [name, scope] of Object.entries(resource.scopes)) {
+      for (const predicate of [...scope.filters, ...scope.any]) {
+        assert.ok(
+          resource.selectColumns.includes(predicate.column),
+          `${resource.name}.${name} filters on ${predicate.column}, which the resource never queries`,
+        );
+        if (predicate.op === "in") {
+          assert.ok(
+            Array.isArray(predicate.values) && predicate.values.length > 0,
+            `${resource.name}.${name} uses 'in' with no values — that matches nothing`,
+          );
+        }
+      }
+    }
+  }
+});
+
+test("the work-order open set matches the sync's own definition", () => {
+  // Two copies of "which statuses are open" is how the MCP and the alerting
+  // quietly start disagreeing about the size of the backlog.
+  const open = workOrdersResource.scopes.open.filters[0].values;
+  assert.deepEqual(
+    [...open].sort(),
+    ["In Progress", "Not Started", "On Hold", "Open", "Scheduled", "Submitted"],
+    "must stay in step with OPEN_WORK_ORDER_STATUSES in supabase/sync/src/shared/push.ts",
+  );
+});

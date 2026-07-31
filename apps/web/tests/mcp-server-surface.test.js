@@ -786,11 +786,44 @@ test("scope narrows in addition to the caller's filters, never instead of them",
     { groupBy: null, groupValues: [], metric: "count", measure: null },
     scoped,
   );
+  // `vals` rides along for the `in` operator and is null for the rest.
   assert.deepEqual(scoped.calls[0].args.p_filters, [
     { col: "occupancy_status", op: "eq", val: "Occupied" },
-    { col: "holding_unit", op: "eq", val: "false" },
-    { col: "excluded_from_occupancy", op: "eq", val: "false" },
+    { col: "holding_unit", op: "eq", val: "false", vals: null },
+    { col: "excluded_from_occupancy", op: "eq", val: "false", vals: null },
   ], "the caller's filter survives and the scope is added");
+});
+
+test("a scope's OR group is sent as its own clause, not merged into the ANDs", async () => {
+  // "delinquent" is a balance OR a stated reason. Flattening it into the AND
+  // list would silently mean "a balance AND a reason", which is a much smaller
+  // and wrong set.
+  const client = rpcClient([]);
+  const params = new URLSearchParams();
+  params.set("scope", "delinquent");
+  await aggregateResource(
+    unitsResource, params,
+    { groupBy: null, groupValues: [], metric: "count", measure: null },
+    client,
+  );
+  const { p_filters, p_any } = client.calls[0].args;
+  assert.deepEqual(p_filters.map((f) => f.col), ["holding_unit", "excluded_from_occupancy"]);
+  assert.deepEqual(p_any.map((f) => [f.col, f.op]), [["balance", "gte"], ["delinquency_reason", "neq"]]);
+});
+
+test("an 'in' scope carries its value set", async () => {
+  const client = rpcClient([]);
+  const params = new URLSearchParams();
+  params.set("scope", "open");
+  await aggregateResource(
+    workOrdersResource, params,
+    { groupBy: null, groupValues: [], metric: "count", measure: null },
+    client,
+  );
+  const [predicate] = client.calls[0].args.p_filters;
+  assert.equal(predicate.op, "in");
+  assert.ok(predicate.vals.includes("Not Started"));
+  assert.ok(!predicate.vals.includes("Completed"), "a terminal status is not open");
 });
 
 test("an undeclared scope is refused rather than ignored", async () => {

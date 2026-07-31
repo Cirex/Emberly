@@ -28,7 +28,7 @@ import {
   type PeriodColumnKind,
   type PeriodInterval,
 } from "./period-buckets";
-import type { ResmanResource } from "./resman-resources";
+import type { ResmanResource, ScopePredicate } from "./resman-resources";
 import { createUntypedAdminClient } from "./supabase/admin";
 import type { UntypedSupabase } from "./supabase/types";
 
@@ -82,9 +82,58 @@ export function parseListParams(searchParams: URLSearchParams): { limit: number;
 export function resolveScope(
   resource: ResmanResource,
   name: string | null,
-): readonly { column: string; op: "eq" | "gte" | "lte"; value: string | boolean }[] {
-  if (!name) return [];
-  return resource.scopes[name]?.filters ?? [];
+): { filters: readonly ScopePredicate[]; any: readonly ScopePredicate[] } {
+  if (!name) return { filters: [], any: [] };
+  const scope = resource.scopes[name];
+  return { filters: scope?.filters ?? [], any: scope?.any ?? [] };
+}
+
+/**
+ * Apply one scope predicate to a PostgREST query builder.
+ *
+ * `neq` on a text column is how "a stated reason" is expressed — ResMan writes
+ * an empty string rather than null for "no reason given", so `not_null` would
+ * match every row.
+ */
+function applyPredicate(query: QueryBuilder, p: ScopePredicate): QueryBuilder {
+  switch (p.op) {
+    case "eq": return query.eq(p.column, p.value);
+    case "neq": return query.neq(p.column, p.value);
+    case "gte": return query.gte(p.column, p.value);
+    case "lte": return query.lte(p.column, p.value);
+    case "in": return query.in(p.column, [...(p.values ?? [])]);
+    case "is_null": return query.is(p.column, null);
+    case "not_null": return query.not(p.column, "is", null);
+  }
+}
+
+/** The PostgREST `or=` clause for a scope's OR group, or null when it has none. */
+function orExpression(predicates: readonly ScopePredicate[]): string | null {
+  if (predicates.length === 0) return null;
+  const parts = predicates.map((p) => {
+    switch (p.op) {
+      case "eq": return `${p.column}.eq.${p.value}`;
+      case "neq": return `${p.column}.neq.${p.value}`;
+      case "gte": return `${p.column}.gte.${p.value}`;
+      case "lte": return `${p.column}.lte.${p.value}`;
+      case "in": return `${p.column}.in.(${(p.values ?? []).join(",")})`;
+      case "is_null": return `${p.column}.is.null`;
+      case "not_null": return `${p.column}.not.is.null`;
+    }
+  });
+  return parts.join(",");
+}
+
+/** Apply a named scope to a query: ANDed predicates, plus one OR group. */
+export function applyScope(query: QueryBuilder, resource: ResmanResource, name: string | null): QueryBuilder {
+  const { filters, any } = resolveScope(resource, name);
+  let out = query;
+  for (const p of filters) out = applyPredicate(out, p);
+  const or = orExpression(any);
+  // A single or() group ANDs with everything already applied, so a scope can
+  // only ever narrow — never pull in rows the caller's filters excluded.
+  if (or) out = out.or(or);
+  return out;
 }
 
 /** Resolves the active equality filters from the query string for a resource. */
@@ -269,9 +318,7 @@ export async function listResource(
   }
   // Canonical scope applies alongside the caller's own filters, never instead
   // of them — it can only narrow.
-  for (const s of resolveScope(resource, searchParams.get("scope"))) {
-    query = s.op === "eq" ? query.eq(s.column, s.value) : s.op === "gte" ? query.gte(s.column, s.value) : query.lte(s.column, s.value);
-  }
+  query = applyScope(query, resource, searchParams.get("scope"));
 
   // Ranges and search narrow further. Search is applied as a single OR group so
   // it ANDs with every other predicate rather than widening past them — an
@@ -566,7 +613,10 @@ async function aggregateViaSql(
 
   const filters = [
     ...resolveFilters(resource, searchParams).map((f) => ({ col: f.column, op: "eq", val: String(f.value) })),
-    ...resolveScope(resource, searchParams.get("scope")).map((s) => ({ col: s.column, op: s.op, val: String(s.value) })),
+    ...resolveScope(resource, searchParams.get("scope")).filters.map((s) => ({
+      col: s.column, op: s.op, val: s.value === undefined ? null : String(s.value),
+      vals: s.values ? [...s.values] : null,
+    })),
     ...resolveRanges(resource, searchParams).map((b) => ({ col: b.column, op: b.op, val: b.value })),
   ];
   const search = resolveSearch(resource, searchParams);
@@ -589,6 +639,10 @@ async function aggregateViaSql(
       p_filters: filters,
       p_search_columns: search ? [...search.columns] : null,
       p_search_term: search ? search.term : null,
+      p_any: resolveScope(resource, searchParams.get("scope")).any.map((s) => ({
+        col: s.column, op: s.op, val: s.value === undefined ? null : String(s.value),
+        vals: s.values ? [...s.values] : null,
+      })),
     });
     if (result.error) return null;
     data = result.data ?? [];
@@ -650,9 +704,7 @@ export async function aggregateResource(
   const applyPredicates = (q: ReturnType<ReturnType<UntypedSupabase["from"]>["select"]>) => {
     let query = q;
     for (const { column, value } of resolveFilters(resource, searchParams)) query = query.eq(column, value);
-    for (const s of resolveScope(resource, searchParams.get("scope"))) {
-      query = s.op === "eq" ? query.eq(s.column, s.value) : s.op === "gte" ? query.gte(s.column, s.value) : query.lte(s.column, s.value);
-    }
+    query = applyScope(query, resource, searchParams.get("scope"));
     for (const b of resolveRanges(resource, searchParams)) {
       query = b.op === "gte" ? query.gte(b.column, b.value) : query.lte(b.column, b.value);
     }

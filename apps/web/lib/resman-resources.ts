@@ -132,7 +132,15 @@ interface ResmanResourceDef<T extends TableName> {
    */
   scopes?: Readonly<Record<string, {
     description: string;
-    filters: readonly { column: ColumnOf<T>; op: "eq" | "gte" | "lte"; value: string | boolean }[];
+    /** ANDed predicates. */
+    filters?: readonly ScopePredicate<ColumnOf<T>>[];
+    /**
+     * An OR group, ANDed with `filters`. Exactly one group, on purpose: the
+     * definitions that need it ("delinquent" = a balance OR a stated reason)
+     * are one disjunction deep, and allowing arbitrary nesting would rebuild
+     * a query language behind a capability name.
+     */
+    any?: readonly ScopePredicate<ColumnOf<T>>[];
   }>>;
   /** Columns the caller may sort by (beyond the resource's default order). */
   sortable?: readonly ColumnOf<T>[];
@@ -154,6 +162,24 @@ interface ResmanResourceDef<T extends TableName> {
     /** Why this hop exists / what to watch for. Surfaced by describe_resource. */
     note?: string;
   }[];
+}
+
+/**
+ * One predicate inside a canonical scope.
+ *
+ * `is_null` / `not_null` exist because the most important question the monitor
+ * answers — "what is still OPEN" — is `resolved_at is null`, and an
+ * equality-only vocabulary cannot say it. `in` exists because "open work order"
+ * is a SET of statuses, and spelling it as four separate scopes would be four
+ * chances to disagree with the sync.
+ */
+export interface ScopePredicate<C extends string = string> {
+  column: C;
+  op: "eq" | "neq" | "gte" | "lte" | "in" | "is_null" | "not_null";
+  /** For eq/neq/gte/lte. */
+  value?: string | number | boolean;
+  /** For `in`. */
+  values?: readonly string[];
 }
 
 /** A declared one-hop traversal between two resources. */
@@ -189,7 +215,8 @@ export interface ResmanResource {
   notes: readonly string[];
   scopes: Readonly<Record<string, {
     description: string;
-    filters: readonly { column: string; op: "eq" | "gte" | "lte"; value: string | boolean }[];
+    filters: readonly ScopePredicate<string>[];
+    any: readonly ScopePredicate<string>[];
   }>>;
   sortable: readonly string[];
   relations: readonly ResmanRelation[];
@@ -216,7 +243,12 @@ function defineResource<T extends TableName>(def: ResmanResourceDef<T>): ResmanR
     periods: def.periods ?? {},
     entities: def.entities ?? [],
     notes: def.notes ?? [],
-    scopes: def.scopes ?? {},
+    scopes: Object.fromEntries(
+      Object.entries(def.scopes ?? {}).map(([name, sc]) => [
+        name,
+        { description: sc.description, filters: sc.filters ?? [], any: sc.any ?? [] },
+      ]),
+    ),
     // The default sort column is always sortable — asking for the order the
     // resource already uses should never be rejected.
     sortable: def.sortable ?? [def.order.column],
@@ -384,6 +416,21 @@ export const unitsResource = defineResource({
         { column: "occupied", op: "eq", value: false },
       ],
     },
+    delinquent: {
+      // Matches isDelinquentUnit in lib/manager-delinquency.ts. ResMan writes
+      // an EMPTY STRING for "no reason given", not null, so this is `neq ''`
+      // rather than a null check — a not-null test would match every row.
+      description:
+        "Rentable units carrying a positive balance OR a stated delinquency reason. Matches the manager app's definition; a balance alone and a reason alone both count.",
+      filters: [
+        { column: "holding_unit", op: "eq", value: false },
+        { column: "excluded_from_occupancy", op: "eq", value: false },
+      ],
+      any: [
+        { column: "balance", op: "gte", value: 0.01 },
+        { column: "delinquency_reason", op: "neq", value: "" },
+      ],
+    },
   },
   notes: [
     "`occupied` (boolean) and `occupancy_status` (Occupied/Vacant/Notice) answer DIFFERENT questions and disagree by 60 units. The gap is the Notice bucket — under eviction or notice given, still living there. Use `occupied` for anything physical (parking, utilities, access); use `occupancy_status` for leasing and reporting.",
@@ -436,6 +483,16 @@ export const leasesResource = defineResource({
   },
   booleanFilters: ["is_current_lease"],
   order: { column: "start_date", ascending: false },
+  scopes: {
+    current: {
+      description: "The lease currently in force for each unit — the one to reason about for occupancy or rent.",
+      filters: [{ column: "is_current_lease", op: "eq", value: true }],
+    },
+    terminal: {
+      description: "Leases that have ended — Former, Evicted, Cancelled. These never appear in units.lease_status.",
+      filters: [{ column: "status", op: "in", values: ["Former", "Evicted", "Cancelled", "Denied"] }],
+    },
+  },
   searchable: ["unit_number", "leasing_agent", "reason_for_leaving"],
   ranges: { start: "start_date", end: "end_date", move_out: "move_out_date", balance: "balance" },
   // `status` here is the FULL lease lifecycle (Current, Renewed, Evicted,
@@ -572,6 +629,28 @@ export const workOrdersResource = defineResource({
   measures: [],
   sortable: ["date_reported", "date_scheduled", "date_completed", "number"],
   entities: ["resman_unit_id", "technician", "category"],
+  // "Open" was previously something a caller had to discover by reading the
+  // status values — the work_order_aging prompt literally told them to. The set
+  // mirrors OPEN_WORK_ORDER_STATUSES in supabase/sync/src/shared/push.ts, which
+  // is the definition the alerting already uses.
+  scopes: {
+    open: {
+      description:
+        "Work orders not in a terminal state. Mirrors the sync's own open set — use this rather than guessing which statuses count.",
+      filters: [{ column: "status", op: "in", values: ["Open", "In Progress", "Not Started", "On Hold", "Submitted", "Scheduled"] }],
+    },
+    closed: {
+      description: "Terminal work orders (Completed / Closed / Canceled).",
+      filters: [{ column: "status", op: "in", values: ["Completed", "Closed", "Canceled"] }],
+    },
+    unscheduled_open: {
+      description: "Open work orders with no scheduled date — the backlog nobody has committed to yet.",
+      filters: [
+        { column: "status", op: "in", values: ["Open", "In Progress", "Not Started", "On Hold", "Submitted", "Scheduled"] },
+        { column: "date_scheduled", op: "is_null" },
+      ],
+    },
+  },
   periods: {
     reported: { column: "date_reported", kind: "date" },
     scheduled: { column: "date_scheduled", kind: "date" },
@@ -936,7 +1015,12 @@ export const monitorFindingsResource = defineResource({
   idColumn: "id",
   selectColumns: [
     "id", "fingerprint", "kind", "severity", "resource", "entity", "period",
-    "summary", "first_seen_at", "last_seen_at", "resolved_at", "created_at",
+    // `detail` carries the baseline that produced each score. It was withheld
+    // to keep pages small, which made the note telling callers to "fetch it by
+    // id" describe something no code path could do. The response budget now
+    // handles size — a wide row simply means fewer rows per page — so the
+    // honest fix is to expose it rather than document a route that isn't there.
+    "summary", "detail", "first_seen_at", "last_seen_at", "resolved_at", "notified_at", "created_at",
   ],
   filters: {
     kind: "kind",
@@ -944,6 +1028,23 @@ export const monitorFindingsResource = defineResource({
     subject: "resource",
     entity: "entity",
     period: "period",
+  },
+  // "What is open right now" is the question this table exists to answer, and
+  // resolved_at is nullable — an equality-only filter map could not express it,
+  // so the resource's own note described an impossible query.
+  scopes: {
+    open: {
+      description: "Findings still live — not yet resolved. THE default view; start here.",
+      filters: [{ column: "resolved_at", op: "is_null" }],
+    },
+    resolved: {
+      description: "Findings that stopped recurring and were auto-resolved. History, not alarms.",
+      filters: [{ column: "resolved_at", op: "not_null" }],
+    },
+    unannounced: {
+      description: "Open findings no notification has gone out for yet — normally empty; non-empty means the notifier is failing.",
+      filters: [{ column: "resolved_at", op: "is_null" }, { column: "notified_at", op: "is_null" }],
+    },
   },
   order: { column: "last_seen_at", ascending: false },
   searchable: ["summary"],
@@ -955,9 +1056,9 @@ export const monitorFindingsResource = defineResource({
   },
   sortable: ["last_seen_at", "first_seen_at", "severity"],
   notes: [
-    "An OPEN finding has resolved_at = null. Rows are not deleted when a problem goes away — they are stamped resolved_at — so an unfiltered query mixes live and historical findings. Filter on resolved_at unless you want both.",
+    "An OPEN finding has resolved_at = null. Rows are not deleted when a problem goes away — they are stamped resolved_at — so an unfiltered query mixes live and historical findings. Use scope 'open' unless you want both.",
     "One row per DISTINCT finding, not per run. `last_seen_at` moves while a finding persists; `first_seen_at` is when it started. A finding seen for a week is one row, not seven.",
-    "Anomaly severity is a RANKING, not a statistical claim — with a handful of baseline periods a z of 6 is not a p-value. Read the summary's baseline before acting.",
+    "Anomaly severity is a RANKING, not a statistical claim — with a handful of baseline periods a z of 6 is not a p-value. Read the summary's baseline, or the `detail` column, before acting.",
     "Staleness is judged only on sync-backed resources, against the MEDIAN sync time. Tables written by user activity (guest passes, entry logs, the snapshot jobs) are never flagged: quiet is not the same as broken.",
   ],
 });

@@ -645,19 +645,30 @@ const TOOLS: McpTool[] = [
         }),
       );
 
-      // Staleness is RELATIVE. An absolute threshold flags everything after a
-      // quiet weekend; lagging the freshest table is what actually indicates a
-      // sync that stopped — which is how `units` sat frozen for twelve days
-      // while work-orders kept updating, and nothing said so.
-      const stamps = rows.map((r) => (r.freshness_at ? Date.parse(r.freshness_at) : NaN)).filter((n) => !Number.isNaN(n));
-      const freshest = stamps.length > 0 ? Math.max(...stamps) : null;
+      // Staleness is RELATIVE, and judged only on SYNC-BACKED resources.
+      //
+      // Two corrections learned by running this. (1) The reference is the
+      // MEDIAN synced_at, not the maximum: against the maximum, one unusually
+      // recent table drags every other over the threshold at once — creating
+      // unit_snapshots made eight healthy resources look 28h stale in an
+      // instant. (2) Only resources that actually carry `synced_at` are
+      // candidates, because that column marks the tables a scraper maintains;
+      // guest passes and entry logs are written by user activity, and quiet is
+      // not the same as broken.
+      const syncStamps = rows
+        .filter((r) => r.freshness_from === "synced_at" && r.freshness_at)
+        .map((r) => Date.parse(r.freshness_at as string))
+        .filter((n) => !Number.isNaN(n))
+        .sort((a, b) => a - b);
+      const reference = syncStamps.length > 0 ? syncStamps[Math.floor(syncStamps.length / 2)] : null;
       const enriched = rows.map((r) => {
         const ms = r.freshness_at ? Date.parse(r.freshness_at) : NaN;
-        const lagHours = freshest !== null && !Number.isNaN(ms) ? (freshest - ms) / 3_600_000 : null;
+        const lagHours = reference !== null && !Number.isNaN(ms) ? (reference - ms) / 3_600_000 : null;
         return {
           ...r,
           lag_hours: lagHours === null ? null : Math.round(lagHours * 10) / 10,
-          stale: lagHours !== null && lagHours > staleAfter,
+          // A resource with no sync stamp is reported but never called stale.
+          stale: r.freshness_from === "synced_at" && lagHours !== null && lagHours > staleAfter,
         };
       });
       enriched.sort((a, b) => (b.lag_hours ?? -1) - (a.lag_hours ?? -1));
@@ -667,14 +678,15 @@ const TOOLS: McpTool[] = [
       return {
         resource: "",
         text: json({
-          freshest_sync: freshest === null ? null : new Date(freshest).toISOString(),
+          reference_sync: reference === null ? null : new Date(reference).toISOString(),
+          reference: "median synced_at across sync-backed resources; lag is measured against it",
           stale_after_hours: staleAfter,
           resources: enriched,
           stale,
           empty,
           notes: [
             "synced_at is when the scraper last SAW a row; updated_at is when it last CHANGED. A large gap between them is normal on quiet data.",
-            "`freshness_from` names the column each lag was measured on. A resource measured on created_at has no sync stamp at all, so its lag tracks INSERTS, not syncs.",
+            "`freshness_from` names the column each lag was measured on. A resource measured on created_at or updated_at has no sync stamp, so it is reported but NEVER flagged stale — those tables are written by activity, and quiet is not broken.",
             stale.length > 0
               ? `STALE: ${stale.join(", ")} — these lag the freshest resource by more than ${staleAfter}h. Treat their numbers as out of date and check the sync before reporting them.`
               : "No resource lags the freshest by more than the threshold.",

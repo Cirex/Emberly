@@ -2487,6 +2487,54 @@ export interface Database {
         };
         Relationships: [];
       };
+      monitor_findings: {
+        Row: {
+          id: string;
+          fingerprint: string;
+          kind: string;
+          severity: string;
+          resource: string;
+          entity: string | null;
+          period: string | null;
+          summary: string;
+          detail: Json | null;
+          first_seen_at: string;
+          last_seen_at: string;
+          resolved_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          fingerprint?: string;
+          kind?: string;
+          severity?: string;
+          resource?: string;
+          entity?: string | null;
+          period?: string | null;
+          summary?: string;
+          detail?: Json | null;
+          first_seen_at?: string;
+          last_seen_at?: string;
+          resolved_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          fingerprint?: string;
+          kind?: string;
+          severity?: string;
+          resource?: string;
+          entity?: string | null;
+          period?: string | null;
+          summary?: string;
+          detail?: Json | null;
+          first_seen_at?: string;
+          last_seen_at?: string;
+          resolved_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       unit_snapshots: {
         Row: {
           snapshot_date: string;

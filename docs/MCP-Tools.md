@@ -10,7 +10,7 @@ declared per-resource in `apps/web/lib/resman-resources.ts`. Anything absent fro
 is unreachable however the request is phrased — which is what lets the surface be expressive
 without becoming arbitrary SQL over resident data.
 
-All fourteen resources declare capabilities. (Through v0.1 only five did; the MLGW and
+All sixteen resources declare capabilities. (Through v0.1 only five did; the MLGW and
 gate-log tables were list-only, which made utility spend and gate activity unaskable.)
 
 ---
@@ -236,6 +236,39 @@ Call it before reporting any number that has to be current.
 
 ---
 
+## Monitoring: findings come to you
+
+`detect_anomalies` and `data_freshness` answer when asked, and nobody was going to ask nightly.
+`POST /api/cron/monitor` (bearer `CRON_SECRET`, same pattern as `/api/cron/cleanup`) runs the
+anomaly watches and the freshness check and writes what it sees to the **`monitor-findings`**
+resource. Schedule it after the sync pipeline.
+
+```json
+{ "resource": "monitor-findings", "filters": { "severity": "critical" } }
+```
+
+- **Open findings have `resolved_at: null`.** Rows are never deleted — a fixed problem is
+  stamped resolved. So an unfiltered query mixes live and historical; filter unless you want both.
+- **One row per distinct finding, not per run.** `last_seen_at` moves while it persists,
+  `first_seen_at` is when it started. A finding seen for a week is one row, not seven.
+- **Severity is a ranking, not a p-value.** With a handful of baseline periods a `z` of 6 is a
+  sort order. Read the baseline in the summary before acting.
+
+The first live run produced 34 anomalies and 9 staleness findings — and the staleness ones were
+**all false positives**, which is worth knowing because both causes are now designed out:
+
+- Creating `unit_snapshots` made it the freshest table, and a *maximum*-based reference instantly
+  flagged eight healthy resources as 28h stale. The reference is now the **median** `synced_at`,
+  which only moves when half the mirror moves.
+- `guest-passes` was flagged at 340h behind because no new pass had been issued. Staleness is
+  now judged **only on sync-backed resources** — those carrying `synced_at`. Tables written by
+  user activity are reported but never flagged: quiet is not broken.
+
+Re-running after the fix resolved all nine automatically, which is the resolution path proving
+itself on real data.
+
+---
+
 ## Prompts
 
 Canned analyses that encode what you'd otherwise have to know. `prompts/list`:
@@ -415,6 +448,16 @@ aggregates were never affected — they use exact HEAD counts and transfer no ro
 
 If you are writing new code against this mirror, do not trust a short response to mean "that
 was all of it".
+
+### History exists at two levels, and neither goes back far
+
+`property-snapshots` is property-level and starts 2024-07-21. `unit-snapshots` is per-unit and
+starts **2026-07-30** — the day it was created. Neither can be backfilled further: the ResMan
+mirror upserts current state, so the past exists nowhere to recover it from.
+
+A `unit-snapshots` range before that returns nothing. That is missing history, **not** a period
+with no units. Counting its rows counts unit-days, not units — filter to one `snapshot_date`
+for a unit count.
 
 ### An empty table is not a zero
 

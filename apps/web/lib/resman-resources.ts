@@ -847,10 +847,54 @@ export const unitSnapshotsResource = defineResource({
   ],
 });
 
+/**
+ * What the scheduled monitor noticed — the push half of the pull tools.
+ *
+ * `detect_anomalies` and `data_freshness` answer when asked. This is where the
+ * nightly run leaves what it saw, so "what needs attention" is a query rather
+ * than a thing someone has to remember to go and check.
+ *
+ * `detail` (the full anomaly, including the baseline that produced the score)
+ * is withheld from the response: it is a nested blob that would dominate a
+ * page of findings, and `summary` already states the case. Fetch the finding by
+ * id when the detail matters.
+ */
+export const monitorFindingsResource = defineResource({
+  name: "monitor-findings",
+  table: "monitor_findings",
+  idColumn: "id",
+  selectColumns: [
+    "id", "fingerprint", "kind", "severity", "resource", "entity", "period",
+    "summary", "first_seen_at", "last_seen_at", "resolved_at", "created_at",
+  ],
+  filters: {
+    kind: "kind",
+    severity: "severity",
+    subject: "resource",
+    entity: "entity",
+    period: "period",
+  },
+  order: { column: "last_seen_at", ascending: false },
+  searchable: ["summary"],
+  ranges: { first_seen: "first_seen_at", last_seen: "last_seen_at" },
+  groupable: ["kind", "severity", "resource", "period"],
+  periods: {
+    last_seen: { column: "last_seen_at", kind: "timestamp" },
+    first_seen: { column: "first_seen_at", kind: "timestamp" },
+  },
+  sortable: ["last_seen_at", "first_seen_at", "severity"],
+  notes: [
+    "An OPEN finding has resolved_at = null. Rows are not deleted when a problem goes away — they are stamped resolved_at — so an unfiltered query mixes live and historical findings. Filter on resolved_at unless you want both.",
+    "One row per DISTINCT finding, not per run. `last_seen_at` moves while a finding persists; `first_seen_at` is when it started. A finding seen for a week is one row, not seven.",
+    "Anomaly severity is a RANKING, not a statistical claim — with a handful of baseline periods a z of 6 is not a p-value. Read the summary's baseline before acting.",
+    "Staleness is judged only on sync-backed resources, against the MEDIAN sync time. Tables written by user activity (guest passes, entry logs, the snapshot jobs) are never flagged: quiet is not the same as broken.",
+  ],
+});
+
 export const RESMAN_RESOURCES: readonly ResmanResource[] = [
   propertiesResource, buildingsResource, floorplansResource, unitsResource,
   leasesResource, residentsResource, transactionsResource, workOrdersResource,
   mlgwAccountsResource, mlgwBillsResource, mlgwPaymentsResource,
   guestPassesResource, entryLogsResource, propertySnapshotsResource,
-  unitSnapshotsResource,
+  unitSnapshotsResource, monitorFindingsResource,
 ];

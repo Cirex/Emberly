@@ -524,6 +524,61 @@ test("a table with rows but no matches gets no emptiness note", async () => {
   assert.equal(payload.note, undefined, "a genuine no-match must not be mislabelled as an empty table");
 });
 
+// ------------------------------------------------------------- history ----
+
+test("property-snapshots is the only resource that can answer a trend question", () => {
+  // The ResMan mirror upserts CURRENT state, so no unit/lease/work-order table
+  // can answer "how has vacancy moved". If this resource ever loses its period
+  // declaration, that whole class of question silently becomes unanswerable
+  // again — which is the state it was in for two years.
+  const snapshots = RESMAN_RESOURCES.find((r) => r.name === "property-snapshots");
+  assert.ok(snapshots, "property-snapshots must stay registered");
+  assert.ok(Object.keys(snapshots.periods).includes("snapshot_date"));
+  assert.ok(snapshots.measures.includes("occupancy_pct"));
+  assert.ok(snapshots.measures.includes("balance_total"));
+  assert.ok(snapshots.groupable.includes("source"), "source must be groupable to separate backfill from nightly");
+  assert.equal(snapshots.filters.source, "source", "and filterable, which is how the sparse-coverage trap is avoided");
+});
+
+test("property-snapshots warns about its uneven coverage", () => {
+  // 730 of 736 rows are occupancy-only; the financial columns start 2026-07-21.
+  // An average of balance_total over "two years" really covers about nine days.
+  const snapshots = RESMAN_RESOURCES.find((r) => r.name === "property-snapshots");
+  const joined = snapshots.notes.join(" ");
+  assert.match(joined, /COVERAGE IS UNEVEN/);
+  assert.match(joined, /nightly/, "the note must name the filter that fixes it");
+});
+
+test("resources carry their caveats and describe_resource leads with them", async () => {
+  const res = await handleMcpMessage(
+    { id: 30, method: "tools/call", params: { name: "describe_resource", arguments: { resource: "units" } } },
+    { staff: staff(["*"]), client: memClient({ resman_units: [{ resman_unit_id: "u1", occupancy_status: "Occupied" }] }) },
+  );
+  const payload = JSON.parse(res.result.content[0].text);
+  assert.ok(Array.isArray(payload.notes_before_you_report));
+  assert.match(payload.notes_before_you_report.join(" "), /disagree by 60 units/);
+});
+
+test("the traps sheet names the history resource", async () => {
+  const res = await handleMcpMessage(
+    { id: 31, method: "resources/read", params: { uri: "emberly://data-traps" } },
+    { staff: staff(["*"]), client: fakeClient() },
+  );
+  assert.match(res.result.contents[0].text, /The mirror has no history/);
+});
+
+test("occupancy_trend is offered only with the snapshots scope", async () => {
+  const withIt = await handleMcpMessage(
+    { id: 32, method: "prompts/list" }, { staff: staff(["property-snapshots"]), client: fakeClient() },
+  );
+  assert.deepEqual(withIt.result.prompts.map((p) => p.name), ["occupancy_trend"]);
+
+  const without = await handleMcpMessage(
+    { id: 33, method: "prompts/list" }, { staff: staff(["units", "leases"]), client: fakeClient() },
+  );
+  assert.ok(!without.result.prompts.some((p) => p.name === "occupancy_trend"));
+});
+
 test("the money and gate tables carry the capabilities their questions need", () => {
   const by = Object.fromEntries(RESMAN_RESOURCES.map((r) => [r.name, r]));
   // "What did we spend on water in Q1" needs a date range and a measure.

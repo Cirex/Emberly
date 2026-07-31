@@ -108,6 +108,13 @@ interface ResmanResourceDef<T extends TableName> {
    * do not become so by appearing here — nothing can enumerate them.
    */
   entities?: readonly ColumnOf<T>[];
+  /**
+   * Caveats a caller must know BEFORE reporting a number from this resource.
+   * Surfaced by describe_resource and the catalog, so the warning travels with
+   * the data instead of living only in a document nobody reading the response
+   * has open.
+   */
+  notes?: readonly string[];
   /** Columns the caller may sort by (beyond the resource's default order). */
   sortable?: readonly ColumnOf<T>[];
   /**
@@ -160,6 +167,7 @@ export interface ResmanResource {
   measures: readonly string[];
   periods: Readonly<Record<string, { column: string; kind: "date" | "timestamp" }>>;
   entities: readonly string[];
+  notes: readonly string[];
   sortable: readonly string[];
   relations: readonly ResmanRelation[];
 }
@@ -184,6 +192,7 @@ function defineResource<T extends TableName>(def: ResmanResourceDef<T>): ResmanR
     measures: def.measures ?? [],
     periods: def.periods ?? {},
     entities: def.entities ?? [],
+    notes: def.notes ?? [],
     // The default sort column is always sortable — asking for the order the
     // resource already uses should never be rejected.
     sortable: def.sortable ?? [def.order.column],
@@ -324,6 +333,11 @@ export const unitsResource = defineResource({
   ],
   sortable: ["number", "market_rent", "lease_rent", "balance", "lease_end_date", "move_in_date"],
   entities: ["resman_unit_id"],
+  notes: [
+    "`occupied` (boolean) and `occupancy_status` (Occupied/Vacant/Notice) answer DIFFERENT questions and disagree by 60 units. The gap is the Notice bucket — under eviction or notice given, still living there. Use `occupied` for anything physical (parking, utilities, access); use `occupancy_status` for leasing and reporting.",
+    "`lease_status` here is the All-Units report's narrower view and does NOT contain Evicted or Former. For terminal lease states use the `leases` resource, whose `status` is the full lifecycle.",
+    "`holding_unit` and `excluded_from_occupancy` units are ResMan bookkeeping placeholders. Exclude them from any occupancy RATE and say that you did.",
+  ],
   periods: {
     move_in: { column: "move_in_date", kind: "date" },
     move_out: { column: "move_out_date", kind: "date" },
@@ -542,6 +556,10 @@ export const mlgwAccountsResource = defineResource({
   // property UUID, not a name, so grouping by it produces a bucket labelled
   // with a guid. Group by resman_property_id and mean it.
   groupable: ["is_house_account", "resman_property_id"],
+  notes: [
+    "`property_name` currently stores the property UUID, not a name — a sync bug. Group by `resman_property_id` instead; property_name is deliberately not groupable.",
+    "The link to `units` is inferred from the SERVICE ADDRESS, not a shared key, so an unmatched account is invisible to that relation and any per-unit utility figure is a lower bound.",
+  ],
   measures: ["due_now"],
   sortable: ["account_number", "due_now", "due_date"],
   relations: [
@@ -722,9 +740,59 @@ export const entryLogsResource = defineResource({
   ],
 });
 
+// --- first-party history -------------------------------------------------
+
+/**
+ * Nightly property-level snapshot — the ONLY history in the system.
+ *
+ * The ResMan mirror upserts current state, so `occupancy_status`, `balance` and
+ * work-order counts have no past: "how has vacancy moved since spring" is
+ * unanswerable from `units` however it is phrased. This table is where that
+ * question gets answered, and until now it was not reachable from the MCP at
+ * all despite two years of rows sitting in it.
+ *
+ * Coverage is UNEVEN and the `notes` say so, because the shape is a trap: the
+ * occupancy columns run daily from July 2024, while every financial and
+ * work-order column only starts when the nightly job did. Averaging
+ * `balance_total` across "two years of history" silently averages nine days.
+ */
+export const propertySnapshotsResource = defineResource({
+  name: "property-snapshots",
+  table: "property_snapshots",
+  idColumn: "snapshot_date",
+  selectColumns: [
+    "snapshot_date", "total_units", "occupied_units", "vacant_units", "occupancy_pct",
+    "rent_roll", "lease_rent_total", "balance_total", "balance_0_30", "balance_31_60",
+    "balance_61_90", "balance_90_plus", "delinquent_units", "turns_in_progress",
+    "open_work_orders", "utility_due", "source", "created_at",
+  ],
+  filters: { source: "source" },
+  order: { column: "snapshot_date", ascending: false },
+  ranges: {
+    snapshot_date: "snapshot_date",
+    occupancy_pct: "occupancy_pct",
+    balance_total: "balance_total",
+  },
+  groupable: ["source"],
+  measures: [
+    "total_units", "occupied_units", "vacant_units", "occupancy_pct",
+    "rent_roll", "lease_rent_total", "balance_total", "balance_0_30", "balance_31_60",
+    "balance_61_90", "balance_90_plus", "delinquent_units", "turns_in_progress",
+    "open_work_orders", "utility_due",
+  ],
+  periods: { snapshot_date: { column: "snapshot_date", kind: "date" } },
+  sortable: ["snapshot_date", "occupancy_pct", "balance_total", "open_work_orders"],
+  notes: [
+    "COVERAGE IS UNEVEN. The occupancy columns (total_units, occupied_units, vacant_units, occupancy_pct) run daily from 2024-07-21. Every OTHER column — rent_roll, balance_total, the aging buckets, delinquent_units, turns_in_progress, open_work_orders, utility_due — is null for the 730 `backfill` rows and only populated on `source = 'nightly'`, which began 2026-07-21. Filter to source=nightly before trending anything financial, and check the per-bucket `count` before quoting an average.",
+    "`utility_due` is 0 on every row so far — it reads as a real zero but is more likely not yet wired up. Do not report it as a finding.",
+    "`occupancy_pct` here is a THIRD definition, separate from units.occupied and units.occupancy_status, and does not equal either. Say which one a figure came from.",
+    "One row per day, but days are missing (736 rows across ~739 days). A period bucket with count 0 may be a gap in collection rather than a real zero.",
+  ],
+});
+
 export const RESMAN_RESOURCES: readonly ResmanResource[] = [
   propertiesResource, buildingsResource, floorplansResource, unitsResource,
   leasesResource, residentsResource, transactionsResource, workOrdersResource,
   mlgwAccountsResource, mlgwBillsResource, mlgwPaymentsResource,
-  guestPassesResource, entryLogsResource,
+  guestPassesResource, entryLogsResource, propertySnapshotsResource,
 ];

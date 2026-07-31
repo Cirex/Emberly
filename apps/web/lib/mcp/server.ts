@@ -222,6 +222,7 @@ const TOOLS: McpTool[] = [
         measures: r.measures,
         periods: Object.keys(r.periods),
         entities: r.entities,
+        has_caveats: r.notes.length > 0,
         relations: r.relations.map((rel) => `${rel.name} -> ${rel.resource} (${rel.kind})`),
       }));
       // Columns are deliberately NOT included here — thirteen resources' worth
@@ -270,6 +271,9 @@ const TOOLS: McpTool[] = [
             entities: resource.entities,
           },
           relations: resource.relations,
+          // Caveats first: a note that arrives after the number has already
+          // been read has not done its job.
+          notes_before_you_report: resource.notes,
           row_count: profile.row_count,
           last_synced_at: profile.last_synced_at,
           distinct_values: profile.distinct_values,
@@ -627,16 +631,27 @@ const TOOLS: McpTool[] = [
             const value = (data as Record<string, unknown>[] | null)?.[0]?.[column];
             return value === null || value === undefined ? null : String(value);
           };
-          const [countResult, syncedAt, updatedAt] = await Promise.all([
+          const [countResult, syncedAt, updatedAt, createdAt] = await Promise.all([
             ctx.client.from(r.table).select(r.idColumn, { count: "exact", head: true }),
             newest("synced_at"),
             newest("updated_at"),
+            newest("created_at"),
           ]);
+          // Not every resource has synced_at — the first-party tables never do.
+          // Falling back keeps them from showing as "unknown age" forever, and
+          // the column used is reported so nobody reads a created_at as a sync.
+          const [freshness, column] =
+            syncedAt !== null ? [syncedAt, "synced_at"]
+            : updatedAt !== null ? [updatedAt, "updated_at"]
+            : createdAt !== null ? [createdAt, "created_at"]
+            : [null, null];
           return {
             resource: r.name,
             row_count: (countResult as { count: number | null }).count ?? 0,
             last_synced_at: syncedAt,
             last_updated_at: updatedAt,
+            freshness_from: column,
+            freshness_at: freshness,
           };
         }),
       );
@@ -645,10 +660,10 @@ const TOOLS: McpTool[] = [
       // quiet weekend; lagging the freshest table is what actually indicates a
       // sync that stopped — which is how `units` sat frozen for twelve days
       // while work-orders kept updating, and nothing said so.
-      const stamps = rows.map((r) => (r.last_synced_at ? Date.parse(r.last_synced_at) : NaN)).filter((n) => !Number.isNaN(n));
+      const stamps = rows.map((r) => (r.freshness_at ? Date.parse(r.freshness_at) : NaN)).filter((n) => !Number.isNaN(n));
       const freshest = stamps.length > 0 ? Math.max(...stamps) : null;
       const enriched = rows.map((r) => {
-        const ms = r.last_synced_at ? Date.parse(r.last_synced_at) : NaN;
+        const ms = r.freshness_at ? Date.parse(r.freshness_at) : NaN;
         const lagHours = freshest !== null && !Number.isNaN(ms) ? (freshest - ms) / 3_600_000 : null;
         return {
           ...r,
@@ -670,6 +685,7 @@ const TOOLS: McpTool[] = [
           empty,
           notes: [
             "synced_at is when the scraper last SAW a row; updated_at is when it last CHANGED. A large gap between them is normal on quiet data.",
+            "`freshness_from` names the column each lag was measured on. A resource measured on created_at has no sync stamp at all, so its lag tracks INSERTS, not syncs.",
             stale.length > 0
               ? `STALE: ${stale.join(", ")} — these lag the freshest resource by more than ${staleAfter}h. Treat their numbers as out of date and check the sync before reporting them.`
               : "No resource lags the freshest by more than the threshold.",
@@ -838,6 +854,25 @@ const PROMPTS: McpPrompt[] = [
       ].join("\n"),
   },
   {
+    name: "occupancy_trend",
+    description: "Trend occupancy, delinquency or work-order load over time from the nightly snapshots.",
+    arguments: [
+      { name: "from", description: "Start date, ISO. Defaults to the whole series.", required: false },
+      { name: "interval", description: "day | week | month | quarter | year (default month).", required: false },
+    ],
+    requires: ["property-snapshots"],
+    build: (args) =>
+      [
+        `Trend the property over time${args.from ? ` from ${args.from}` : ""}.`,
+        "",
+        `1. aggregate_resource on \`property-snapshots\`, metric avg, measure \`occupancy_pct\`, period { column: "snapshot_date", interval: "${args.interval ?? "month"}" }${args.from ? `, ranges { snapshot_date_from: "${args.from}" }` : ""}.`,
+        "2. This is the ONLY history in the system. units/leases/work-orders hold current state only, so a trend cannot come from them.",
+        "3. BEFORE trending anything financial — balance_total, the aging buckets, delinquent_units, turns_in_progress, open_work_orders — add filters { source: \"nightly\" }. The 730 backfill rows are occupancy-only and null everywhere else, so an unfiltered average silently covers about nine days.",
+        "4. Call describe_resource on `property-snapshots` first and read its caveats. They are the difference between a two-year trend and a nine-day one.",
+        "5. occupancy_pct here is a THIRD definition, not equal to units.occupied or units.occupancy_status. Say which one you are quoting.",
+      ].join("\n"),
+  },
+  {
     name: "utility_spend",
     description: "Summarise MLGW utility spend and consumption over a period.",
     arguments: [
@@ -930,6 +965,14 @@ Despite the name it currently stores the property id. Group by resman_property_i
 Not by a shared key. An unmatched account is invisible to the relation; aggregate_related
 returns an "(unmatched)" bucket, and that number is part of the answer.
 
+## The mirror has no history — property-snapshots does
+units, leases and work-orders hold CURRENT state, upserted every sync. "How has vacancy moved
+since spring" cannot be answered from them however it is phrased. The property-snapshots
+resource is the only history: daily rows since 2024-07-21.
+Its coverage is uneven — occupancy runs the full two years, but every financial and
+work-order column is null before 2026-07-21 (source='nightly'). Filter to source=nightly
+before trending money, or a two-year average quietly covers nine days.
+
 ## Free text is not a category
 title, notes, completion_notes and names are deliberately not groupable. Search them.
 
@@ -952,6 +995,7 @@ function catalogText(staff: McpStaff): string {
       sortable: r.sortable,
       periods: Object.entries(r.periods).map(([name, p]) => ({ column: name, kind: p.kind })),
       entities: r.entities,
+      notes: r.notes,
       relations: r.relations.map((rel) => ({
         name: rel.name, target: rel.resource, kind: rel.kind, note: rel.note,
       })),

@@ -10,7 +10,7 @@ declared per-resource in `apps/web/lib/resman-resources.ts`. Anything absent fro
 is unreachable however the request is phrased — which is what lets the surface be expressive
 without becoming arbitrary SQL over resident data.
 
-All thirteen resources declare capabilities. (Through v0.1 only five did; the MLGW and
+All fourteen resources declare capabilities. (Through v0.1 only five did; the MLGW and
 gate-log tables were list-only, which made utility spend and gate activity unaskable.)
 
 ---
@@ -156,6 +156,44 @@ is not a way around the resource that owns it.
 
 ---
 
+## History: the mirror has none, `property-snapshots` does
+
+The ResMan mirror **upserts current state**. `units.occupancy_status`, `units.balance` and
+work-order status have no past, so *"how has vacancy moved since spring"* cannot be answered
+from them however it is phrased — the row simply gets overwritten each sync.
+
+`property-snapshots` is the only history in the system: one row per day since **2024-07-21**.
+
+```json
+{ "resource": "property-snapshots", "metric": "avg", "measure": "occupancy_pct",
+  "period": { "column": "snapshot_date", "interval": "quarter" } }
+```
+```
+2024-Q3 19.57%   2025-Q1 22.18%   2025-Q3 40.58%   2026-Q1 62.03%   2026-Q3 64.44%
+2024-Q4 20.09%   2025-Q2 28.83%   2025-Q4 51.69%   2026-Q2 64.60%
+```
+
+**Coverage is uneven, and this is the trap.** The occupancy columns run the full two years.
+Every *other* column — `rent_roll`, `balance_total`, the aging buckets, `delinquent_units`,
+`turns_in_progress`, `open_work_orders`, `utility_due` — is null across the 730 `backfill` rows
+and only populated on `source = "nightly"`, which began **2026-07-21**.
+
+So **filter to `source: "nightly"` before trending anything financial.** Nulls are excluded from
+aggregates, so an unfiltered average is not *wrong* — it is computed over the six rows that have
+values while appearing to span two years. Check the bucket's `count`.
+
+Two more things it will not tell you:
+
+- **`utility_due` is 0 on every row.** It reads as a real zero and is more likely unwired. Don't
+  report it as a finding.
+- **`occupancy_pct` is a third definition**, equal to neither `units.occupied` (63.2%) nor
+  `units.occupancy_status = 'Occupied'` (56.5%). Say which one a figure came from.
+
+It is still **property-level only**. Per-unit history — which units churn, how long one sat
+vacant — does not exist anywhere.
+
+---
+
 ## Anomalies
 
 `aggregate_resource` with a `period` tells you what the property spent. `detect_anomalies`
@@ -205,6 +243,7 @@ Canned analyses that encode what you'd otherwise have to know. `prompts/list`:
 | Prompt | Arguments |
 |---|---|
 | `occupancy_reconciliation` | — |
+| `occupancy_trend` | `from`, `interval` |
 | `work_order_aging` | `as_of` |
 | `delinquency_by_building` | — |
 | `utility_spend` | `from`, `to` (required) |
@@ -353,6 +392,17 @@ rows they scan, so they were never affected.
 
 `(other)` also collects rows whose period column is null — they belong to no calendar bucket.
 
+### Caveats travel with the resource
+
+`describe_resource` returns **`notes_before_you_report`** — the caveats that resource carries,
+declared next to its columns in `resman-resources.ts`. `units` warns about the occupancy split,
+`mlgw/accounts` about the UUID in `property_name` and the address-based matching,
+`property-snapshots` about its uneven coverage.
+
+Read them. They are the same traps documented below, but they arrive attached to the data
+rather than in a page nobody reading a tool response has open. `list_resources` flags which
+resources have them via `has_caveats`.
+
 ### PostgREST caps every response at 1,000 rows
 
 `.limit(20000)` against a 3,542-row table returns **1,000 rows and no error**. Every scan in
@@ -421,6 +471,7 @@ groupable:  ["status", "priority"],      // LOW-CARDINALITY only
 measures:   ["market_rent", "balance"],  // numeric only
 periods:    { reported: { column: "date_reported", kind: "date" } },  // kind matters — see below
 entities:   ["resman_unit_id", "technician"],   // per-entity series; HIGH cardinality is fine
+notes:      ["date_completed is entered by hand; blank means unentered."],  // surfaced by describe_resource
 sortable:   ["date_reported", "number"],
 relations:  [{ name: "unit", resource: "units",
                localColumn: "resman_unit_id", foreignColumn: "resman_unit_id", kind: "one" }],

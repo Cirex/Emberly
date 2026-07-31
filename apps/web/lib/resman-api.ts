@@ -389,6 +389,44 @@ function applyRelated(query: QueryBuilder, related: RelatedFilter): QueryBuilder
   return out;
 }
 
+/**
+ * The `p_exists` payload for a related filter.
+ *
+ * The child's substring search becomes part of the OR group, because that is
+ * exactly what it is — one column ilike OR another — and the SQL side already
+ * knows how to build a disjunction.
+ */
+function existsSpec(parent: ResmanResource, related: RelatedFilter): Record<string, unknown> {
+  const toPred = (p: ScopePredicate) => ({
+    col: p.column, op: p.op,
+    val: p.value === undefined ? null : String(p.value),
+    vals: p.values ? [...p.values] : null,
+  });
+  const { filters, any } = resolveScope(related.target, related.params.get("scope"));
+  const childFilters = [
+    ...resolveFilters(related.target, related.params).map((f) => ({
+      col: f.column, op: "eq", val: String(f.value), vals: null,
+    })),
+    ...resolveRanges(related.target, related.params).map((b) => ({
+      col: b.column, op: b.op, val: b.value, vals: null,
+    })),
+    ...filters.map(toPred),
+  ];
+  const search = resolveSearch(related.target, related.params);
+  const childAny = [
+    ...any.map(toPred),
+    ...(search ? search.columns.map((c) => ({ col: c, op: "ilike_contains", val: search.term, vals: null })) : []),
+  ];
+  return {
+    table: related.target.table,
+    parent_key: parent.idColumn,
+    child_key: related.relation.foreignColumn,
+    negate: !related.exists,
+    filters: childFilters,
+    any: childAny,
+  };
+}
+
 /** Executes a list query for a resource. Client is injectable for tests. */
 export async function listResource(
   resource: ResmanResource,
@@ -501,7 +539,12 @@ const DISTINCT_SAMPLE = 5_000;
 export async function describeResourceData(
   resource: ResmanResource,
   client: UntypedSupabase = pmClient(),
-): Promise<ResourceProfile & { sampled: number; domain_complete: boolean }> {
+): Promise<ResourceProfile & {
+  sampled: number;
+  domain_complete: boolean;
+  domain_truncated: string[];
+  domain_exact: boolean;
+}> {
   const { count, error: countError } = await client
     .from(resource.table)
     .select(resource.idColumn, { count: "exact", head: true });
@@ -519,7 +562,54 @@ export async function describeResourceData(
 
   const distinct: ResourceProfile["distinct_values"] = {};
   let sampled = 0;
-  if (resource.groupable.length > 0) {
+  // `usedSql` is "the database answered", `truncated` is "the answer was
+  // trimmed". Conflating them made a truncated-but-successful SQL result fall
+  // through to the sample, re-doing the work AND overwriting exact values with
+  // sampled ones.
+  let usedSql = false;
+  let truncatedColumns: string[] = [];
+
+  // Exact domains in one request, when the database can do the GROUP BY.
+  // The sample below is the fallback, and it is a fallback for a reason: a
+  // value outside it has no bucket, which reads exactly like a real zero.
+  const rpc = (client as { rpc?: unknown }).rpc;
+  if (resource.groupable.length > 0 && typeof rpc === "function") {
+    try {
+      const { data, error } = await (client as unknown as {
+        rpc: (n: string, a: Record<string, unknown>) => Promise<{ data: { col: string; val: string | null; n: number | string }[] | null; error: unknown }>;
+      }).rpc("mcp_distincts", {
+        p_table: resource.table,
+        p_columns: [...resource.groupable],
+        // One MORE than the cap, so hitting the ceiling is detectable. Without
+        // this the response reports the top 25 of 39 categories and calls the
+        // domain complete — the same "looks exhaustive, isn't" failure the
+        // sample had, just with better numbers.
+        p_cap: DISTINCT_CAP + 1,
+      });
+      if (!error && data) {
+        for (const column of resource.groupable) distinct[column] = [];
+        for (const row of data) {
+          (distinct[row.col] ??= []).push({ value: row.val, count: Number(row.n) || 0 });
+        }
+        for (const column of Object.keys(distinct)) {
+          distinct[column].sort((a, b) => b.count - a.count);
+          if (distinct[column].length > DISTINCT_CAP) {
+            // Named, not just flagged: a global warning on a resource whose
+            // occupancy_status has three values reads as noise.
+            truncatedColumns.push(column);
+            distinct[column] = distinct[column].slice(0, DISTINCT_CAP);
+          }
+        }
+        usedSql = true;
+        // Counted over every row either way — only the LIST is trimmed.
+        sampled = count ?? 0;
+      }
+    } catch {
+      /* fall through to the sample */
+    }
+  }
+
+  if (!usedSql && resource.groupable.length > 0) {
     // Paged for the same reason as everywhere else: a bare .limit(5000) comes
     // back with 1,000 rows, which would make `sampled` — and therefore
     // `domain_complete` — describe a sample four-fifths smaller than reported.
@@ -552,7 +642,15 @@ export async function describeResourceData(
     // The sample saw every row, so the reported domains are exhaustive rather
     // than indicative. When false, a count aggregate's "(other)" bucket is what
     // accounts for any value the sample missed.
-    domain_complete: resource.groupable.length === 0 || sampled >= (count ?? 0),
+    // Complete only when SQL answered AND nothing was trimmed. Otherwise the
+    // old rule: complete if the sample happened to cover the table.
+    domain_complete:
+      resource.groupable.length === 0 ||
+      (usedSql ? truncatedColumns.length === 0 : sampled >= (count ?? 0)),
+    /** Columns with MORE distinct values than the list reports. */
+    domain_truncated: truncatedColumns,
+    /** True when the domain came from SQL rather than a sample. */
+    domain_exact: usedSql,
   };
 }
 
@@ -701,6 +799,7 @@ async function aggregateViaSql(
     metric: "count" | "sum" | "avg" | "min" | "max";
     measure: string | null;
     period?: PeriodSpec | null;
+    related?: RelatedFilter;
   },
   client: UntypedSupabase,
 ): Promise<AggregateResult | null> {
@@ -739,6 +838,10 @@ async function aggregateViaSql(
         col: s.column, op: s.op, val: s.value === undefined ? null : String(s.value),
         vals: s.values ? [...s.values] : null,
       })),
+      // A cross-resource filter as an EXISTS subquery. Previously this forced
+      // the whole aggregate onto the PostgREST path, where a grouped count cost
+      // one HEAD request per group — 29 requests for units-by-building.
+      p_exists: opts.related ? existsSpec(resource, opts.related) : null,
     });
     if (result.error) return null;
     data = result.data ?? [];
@@ -796,10 +899,7 @@ export async function aggregateResource(
   },
   client: UntypedSupabase = pmClient(),
 ): Promise<AggregateResult> {
-  // A cross-resource filter is a JOIN, which mcp_aggregate does not express.
-  // PostgREST does, natively and with an exact parent count, so those queries
-  // take the scan path deliberately rather than losing the filter.
-  const sql = opts.related ? null : await aggregateViaSql(resource, searchParams, opts, client);
+  const sql = await aggregateViaSql(resource, searchParams, opts, client);
   if (sql) return sql;
   const applyPredicates = (q: ReturnType<ReturnType<UntypedSupabase["from"]>["select"]>) => {
     let query = q;
@@ -1157,17 +1257,31 @@ export async function aggregateRelated(
   let unmatched = 0;
   let targetTruncated = false;
 
-  for (let i = 0; i < keys.length && scanned < AGGREGATE_SCAN_CAP; i += RELATED_KEY_CHUNK) {
-    const chunk = keys.slice(i, i + RELATED_KEY_CHUNK);
-    const { rows, truncated: chunkTruncated } = await fetchPaged(
-      () => client
-        .from(target.table)
-        .select([...new Set([...targetColumns, target.idColumn])].join(","))
-        .in(relation.foreignColumn, chunk),
-      target.idColumn,
-      AGGREGATE_SCAN_CAP - scanned,
-    );
+  // Chunks are independent, so they run CONCURRENTLY. Sequentially this cost
+  // 24 requests and 1.6s on units -> transactions, almost all of it waiting.
+  // Each chunk still gets the full remaining budget; the cap is re-checked
+  // against the combined total below, which can overshoot by at most one chunk
+  // — a smaller error than serialising nine round trips to avoid it.
+  const chunks: string[][] = [];
+  for (let i = 0; i < keys.length; i += RELATED_KEY_CHUNK) {
+    chunks.push(keys.slice(i, i + RELATED_KEY_CHUNK));
+  }
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      fetchPaged(
+        () => client
+          .from(target.table)
+          .select([...new Set([...targetColumns, target.idColumn])].join(","))
+          .in(relation.foreignColumn, chunk),
+        target.idColumn,
+        AGGREGATE_SCAN_CAP,
+      ),
+    ),
+  );
+
+  for (const { rows, truncated: chunkTruncated } of results) {
     if (chunkTruncated) targetTruncated = true;
+    if (scanned >= AGGREGATE_SCAN_CAP) { targetTruncated = true; break; }
     scanned += rows.length;
 
     for (const row of rows) {
@@ -1190,7 +1304,6 @@ export async function aggregateRelated(
       if (!Number.isFinite(value)) continue;
       bump(group, value);
     }
-    if (scanned >= AGGREGATE_SCAN_CAP) targetTruncated = true;
   }
 
   const buckets: AggregateBucket[] = [...acc.entries()].map(([group, a]) => ({

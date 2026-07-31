@@ -993,9 +993,11 @@ test("a related filter can carry a search, so name lookups are one call", async 
       } },
     client,
   );
-  // Routed through PostgREST, not the SQL RPC — a join is not something
-  // mcp_aggregate expresses.
-  assert.equal(client.calls.length, 0, "the RPC is skipped when a related filter is present");
+  // This used to route through PostgREST, because a join was not something
+  // mcp_aggregate expressed. It is now an EXISTS clause, so it stays in SQL —
+  // one request rather than one HEAD count per group.
+  assert.equal(client.calls.length, 1, "the join happens in SQL");
+  assert.equal(client.calls[0].args.p_exists.table, "resman_residents");
 });
 
 test("searching a relation only reaches the target's declared searchable columns", async () => {
@@ -1013,4 +1015,68 @@ test("a relation whose target declares nothing searchable refuses a search", asy
   // Nothing joinable currently targets one, so assert the resolver's contract
   // directly: no searchable columns means no search expression, ever.
   assert.equal(resolveSearch(bare, new URLSearchParams({ q: "anything" })), null);
+});
+
+// ------------------------------------------------------------- SQL routing ---
+
+test("a related filter stays in SQL instead of falling back to per-group counts", async () => {
+  // This regressed once already: `related` skipped the RPC, so a grouped count
+  // went back to one HEAD request per group — 29 requests and 3.7s measured on
+  // units-by-building. The EXISTS clause keeps it at one.
+  const client = rpcClient([{ grp: "A", period: null, n: 12, val: null }]);
+  const result = await aggregateResource(
+    unitsResource,
+    new URLSearchParams(),
+    {
+      groupBy: "resman_building_id", groupValues: [], metric: "count", measure: null,
+      related: {
+        relation: { name: "work_orders", resource: "work-orders", foreignColumn: "resman_unit_id", kind: "many" },
+        target: workOrdersResource,
+        exists: true,
+        params: new URLSearchParams({ scope: "open" }),
+      },
+    },
+    client,
+  );
+  assert.equal(result.engine, "sql");
+  assert.equal(client.calls.length, 1, "one request, not one per building");
+  const spec = client.calls[0].args.p_exists;
+  assert.equal(spec.table, "resman_work_orders");
+  assert.equal(spec.parent_key, "resman_unit_id");
+  assert.equal(spec.child_key, "resman_unit_id");
+  assert.equal(spec.negate, false);
+  assert.equal(spec.filters[0].op, "in", "the open-status set rides along as an IN");
+});
+
+test("exists:false becomes a negated EXISTS", async () => {
+  const client = rpcClient([]);
+  await aggregateResource(
+    unitsResource, new URLSearchParams(),
+    { groupBy: null, groupValues: [], metric: "count", measure: null,
+      related: {
+        relation: { name: "leases", resource: "leases", foreignColumn: "resman_unit_id", kind: "many" },
+        target: leasesResource, exists: false, params: new URLSearchParams(),
+      } },
+    client,
+  );
+  assert.equal(client.calls[0].args.p_exists.negate, true);
+});
+
+test("a child search becomes an OR group inside the EXISTS, on searchable columns only", async () => {
+  const client = rpcClient([]);
+  await aggregateResource(
+    leasesResource, new URLSearchParams(),
+    { groupBy: null, groupValues: [], metric: "count", measure: null,
+      related: {
+        relation: { name: "residents", resource: "residents", foreignColumn: "resman_lease_id", kind: "many" },
+        target: residentsResource, exists: true,
+        params: new URLSearchParams({ q: "hernandez" }),
+      } },
+    client,
+  );
+  const any = client.calls[0].args.p_exists.any;
+  assert.deepEqual(any.map((p) => p.col), ["first_name", "last_name"]);
+  assert.ok(any.every((p) => p.op === "ilike_contains"));
+  // The withheld contact columns must not become reachable through the join.
+  assert.ok(!any.some((p) => p.col === "email" || p.col === "phone_numbers"));
 });

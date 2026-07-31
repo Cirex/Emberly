@@ -443,13 +443,16 @@ const TOOLS: McpTool[] = [
           last_synced_at: profile.last_synced_at,
           distinct_values: profile.distinct_values,
           notes: [
-            profile.sampled > 0 && profile.sampled < profile.row_count
+            !profile.domain_exact && profile.sampled > 0 && profile.sampled < profile.row_count
               ? `distinct_values sampled ${profile.sampled} of ${profile.row_count} rows — indicative, not exhaustive.`
               : null,
             "last_synced_at is when the scraper last saw these rows, not when they last changed.",
-            profile.domain_complete
-              ? null
-              : "distinct_values are from a sample, so a rare value may be missing. A count aggregate reconciles against the true total and reports any shortfall as an \"(other)\" bucket.",
+            profile.domain_truncated.length > 0
+              ? `These columns have MORE distinct values than listed (top ${25} shown): ${profile.domain_truncated.join(", ")}. Counted over every row — only the LIST is trimmed, and aggregates group in SQL so they are unaffected.`
+              : null,
+            !profile.domain_exact && !profile.domain_complete
+              ? "distinct_values are from a sample, so a rare value may be missing. A count aggregate reconciles against the true total and reports any shortfall as an \"(other)\" bucket."
+              : null,
             profile.row_count === 0
               ? "This resource is EMPTY — 0 rows. A query against it returns nothing because nothing has ever been recorded, not because the filters excluded it."
               : null,

@@ -16,6 +16,16 @@ Verified against the live database on 2026-07-16: 38 declared tables = 38 live t
 
 On 2026-07-20 the twelve migrations added since then were flattened into `../schema.sql` and this directory emptied again: map annotation layers/icons, lease deep-sync stamp, ledger sequence, map cameras (+ UniFi label/name/synced fields), first-party annotation photos, unit tags, admin ResMan person identity, and the `resident_entry_token_uses` replay ledger. Each was already reflected in `schema.sql` (audited table/column/index-for-object) except the last, which was folded in during this pass.
 
+On 2026-08-01 the thirty-two deltas accumulated since then were flattened into `../schema.sql` and `../deltas` emptied. Unlike previous passes this one was **verified mechanically rather than by audit**: a scratch Postgres was built twice — once from `schema.sql` plus every delta in order, once from the flattened `schema.sql` alone — and the two introspections (tables, columns, defaults, nullability, indexes, constraints, functions, triggers, RLS, policies) were diffed object-for-object, then both diffed against production. 1,304 production objects, none unaccounted for.
+
+That diff earned its keep. Three things were wrong that reading the files would not have shown:
+
+- **`check_rate_limit` in `schema.sql` was the un-hardened version.** `2026-07-25-harden-check-rate-limit.sql` added `set search_path` to a `security definer` function; `schema.sql` was never updated to match, so every database provisioned from it would have carried the vulnerability the delta existed to fix. This is the strongest argument for building the file and diffing it rather than trusting a read-through.
+- **`resman_transactions_lease_sequence_idx` existed in production but in no file at all** — added by hand and lost by any rebuild. Now declared.
+- **Three dead `mcp_*` overloads.** `create or replace function` with a new signature adds a function rather than replacing one, so each capability added to `mcp_aggregate` (p_any, then p_exists) and `mcp_predicate` (p_prefix) left its predecessor behind, exposed as a PostgREST endpoint with a stale table allowlist. Dropped in `2026-08-02-drop-stale-mcp-overloads.sql` after confirming nothing reaches them; a fresh database never had them.
+
+Superseded revisions are deliberately not reproduced in `schema.sql`: `mcp_aggregate` was defined four times and `mcp_predicate` three, and only the end state belongs in a file whose job is to describe the end state.
+
 ## This directory is retired — new migrations go in `../deltas`
 
 After the 2026-07-20 flatten, schema changes were written to `../deltas` under a

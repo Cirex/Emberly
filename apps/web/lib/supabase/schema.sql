@@ -51,6 +51,8 @@ returns trigger as $$
 begin
   if to_jsonb(new) - 'updated_at' - 'synced_at'
      = to_jsonb(old) - 'updated_at' - 'synced_at' then
+    -- Nothing moved: hold the timestamp so "changed since X" stays truthful
+    -- across an idempotent mirror re-upsert.
     new.updated_at = old.updated_at;
     return new;
   end if;
@@ -387,6 +389,11 @@ create index rate_limits_expires_at_idx on rate_limits (expires_at);
 
 alter table rate_limits enable row level security;
 
+-- SECURITY DEFINER runs with the OWNER's rights, so an unqualified name inside
+-- the body resolves through the CALLER's search_path — a caller who can create
+-- a schema could shadow `rate_limits` and have this function write somewhere
+-- else entirely, as the owner. Pinning search_path closes that; it is not
+-- optional decoration on a definer function.
 create or replace function check_rate_limit(
   p_bucket text,
   p_max_attempts integer,
@@ -395,6 +402,7 @@ create or replace function check_rate_limit(
 returns boolean
 language plpgsql
 security definer
+set search_path = public, pg_temp
 as $$
 declare
   v_now timestamptz := now();
@@ -1820,3 +1828,528 @@ insert into storage.buckets (id, name, public)
 values ('owner-reports', 'owner-reports', false)
 on conflict (id) do update
 set public = excluded.public;
+
+
+-- ============================================================
+-- Flattened from lib/supabase/deltas on 2026-08-01
+-- ============================================================
+--
+-- Everything below reached production through a dated delta and is folded in
+-- here as its end state, per the convention in migrations/README.md: this file
+-- provisions a fresh database on its own, and `deltas/` starts empty again.
+--
+-- Superseded revisions are NOT reproduced. mcp_aggregate was defined four
+-- times and mcp_predicate three as their capabilities grew; only the final
+-- definition of each appears here. Replaying the deltas left the earlier
+-- overloads behind in the database — `create or replace function` with a new
+-- signature creates a new function rather than replacing the old one — and a
+-- fresh database built from this file simply never has them.
+
+-- ------------------------------------------------------------
+-- unit_snapshots — per-unit daily history
+-- ------------------------------------------------------------
+-- resman_units is a MIRROR: the sync overwrites it with current state, so
+-- yesterday's occupancy is gone the moment it runs. This table is the only
+-- record of what a unit looked like on a given day, written nightly by
+-- supabase/sync/src/run-unit-snapshots.ts. Keyed (snapshot_date, unit) so a
+-- re-run of the same night is an upsert, not a duplicate.
+create table unit_snapshots (
+  snapshot_date date not null,
+  resman_unit_id uuid not null,
+  unit_number text,
+  resman_building_id uuid,
+  resman_floorplan_id uuid,
+  occupancy_status text,
+  occupied boolean,
+  lease_status text,
+  availability text,
+  balance numeric,
+  current_month_balance numeric,
+  market_rent numeric,
+  lease_rent numeric,
+  times_late integer,
+  holding_unit boolean,
+  excluded_from_occupancy boolean,
+  move_in_date date,
+  move_out_date date,
+  lease_end_date date,
+  source text not null default 'nightly'::text,
+  created_at timestamptz not null default now(),
+  constraint unit_snapshots_pkey PRIMARY KEY (snapshot_date, resman_unit_id)
+);
+
+create index unit_snapshots_status_date_idx on unit_snapshots using btree (occupancy_status, snapshot_date);
+create index unit_snapshots_unit_date_idx on unit_snapshots using btree (resman_unit_id, snapshot_date DESC);
+
+-- ------------------------------------------------------------
+-- monitor_findings — what the monitor noticed, deduplicated
+-- ------------------------------------------------------------
+-- One row per DISTINCT finding, not per detection: `fingerprint` is unique, so
+-- a condition that persists for a week updates last_seen_at instead of filing
+-- seven rows. resolved_at is set when a finding stops reproducing, which is
+-- what makes "still open" answerable. notified_at records that a digest went
+-- out, so a restart cannot re-notify the same finding.
+create table monitor_findings (
+  id uuid not null default gen_random_uuid(),
+  fingerprint text not null,
+  kind text not null,
+  severity text not null,
+  resource text not null,
+  entity text,
+  period text,
+  summary text not null,
+  detail jsonb,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  resolved_at timestamptz,
+  created_at timestamptz not null default now(),
+  notified_at timestamptz,
+  constraint monitor_findings_kind_check CHECK ((kind = ANY (ARRAY['anomaly'::text, 'staleness'::text]))),
+  constraint monitor_findings_severity_check CHECK ((severity = ANY (ARRAY['info'::text, 'warn'::text, 'critical'::text]))),
+  constraint monitor_findings_pkey PRIMARY KEY (id),
+  constraint monitor_findings_fingerprint_key UNIQUE (fingerprint)
+);
+
+create index monitor_findings_notify_idx on monitor_findings using btree (notified_at, severity) WHERE (resolved_at IS NULL);
+create index monitor_findings_open_idx on monitor_findings using btree (resolved_at, severity, last_seen_at DESC);
+create index monitor_findings_resource_idx on monitor_findings using btree (resource, kind);
+
+-- ------------------------------------------------------------
+-- access_token_changes — a trail for PERMISSION changes
+-- ------------------------------------------------------------
+-- access_token_audit_log records what a token DID; this records what was done
+-- TO it. See the trigger below for why it is enforced in the database.
+create table access_token_changes (
+  id uuid not null default gen_random_uuid(),
+  token_id uuid not null,
+  label text,
+  kind text,
+  action text not null,
+  scopes_before jsonb,
+  scopes_after jsonb,
+  active_before boolean,
+  active_after boolean,
+  changed_at timestamptz not null default now(),
+  constraint access_token_changes_action_check CHECK ((action = ANY (ARRAY['created'::text, 'scopes_changed'::text, 'revoked'::text, 'reactivated'::text, 'other'::text]))),
+  constraint access_token_changes_pkey PRIMARY KEY (id)
+);
+
+create index access_token_changes_token_idx on access_token_changes using btree (token_id, changed_at DESC);
+
+-- ============================================================================
+-- public.access_token_changes — a trail for PERMISSION changes
+-- ============================================================================
+--
+-- access_token_audit_log records what a token DID. Nothing recorded what was
+-- done TO a token: minting, revoking, and — the one that exposed this — widening
+-- its scopes. A token's access was changed from 13 resources to 16 during
+-- development and the only record was a chat transcript.
+--
+-- A TRIGGER, not application code, and that is the whole point: the change that
+-- revealed the gap was a direct UPDATE against the table. Anything that writes
+-- through the API, through psql, or through a migration is caught here, because
+-- the database is the one chokepoint none of them can go around.
+--
+-- Scopes are stored as before/after arrays rather than a diff, so a row answers
+-- "what could this token reach on that date" without replaying history.
+
+
+
+create or replace function public.log_access_token_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_action text;
+begin
+  if tg_op = 'INSERT' then
+    insert into public.access_token_changes (token_id, label, kind, action, scopes_after, active_after)
+    values (new.id, new.label, new.kind, 'created', to_jsonb(new.scopes), new.active);
+    return new;
+  end if;
+
+  -- Only permission-relevant transitions are logged. last_used_at is bumped on
+  -- every authenticated request, and recording those here would bury the four
+  -- events a year that actually matter under millions that do not.
+  if new.scopes is distinct from old.scopes then
+    v_action := 'scopes_changed';
+  elsif old.active and not new.active then
+    v_action := 'revoked';
+  elsif not old.active and new.active then
+    v_action := 'reactivated';
+  else
+    return new;
+  end if;
+
+  insert into public.access_token_changes (
+    token_id, label, kind, action, scopes_before, scopes_after, active_before, active_after
+  ) values (
+    new.id, new.label, new.kind, v_action,
+    to_jsonb(old.scopes), to_jsonb(new.scopes), old.active, new.active
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists access_tokens_change_log on public.access_tokens;
+create trigger access_tokens_change_log
+  after insert or update on public.access_tokens
+  for each row execute function public.log_access_token_change();
+
+-- Backfill what is still knowable: current state for every existing token, so
+-- the trail does not start with an unexplained gap. Marked 'other' rather than
+-- 'created', because these are observations, not observed events.
+insert into public.access_token_changes (token_id, label, kind, action, scopes_after, active_after, changed_at)
+select id, label, kind, 'other', to_jsonb(scopes), active, coalesce(created_at, now())
+from public.access_tokens
+where not exists (
+  select 1 from public.access_token_changes c where c.token_id = access_tokens.id
+);
+
+comment on table public.access_token_changes is
+  'Permission changes to access_tokens (mint / scope change / revoke). Written by a TRIGGER so direct SQL is caught too — the gap that motivated it was a raw UPDATE.';
+
+-- ------------------------------------------------------------
+-- resman_transactions_lease_sequence_idx
+-- ------------------------------------------------------------
+-- Serves the per-lease ledger read, which walks a lease's entries newest-first
+-- by ledger_sequence. Present in production but created by no delta — it was
+-- added by hand and would have been lost by any rebuild from these files.
+create index if not exists resman_transactions_lease_sequence_idx
+  on resman_transactions (resman_lease_id, ledger_sequence desc);
+
+-- ============================================================================
+-- mcp_aggregate: cross-resource EXISTS, so a related filter stays in SQL
+-- ============================================================================
+--
+-- Supersedes 2026-08-01-mcp-aggregate-scope-predicates.sql, left as it ran.
+--
+-- A `related` filter previously forced the whole aggregate onto the PostgREST
+-- path, because a join is not something this function could express. Measured:
+-- units grouped by building with an open work order cost 29 requests and
+-- 3.7 SECONDS — one HEAD count per building, sequentially. That is the exact
+-- pathology the RPC was written to kill, reappearing through a side door.
+--
+-- p_exists adds `[not] exists (select 1 from child c where c.fk = t.pk and …)`.
+-- The outer table is now aliased `t` and every predicate is qualified, which
+-- matters more than it looks: an unqualified child predicate naming a column
+-- the child does not have would bind to the OUTER row and silently filter the
+-- wrong table.
+
+create or replace function public.mcp_predicate(p jsonb, p_prefix text default '')
+returns text
+language plpgsql
+immutable
+set search_path = public, pg_temp
+as $$
+declare
+  v_col text := case when p_prefix = '' then quote_ident(p ->> 'col')
+                     else quote_ident(p_prefix) || '.' || quote_ident(p ->> 'col') end;
+  v_op  text := p ->> 'op';
+  v_vals text;
+begin
+  if v_op = 'eq' then      return format('%s = %L', v_col, p ->> 'val');
+  elsif v_op = 'neq' then  return format('%s <> %L', v_col, p ->> 'val');
+  elsif v_op = 'gte' then  return format('%s >= %L', v_col, p ->> 'val');
+  elsif v_op = 'lte' then  return format('%s <= %L', v_col, p ->> 'val');
+  elsif v_op = 'is_null' then  return format('%s is null', v_col);
+  elsif v_op = 'not_null' then return format('%s is not null', v_col);
+  elsif v_op = 'in' then
+    if p -> 'vals' is null or jsonb_array_length(p -> 'vals') = 0 then
+      return 'false';
+    end if;
+    select string_agg(quote_literal(value), ', ') into v_vals
+      from jsonb_array_elements_text(p -> 'vals');
+    return format('%s in (%s)', v_col, v_vals);
+  else
+    raise exception 'mcp_aggregate: unknown filter op %', v_op;
+  end if;
+end;
+$$;
+
+revoke all on function public.mcp_predicate(jsonb, text) from public;
+grant execute on function public.mcp_predicate(jsonb, text) to service_role;
+
+create or replace function public.mcp_aggregate(
+  p_table text,
+  p_group_by text default null,
+  p_period_column text default null,
+  p_period_interval text default null,
+  -- Non-null means the period column is an INSTANT and must be read in this
+  -- zone. Null means a plain DATE, which carries no timezone and must not be
+  -- converted — the same date/timestamp split the application layer makes.
+  p_period_tz text default null,
+  p_metric text default 'count',
+  p_measure text default null,
+  -- [{"col":"…","op":"eq|neq|gte|lte|in|is_null|not_null","val":"…","vals":[…]}]
+  p_filters jsonb default '[]'::jsonb,
+  -- Same shape, OR'd together and ANDed with everything else. One group only.
+  p_any jsonb default '[]'::jsonb,
+  p_search_columns text[] default null,
+  p_search_term text default null,
+  -- {"table":"…","parent_key":"…","child_key":"…","negate":bool,"filters":[…],"any":[…]}
+  -- A cross-resource filter. Previously this forced the whole aggregate onto
+  -- the PostgREST path, where a grouped count cost one HEAD request per group
+  -- — 29 requests and 3.7s for units-by-building with an open work order.
+  p_exists jsonb default null
+)
+returns table (grp text, period text, n bigint, val numeric)
+language plpgsql
+stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_allowed constant text[] := array[
+    'resman_properties', 'resman_buildings', 'resman_floorplans', 'resman_units',
+    'resman_leases', 'resman_residents', 'resman_transactions', 'resman_work_orders',
+    'mlgw_accounts', 'mlgw_bills', 'mlgw_payments',
+    'guest_passes', 'entry_logs', 'property_snapshots', 'unit_snapshots', 'monitor_findings'
+  ];
+  v_where   text := 'true';
+  v_grp     text := 'null::text';
+  v_period  text := 'null::text';
+  v_trunc   text;
+  v_label   text;
+  v_agg     text;
+  v_n       text;
+  v_search  text := '';
+  v_filter  jsonb;
+  v_any     text;
+  v_exists  text;
+  v_child   jsonb;
+  v_sql     text;
+begin
+  if not (p_table = any (v_allowed)) then
+    raise exception 'mcp_aggregate: table % is not aggregatable', p_table;
+  end if;
+  if p_metric not in ('count', 'sum', 'avg', 'min', 'max') then
+    raise exception 'mcp_aggregate: unknown metric %', p_metric;
+  end if;
+  if p_metric <> 'count' and p_measure is null then
+    raise exception 'mcp_aggregate: metric % requires a measure', p_metric;
+  end if;
+
+  -- --- predicates ---------------------------------------------------------
+  for v_filter in select * from jsonb_array_elements(coalesce(p_filters, '[]'::jsonb))
+  loop
+    v_where := v_where || ' and ' || public.mcp_predicate(v_filter, 't');
+  end loop;
+
+  -- The OR group. ANDed as a single parenthesised clause, so a scope can only
+  -- ever narrow — it can never pull in rows the other predicates excluded.
+  if jsonb_array_length(coalesce(p_any, '[]'::jsonb)) > 0 then
+    select string_agg(public.mcp_predicate(elem, 't'), ' or ')
+      into v_any
+      from jsonb_array_elements(p_any) as elem;
+    v_where := v_where || format(' and (%s)', v_any);
+  end if;
+
+  -- --- cross-resource filter ----------------------------------------------
+  -- Child predicates are prefixed with the child alias `c`, never left bare:
+  -- an unqualified name that the child lacks would silently bind to the OUTER
+  -- row and quietly filter the wrong table.
+  if p_exists is not null then
+    if not (p_exists ->> 'table' = any (v_allowed)) then
+      raise exception 'mcp_aggregate: related table % is not aggregatable', p_exists ->> 'table';
+    end if;
+    v_exists := format(
+      'select 1 from %I as c where c.%I = t.%I',
+      p_exists ->> 'table', p_exists ->> 'child_key', p_exists ->> 'parent_key'
+    );
+    for v_child in select * from jsonb_array_elements(coalesce(p_exists -> 'filters', '[]'::jsonb))
+    loop
+      v_exists := v_exists || ' and ' || public.mcp_predicate(v_child, 'c');
+    end loop;
+    if jsonb_array_length(coalesce(p_exists -> 'any', '[]'::jsonb)) > 0 then
+      select string_agg(public.mcp_predicate(elem, 'c'), ' or ')
+        into v_any
+        from jsonb_array_elements(p_exists -> 'any') as elem;
+      v_exists := v_exists || format(' and (%s)', v_any);
+    end if;
+    v_where := v_where || format(
+      ' and %s exists (%s)',
+      case when coalesce((p_exists ->> 'negate')::boolean, false) then 'not' else '' end,
+      v_exists
+    );
+  end if;
+
+  -- Search is one OR group ANDed with everything else, so a term can never
+  -- widen the result past the filters — the same rule the REST path follows.
+  if p_search_term is not null and p_search_columns is not null
+     and array_length(p_search_columns, 1) > 0 then
+    select string_agg(format('t.%s ilike %L', quote_ident(c), '%' || p_search_term || '%'), ' or ')
+      into v_search
+      from unnest(p_search_columns) as c;
+    v_where := v_where || format(' and (%s)', v_search);
+  end if;
+
+  -- --- grouping -----------------------------------------------------------
+  if p_group_by is not null then
+    v_grp := format('t.%s::text', quote_ident(p_group_by));
+  end if;
+
+  if p_period_column is not null then
+    if p_period_interval not in ('day', 'week', 'month', 'quarter', 'year') then
+      raise exception 'mcp_aggregate: unknown interval %', p_period_interval;
+    end if;
+    -- date_trunc('week') starts Monday, matching the application's ISO weeks.
+    v_trunc := case
+      when p_period_tz is null
+        then format('date_trunc(%L, %s::timestamp)', p_period_interval, 't.' || quote_ident(p_period_column))
+        else format('date_trunc(%L, %s at time zone %L)', p_period_interval, 't.' || quote_ident(p_period_column), p_period_tz)
+    end;
+    v_label := case p_period_interval
+      when 'day'     then 'YYYY-MM-DD'
+      when 'week'    then 'YYYY-MM-DD'
+      when 'month'   then 'YYYY-MM'
+      when 'quarter' then 'YYYY"-Q"Q'
+      when 'year'    then 'YYYY'
+    end;
+    v_period := format('to_char(%s, %L)', v_trunc, v_label);
+  end if;
+
+  -- --- measure ------------------------------------------------------------
+  if p_metric = 'count' then
+    v_agg := 'null::numeric';
+    v_n   := 'count(*)';
+  else
+    -- SQL aggregates already ignore NULLs, which is the semantics the
+    -- application had to hand-roll: Number(null) is 0, not NaN, so a missing
+    -- value would otherwise land as a real zero and halve an average.
+    v_agg := format('%s(t.%s::numeric)', p_metric, quote_ident(p_measure));
+    v_n   := format('count(t.%s)', quote_ident(p_measure));
+  end if;
+
+  v_sql := format(
+    'select %s as grp, %s as period, %s as n, %s as val from %I as t where %s group by 1, 2',
+    v_grp, v_period, v_n, v_agg, p_table, v_where
+  );
+  return query execute v_sql;
+end;
+$$;
+
+revoke all on function public.mcp_aggregate(
+  text, text, text, text, text, text, text, jsonb, jsonb, text[], text, jsonb
+) from public;
+grant execute on function public.mcp_aggregate(
+  text, text, text, text, text, text, text, jsonb, jsonb, text[], text, jsonb
+) to service_role;
+
+comment on function public.mcp_aggregate(text, text, text, text, text, text, text, jsonb, jsonb, text[], text, jsonb) is
+  'Grouped aggregate for the MCP server. Table is allowlisted; identifiers are quote_ident''d and values quote_literal''d. SECURITY INVOKER by design.';
+
+
+-- ============================================================================
+-- mcp_predicate: add ilike_contains
+-- ============================================================================
+--
+-- A related filter can now carry a SEARCH ("leases where a resident is named
+-- X"), and with the EXISTS clause that search has to be expressible in SQL
+-- rather than as a PostgREST embedded or(). One op, quoted like every other.
+--
+-- Replaces only mcp_predicate; mcp_aggregate calls it by name and is untouched.
+
+create or replace function public.mcp_predicate(p jsonb, p_prefix text default '')
+returns text
+language plpgsql
+immutable
+set search_path = public, pg_temp
+as $$
+declare
+  v_col text := case when p_prefix = '' then quote_ident(p ->> 'col')
+                     else quote_ident(p_prefix) || '.' || quote_ident(p ->> 'col') end;
+  v_op  text := p ->> 'op';
+  v_vals text;
+begin
+  if v_op = 'eq' then      return format('%s = %L', v_col, p ->> 'val');
+  elsif v_op = 'neq' then  return format('%s <> %L', v_col, p ->> 'val');
+  elsif v_op = 'gte' then  return format('%s >= %L', v_col, p ->> 'val');
+  elsif v_op = 'lte' then  return format('%s <= %L', v_col, p ->> 'val');
+  elsif v_op = 'is_null' then  return format('%s is null', v_col);
+  elsif v_op = 'not_null' then return format('%s is not null', v_col);
+  elsif v_op = 'ilike_contains' then
+    -- The caller's term is already stripped of the characters that would break
+    -- a PostgREST or= clause; quote_literal handles the rest. % and _ are LIKE
+    -- metacharacters, so they are escaped to stay literal — otherwise a term
+    -- containing one silently matches far more than the caller asked for.
+    return format('%s ilike %L', v_col,
+      '%' || replace(replace(p ->> 'val', '%', '\%'), '_', '\_') || '%');
+  elsif v_op = 'in' then
+    if p -> 'vals' is null or jsonb_array_length(p -> 'vals') = 0 then
+      return 'false';
+    end if;
+    select string_agg(quote_literal(value), ', ') into v_vals
+      from jsonb_array_elements_text(p -> 'vals');
+    return format('%s in (%s)', v_col, v_vals);
+  else
+    raise exception 'mcp_aggregate: unknown filter op %', v_op;
+  end if;
+end;
+$$;
+
+revoke all on function public.mcp_predicate(jsonb, text) from public;
+grant execute on function public.mcp_predicate(jsonb, text) to service_role;
+
+
+-- ============================================================================
+-- public.mcp_distincts — exact distinct values, one request
+-- ============================================================================
+--
+-- describe_resource learns each groupable column's domain by paging a
+-- 5,000-row SAMPLE: 7 requests and ~580ms on transactions, and 5,000 rows over
+-- the wire to compute a handful of counts.
+--
+-- Worse than the cost, it was a SAMPLE. A rare value outside it simply had no
+-- bucket, which reads exactly like a real zero — the failure describe_resource
+-- exists to prevent. The application compensated with an "(other)" bucket and a
+-- domain_complete flag, both of which are workarounds for not being able to ask
+-- the question properly. GROUP BY answers it exactly, for every column at once.
+
+create or replace function public.mcp_distincts(
+  p_table text,
+  p_columns text[],
+  p_cap integer default 25
+)
+returns table (col text, val text, n bigint)
+language plpgsql
+stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_allowed constant text[] := array[
+    'resman_properties', 'resman_buildings', 'resman_floorplans', 'resman_units',
+    'resman_leases', 'resman_residents', 'resman_transactions', 'resman_work_orders',
+    'mlgw_accounts', 'mlgw_bills', 'mlgw_payments',
+    'guest_passes', 'entry_logs', 'property_snapshots', 'unit_snapshots',
+    'monitor_findings'
+  ];
+  v_parts text[] := '{}';
+  v_col text;
+begin
+  if not (p_table = any (v_allowed)) then
+    raise exception 'mcp_distincts: table % is not readable', p_table;
+  end if;
+  if p_columns is null or array_length(p_columns, 1) is null then
+    return;
+  end if;
+
+  -- One UNION ALL branch per column, each already ranked and capped, so the
+  -- whole domain of every groupable column comes back in a single round trip.
+  foreach v_col in array p_columns loop
+    v_parts := v_parts || format(
+      '(select %L::text as col, %I::text as val, count(*) as n from %I group by 2 order by 3 desc limit %s)',
+      v_col, v_col, p_table, greatest(p_cap, 1)
+    );
+  end loop;
+
+  return query execute array_to_string(v_parts, ' union all ');
+end;
+$$;
+
+revoke all on function public.mcp_distincts(text, text[], integer) from public;
+grant execute on function public.mcp_distincts(text, text[], integer) to service_role;
+
+comment on function public.mcp_distincts(text, text[], integer) is
+  'Exact distinct values + counts for several columns in one query. Replaces a paged 5,000-row sample, so a rare value can no longer be missing from a reported domain.';

@@ -72,6 +72,21 @@ export function parseListParams(searchParams: URLSearchParams): { limit: number;
   return { limit, offset };
 }
 
+/**
+ * Resolve a named canonical scope to its predicates.
+ *
+ * Returns [] for an absent/unknown scope so a caller cannot silently WIDEN a
+ * result by naming a scope that does not exist — an unknown scope is rejected
+ * at the tool layer, and this stays narrowing-only by construction.
+ */
+export function resolveScope(
+  resource: ResmanResource,
+  name: string | null,
+): readonly { column: string; op: "eq" | "gte" | "lte"; value: string | boolean }[] {
+  if (!name) return [];
+  return resource.scopes[name]?.filters ?? [];
+}
+
 /** Resolves the active equality filters from the query string for a resource. */
 export function resolveFilters(
   resource: ResmanResource,
@@ -251,6 +266,11 @@ export async function listResource(
 
   for (const { column, value } of resolveFilters(resource, searchParams)) {
     query = query.eq(column, value);
+  }
+  // Canonical scope applies alongside the caller's own filters, never instead
+  // of them — it can only narrow.
+  for (const s of resolveScope(resource, searchParams.get("scope"))) {
+    query = s.op === "eq" ? query.eq(s.column, s.value) : s.op === "gte" ? query.gte(s.column, s.value) : query.lte(s.column, s.value);
   }
 
   // Ranges and search narrow further. Search is applied as a single OR group so
@@ -546,6 +566,7 @@ async function aggregateViaSql(
 
   const filters = [
     ...resolveFilters(resource, searchParams).map((f) => ({ col: f.column, op: "eq", val: String(f.value) })),
+    ...resolveScope(resource, searchParams.get("scope")).map((s) => ({ col: s.column, op: s.op, val: String(s.value) })),
     ...resolveRanges(resource, searchParams).map((b) => ({ col: b.column, op: b.op, val: b.value })),
   ];
   const search = resolveSearch(resource, searchParams);
@@ -629,6 +650,9 @@ export async function aggregateResource(
   const applyPredicates = (q: ReturnType<ReturnType<UntypedSupabase["from"]>["select"]>) => {
     let query = q;
     for (const { column, value } of resolveFilters(resource, searchParams)) query = query.eq(column, value);
+    for (const s of resolveScope(resource, searchParams.get("scope"))) {
+      query = s.op === "eq" ? query.eq(s.column, s.value) : s.op === "gte" ? query.gte(s.column, s.value) : query.lte(s.column, s.value);
+    }
     for (const b of resolveRanges(resource, searchParams)) {
       query = b.op === "gte" ? query.gte(b.column, b.value) : query.lte(b.column, b.value);
     }

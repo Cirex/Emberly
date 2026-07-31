@@ -115,6 +115,25 @@ interface ResmanResourceDef<T extends TableName> {
    * has open.
    */
   notes?: readonly string[];
+  /**
+   * Named CANONICAL predicates — the definitions that decide whether a headline
+   * number is right, expressed once instead of re-derived by every caller.
+   *
+   * The motivating case: this property has THREE live definitions of occupancy
+   * that disagree (units.occupied 63.2%, occupancy_status='Occupied' 56.5%,
+   * property_snapshots.occupancy_pct 64.3%), and the true rate needs
+   * holding_unit and excluded_from_occupancy dropped from the DENOMINATOR —
+   * logic that lives in @emberly/core and the manager app and that the MCP was
+   * asking callers to reproduce by hand. `scope: "rentable"` makes that
+   * unmissable instead of a thing you have to already know.
+   *
+   * AND of simple predicates only. Anything needing OR stays a documented note
+   * rather than being half-expressed here and quietly wrong.
+   */
+  scopes?: Readonly<Record<string, {
+    description: string;
+    filters: readonly { column: ColumnOf<T>; op: "eq" | "gte" | "lte"; value: string | boolean }[];
+  }>>;
   /** Columns the caller may sort by (beyond the resource's default order). */
   sortable?: readonly ColumnOf<T>[];
   /**
@@ -168,6 +187,10 @@ export interface ResmanResource {
   periods: Readonly<Record<string, { column: string; kind: "date" | "timestamp" }>>;
   entities: readonly string[];
   notes: readonly string[];
+  scopes: Readonly<Record<string, {
+    description: string;
+    filters: readonly { column: string; op: "eq" | "gte" | "lte"; value: string | boolean }[];
+  }>>;
   sortable: readonly string[];
   relations: readonly ResmanRelation[];
 }
@@ -193,6 +216,7 @@ function defineResource<T extends TableName>(def: ResmanResourceDef<T>): ResmanR
     periods: def.periods ?? {},
     entities: def.entities ?? [],
     notes: def.notes ?? [],
+    scopes: def.scopes ?? {},
     // The default sort column is always sortable — asking for the order the
     // resource already uses should never be rejected.
     sortable: def.sortable ?? [def.order.column],
@@ -333,6 +357,34 @@ export const unitsResource = defineResource({
   ],
   sortable: ["number", "market_rent", "lease_rent", "balance", "lease_end_date", "move_in_date"],
   entities: ["resman_unit_id"],
+  // The denominator problem, solved once. Every occupancy figure this property
+  // quotes should start from `rentable`.
+  scopes: {
+    rentable: {
+      description:
+        "Real, rentable apartments — excludes ResMan bookkeeping placeholders (holding_unit) and units flagged out of the occupancy count. THE denominator for any occupancy or vacancy rate.",
+      filters: [
+        { column: "holding_unit", op: "eq", value: false },
+        { column: "excluded_from_occupancy", op: "eq", value: false },
+      ],
+    },
+    occupied: {
+      description: "Rentable units with someone living in them (the PHYSICAL view — includes Notice).",
+      filters: [
+        { column: "holding_unit", op: "eq", value: false },
+        { column: "excluded_from_occupancy", op: "eq", value: false },
+        { column: "occupied", op: "eq", value: true },
+      ],
+    },
+    vacant: {
+      description: "Rentable units with nobody living in them.",
+      filters: [
+        { column: "holding_unit", op: "eq", value: false },
+        { column: "excluded_from_occupancy", op: "eq", value: false },
+        { column: "occupied", op: "eq", value: false },
+      ],
+    },
+  },
   notes: [
     "`occupied` (boolean) and `occupancy_status` (Occupied/Vacant/Notice) answer DIFFERENT questions and disagree by 60 units. The gap is the Notice bucket — under eviction or notice given, still living there. Use `occupied` for anything physical (parking, utilities, access); use `occupancy_status` for leasing and reporting.",
     "`lease_status` here is the All-Units report's narrower view and does NOT contain Evicted or Former. For terminal lease states use the `leases` resource, whose `status` is the full lifecycle.",
@@ -833,6 +885,25 @@ export const unitSnapshotsResource = defineResource({
   measures: ["balance", "current_month_balance", "market_rent", "lease_rent", "times_late"],
   periods: { snapshot_date: { column: "snapshot_date", kind: "date" } },
   entities: ["resman_unit_id", "resman_building_id"],
+  // Identical to units', because a rate for a past date must be computed the
+  // same way as today's or the series compares two different things.
+  scopes: {
+    rentable: {
+      description: "Real, rentable apartments on that date — the denominator for a historical occupancy rate.",
+      filters: [
+        { column: "holding_unit", op: "eq", value: false },
+        { column: "excluded_from_occupancy", op: "eq", value: false },
+      ],
+    },
+    occupied: {
+      description: "Rentable units occupied on that date (physical view).",
+      filters: [
+        { column: "holding_unit", op: "eq", value: false },
+        { column: "excluded_from_occupancy", op: "eq", value: false },
+        { column: "occupied", op: "eq", value: true },
+      ],
+    },
+  },
   sortable: ["snapshot_date", "balance", "market_rent", "unit_number"],
   relations: [
     { name: "unit", resource: "units", localColumn: "resman_unit_id",

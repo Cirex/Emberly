@@ -319,6 +319,60 @@ Pinning the catalog once saves a `list_resources` + `describe_resource` round tr
 
 ---
 
+## Response size
+
+Rows cost context. Measured live: `query_resource` on units at the max limit of 200 is
+**267 KB — about 65,000 tokens**, roughly a third of a 200k window for one call. The same rows
+projected to three columns is **13 KB**.
+
+So row-returning tools trim to a **48 KB budget**. The page shrinks; the call does not fail:
+
+```json
+{ "data": [ … 35 rows … ],
+  "pagination": { "limit": 200, "returned": 35, "hasMore": true },
+  "note": "Response trimmed to 35 of the 200 rows requested … Pass 'columns' to project …" }
+```
+
+`hasMore` stays honest, so paging still works. **Use `columns`** — naming the few columns you
+actually read fits 10–20× more rows per page, and on units gets all 200 back inside 13 KB.
+
+A single row larger than the whole budget is still returned: an empty response would be a
+different and worse claim than "this row is enormous".
+
+---
+
+## Canonical scopes
+
+Some numbers are easy to get wrong by hand, so the right definition is declared once and named.
+`scope` applies it:
+
+```json
+{ "resource": "units", "metric": "count", "scope": "rentable" }
+```
+
+**Occupancy is the case this exists for.** The denominator must exclude ResMan's bookkeeping
+placeholders (`holding_unit`) and units flagged out of the count — 15 of 891 here. Live:
+
+| | |
+|---|---|
+| all units | 891 |
+| `scope: "rentable"` | **876** ← the denominator |
+| `scope: "occupied"` | 566 |
+| naive rate (566/891) | 63.52% |
+| **canonical rate (566/876)** | **64.61%** |
+
+That 1.09-point gap is the whole point — and 64.61% is what `property-snapshots.occupancy_pct`
+reports, so the snapshot job was already right and the hand-calculation was the wrong one.
+
+`unit-snapshots` declares the same scopes, so a *historical* rate is computed identically to
+today's rather than comparing two different things.
+
+Scopes only ever **narrow**, and they apply *in addition to* your own filters. An undeclared
+scope is refused rather than ignored — ignoring it would answer a wider question than the one
+asked. `describe_resource` lists what each resource has.
+
+---
+
 ## Searching
 
 `search` matches case-insensitively across the resource's declared searchable columns,

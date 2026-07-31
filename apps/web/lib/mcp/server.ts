@@ -132,6 +132,66 @@ function json(value: unknown): string {
 }
 
 /**
+ * Bytes one row-returning tool may spend on its response.
+ *
+ * Measured on the live mirror: `query_resource` on units at the documented max
+ * limit of 200 returns 267 KB — roughly 65,000 tokens, about a third of a
+ * 200k context window, for ONE call. The same 200 rows projected to three
+ * columns is 13 KB. Nothing warned, and by the time a caller sees the response
+ * the context is already spent.
+ *
+ * 48 KB is ~12k tokens: a large answer, not a catastrophic one.
+ */
+const RESPONSE_BUDGET_BYTES = 48_000;
+
+/**
+ * Trim a page to the byte budget.
+ *
+ * The page SHRINKS rather than the call failing, because a caller that asked
+ * for 200 rows still wants rows — just not at the cost of everything else in
+ * the window. What is returned is exact, `hasMore` stays honest, and the note
+ * says how to get more per page instead of leaving the caller to guess.
+ *
+ * Rows are measured individually rather than by serialising the whole page and
+ * cutting: a page of wide rows and a page of narrow ones fit very differently,
+ * and the point is to be right about which.
+ */
+function fitToBudget(
+  result: { data: Record<string, unknown>[]; pagination: { limit: number; offset: number; count: number; hasMore: boolean } },
+  resource: ResmanResource,
+  projected: boolean,
+): Record<string, unknown> {
+  let used = 0;
+  const kept: Record<string, unknown>[] = [];
+  for (const row of result.data) {
+    const size = JSON.stringify(row).length;
+    // Always keep at least one row: a single row over budget is a truth about
+    // that row, and returning nothing would look like an empty result.
+    if (kept.length > 0 && used + size > RESPONSE_BUDGET_BYTES) break;
+    used += size;
+    kept.push(row);
+  }
+  if (kept.length === result.data.length) return result;
+
+  const perRow = Math.max(1, Math.round(used / kept.length));
+  return {
+    data: kept,
+    pagination: {
+      ...result.pagination,
+      returned: kept.length,
+      hasMore: result.pagination.offset + kept.length < result.pagination.count,
+    },
+    note:
+      `Response trimmed to ${kept.length} of the ${result.data.length} rows requested, to stay inside a ` +
+      `${Math.round(RESPONSE_BUDGET_BYTES / 1024)} KB budget (~${perRow} bytes/row on this resource). ` +
+      (projected
+        ? `Page with 'offset' for the rest.`
+        : `Pass 'columns' to project — the full row here is wide, and naming the few columns you ` +
+          `actually read typically fits 10-20x more rows per page. Available: ${resource.publicColumns.join(", ")}.`),
+  };
+}
+
+/**
  * Distinguish "your filters matched nothing" from "this table has never held a
  * row", which look identical in an empty response and mean opposite things.
  *
@@ -167,6 +227,7 @@ function toParams(args: Record<string, unknown>, resource: ResmanResource): URLS
     if (value !== undefined && value !== null) params.set(key, String(value));
   }
   if (typeof args.search === "string" && args.search.trim()) params.set("q", args.search.trim());
+  if (typeof args.scope === "string" && args.scope.trim()) params.set("scope", args.scope.trim());
   if (Array.isArray(args.columns) && args.columns.length > 0) {
     params.set("columns", args.columns.map(String).join(","));
   }
@@ -203,6 +264,17 @@ function resolvePeriodArg(resource: ResmanResource, raw: unknown): PeriodSpec | 
     throw new McpToolError(`Unknown timezone "${timezone}".`);
   }
   return { column: declared.column, kind: declared.kind, interval: interval as PeriodInterval, timezone };
+}
+
+/** Reject an undeclared scope rather than silently ignoring it (which would
+ *  answer a WIDER question than the one asked). */
+function assertScope(resource: ResmanResource, raw: unknown): void {
+  if (raw === undefined || raw === null || raw === "") return;
+  const name = String(raw);
+  if (!resource.scopes[name]) {
+    const available = Object.keys(resource.scopes).join(", ") || "(none)";
+    throw new McpToolError(`"${name}" is not a scope on ${resource.name}. Available: ${available}.`);
+  }
 }
 
 const TOOLS: McpTool[] = [
@@ -269,6 +341,7 @@ const TOOLS: McpTool[] = [
               column: name, kind: p.kind, intervals: PERIOD_INTERVALS,
             })),
             entities: resource.entities,
+            scopes: Object.entries(resource.scopes).map(([name, sc]) => ({ name, description: sc.description })),
           },
           relations: resource.relations,
           // Caveats first: a note that arrives after the number has already
@@ -317,10 +390,16 @@ const TOOLS: McpTool[] = [
           description:
             "Substring match (case-insensitive) across the resource's searchable columns. Minimum 2 characters.",
         },
+        scope: {
+          type: "string",
+          description:
+            "A named CANONICAL subset (see describe_resource 'scopes'), e.g. 'rentable' on units — the correct denominator for any occupancy rate, excluding holding units and units flagged out of the count. Narrows in addition to your own filters; use it rather than reproducing the definition by hand.",
+        },
         columns: {
           type: "array",
           items: { type: "string" },
-          description: "Return only these columns. Intersected with the resource's public columns.",
+          description:
+            "Return only these columns. STRONGLY RECOMMENDED: a full row on a wide resource is ~1.3 KB, so an unprojected page of 200 units is ~267 KB of context. Naming the few columns you actually read typically fits 10-20x more rows per page. Intersected with the resource's public columns.",
         },
         sort: { type: "string", description: "Column to sort by (must be in the resource's sortable list)." },
         dir: { type: "string", enum: ["asc", "desc"], description: "Sort direction (default asc)." },
@@ -332,10 +411,15 @@ const TOOLS: McpTool[] = [
     },
     async run(args, ctx) {
       const resource = resolveResource(ctx.staff, String(args.resource ?? ""));
+      assertScope(resource, args.scope);
       const params = toParams(args, resource);
       const result = await listResource(resource, params, ctx.client);
-      const note = result.data.length === 0 ? await emptinessNote(resource, ctx) : null;
-      return { resource: resource.name, text: json(note ? { ...result, note } : result) };
+      if (result.data.length === 0) {
+        const note = await emptinessNote(resource, ctx);
+        return { resource: resource.name, text: json(note ? { ...result, note } : result) };
+      }
+      const projected = Array.isArray(args.columns) && args.columns.length > 0;
+      return { resource: resource.name, text: json(fitToBudget(result, resource, projected)) };
     },
   },
   {
@@ -376,12 +460,18 @@ const TOOLS: McpTool[] = [
         filters: { type: "object", additionalProperties: { type: ["string", "boolean"] } },
         ranges: { type: "object", additionalProperties: { type: ["string", "number"] } },
         search: { type: "string" },
+        scope: {
+          type: "string",
+          description:
+            "A named CANONICAL subset (see describe_resource 'scopes'), e.g. 'rentable' on units — the correct denominator for any occupancy rate, excluding holding units and units flagged out of the count. Narrows in addition to your own filters; use it rather than reproducing the definition by hand.",
+        },
       },
       required: ["resource"],
       additionalProperties: false,
     },
     async run(args, ctx) {
       const resource = resolveResource(ctx.staff, String(args.resource ?? ""));
+      assertScope(resource, args.scope);
       const metric = (args.metric ? String(args.metric) : "count") as
         | "count" | "sum" | "avg" | "min" | "max";
       const groupBy = args.group_by ? String(args.group_by) : null;
@@ -772,7 +862,12 @@ const TOOLS: McpTool[] = [
       if (args.limit !== undefined) params.set("limit", String(args.limit));
       if (args.offset !== undefined) params.set("offset", String(args.offset));
       const result = await listResource(target, params, ctx.client);
-      return { resource: target.name, text: json({ relation: name, note: relation.note, ...result }) };
+      // A "many" hop is a page of rows like any other, and units -> transactions
+      // is exactly the shape that blows a context window.
+      return {
+        resource: target.name,
+        text: json({ relation: name, note: relation.note, ...fitToBudget(result, target, false) }),
+      };
     },
   },
 ];
@@ -996,6 +1091,7 @@ function catalogText(staff: McpStaff): string {
       sortable: r.sortable,
       periods: Object.entries(r.periods).map(([name, p]) => ({ column: name, kind: p.kind })),
       entities: r.entities,
+      scopes: Object.entries(r.scopes).map(([name, sc]) => ({ name, description: sc.description })),
       notes: r.notes,
       relations: r.relations.map((rel) => ({
         name: rel.name, target: rel.resource, kind: rel.kind, note: rel.note,

@@ -716,3 +716,113 @@ test("the money and gate tables carry the capabilities their questions need", ()
   assert.ok(Object.keys(by["entry-logs"].ranges).includes("entered"));
   assert.ok(by["mlgw/payments"].measures.includes("amount"));
 });
+
+// ------------------------------------------------------ response budgeting ---
+
+/**
+ * A page of wide rows is the one place this server used to quietly do the
+ * expensive thing: units at the documented max limit measured 267 KB — about
+ * 65k tokens, a third of a context window, for one call.
+ */
+test("a wide page is trimmed to the byte budget and says how to get more", async () => {
+  const wide = Array.from({ length: 200 }, (_, i) => ({
+    resman_unit_id: `u${i}`,
+    number: `unit-${i}`,
+    notes: "x".repeat(1200), // ~1.3 KB/row, matching live units
+  }));
+  const res = await handleMcpMessage(
+    { id: 40, method: "tools/call", params: { name: "query_resource", arguments: { resource: "units", limit: 200 } } },
+    { staff: staff(["*"]), client: memClient({ resman_units: wide }) },
+  );
+  const payload = JSON.parse(res.result.content[0].text);
+  assert.ok(payload.data.length < 200, "the page shrank");
+  assert.ok(payload.data.length > 0, "but did not vanish");
+  assert.ok(res.result.content[0].text.length < 60_000, "response stays inside the budget");
+  assert.match(payload.note, /trimmed/);
+  assert.match(payload.note, /columns/, "the note names the fix");
+  assert.equal(payload.pagination.hasMore, true, "paging stays honest");
+});
+
+test("a narrow page is returned whole, with no note", async () => {
+  const narrow = Array.from({ length: 200 }, (_, i) => ({ resman_unit_id: `u${i}`, number: `${i}` }));
+  const res = await handleMcpMessage(
+    { id: 41, method: "tools/call", params: { name: "query_resource", arguments: { resource: "units", limit: 200 } } },
+    { staff: staff(["*"]), client: memClient({ resman_units: narrow }) },
+  );
+  const payload = JSON.parse(res.result.content[0].text);
+  assert.equal(payload.data.length, 200);
+  assert.equal(payload.note, undefined, "nothing to warn about");
+});
+
+test("a single row larger than the whole budget is still returned", async () => {
+  // Returning nothing would look like an empty result, which is a different
+  // and worse claim than "this row is enormous".
+  const huge = [{ resman_unit_id: "u1", notes: "x".repeat(60_000) }];
+  const res = await handleMcpMessage(
+    { id: 42, method: "tools/call", params: { name: "query_resource", arguments: { resource: "units" } } },
+    { staff: staff(["*"]), client: memClient({ resman_units: huge }) },
+  );
+  assert.equal(JSON.parse(res.result.content[0].text).data.length, 1);
+});
+
+// ------------------------------------------------------- canonical scopes ---
+
+test("scope narrows in addition to the caller's filters, never instead of them", async () => {
+  const client = rpcClient([{ grp: null, period: null, n: 876, val: null }]);
+  await aggregateResource(
+    unitsResource,
+    new URLSearchParams({ occupancy_status: "Occupied" }),
+    { groupBy: null, groupValues: [], metric: "count", measure: null, scope: null },
+    client,
+  );
+  // Without a scope: just the caller's filter.
+  assert.deepEqual(client.calls[0].args.p_filters, [{ col: "occupancy_status", op: "eq", val: "Occupied" }]);
+
+  const scoped = rpcClient([{ grp: null, period: null, n: 508, val: null }]);
+  const params = new URLSearchParams({ occupancy_status: "Occupied" });
+  params.set("scope", "rentable");
+  await aggregateResource(
+    unitsResource, params,
+    { groupBy: null, groupValues: [], metric: "count", measure: null },
+    scoped,
+  );
+  assert.deepEqual(scoped.calls[0].args.p_filters, [
+    { col: "occupancy_status", op: "eq", val: "Occupied" },
+    { col: "holding_unit", op: "eq", val: "false" },
+    { col: "excluded_from_occupancy", op: "eq", val: "false" },
+  ], "the caller's filter survives and the scope is added");
+});
+
+test("an undeclared scope is refused rather than ignored", async () => {
+  // Ignoring it would answer a WIDER question than the one asked — the exact
+  // failure the scopes exist to prevent.
+  const res = await handleMcpMessage(
+    { id: 43, method: "tools/call", params: { name: "aggregate_resource", arguments: { resource: "units", scope: "made_up" } } },
+    { staff: staff(["*"]), client: fakeClient() },
+  );
+  assert.equal(res.result.isError, true);
+  assert.match(res.result.content[0].text, /not a scope on units. Available: rentable, occupied, vacant/);
+});
+
+test("units and unit-snapshots agree on what rentable means", () => {
+  // A historical occupancy rate must be computed the same way as today's, or
+  // the series compares two different things.
+  const snapshots = RESMAN_RESOURCES.find((r) => r.name === "unit-snapshots");
+  const now = new Set(unitsResource.scopes.rentable.filters.map((f) => `${f.column}:${f.value}`));
+  const then = new Set(snapshots.scopes.rentable.filters.map((f) => `${f.column}:${f.value}`));
+  assert.deepEqual([...now].sort(), [...then].sort());
+});
+
+test("every declared scope filters on columns the resource actually queries", () => {
+  for (const resource of RESMAN_RESOURCES) {
+    for (const [name, scope] of Object.entries(resource.scopes)) {
+      assert.ok(scope.description.length > 20, `${resource.name}.${name} needs a real description`);
+      for (const filter of scope.filters) {
+        assert.ok(
+          resource.selectColumns.includes(filter.column),
+          `${resource.name}.${name} filters on ${filter.column}, which the resource never queries`,
+        );
+      }
+    }
+  }
+});

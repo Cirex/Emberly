@@ -131,6 +131,11 @@ function aggClient({ countsByValue = {}, rows = [] } = {}) {
     lte() { return builder(state); },
     or() { return builder(state); },
     limit() { return builder(state); },
+    order() { return builder(state); },
+    // Measure scans PAGE, because PostgREST caps a response at 1,000 rows
+    // however large a limit is asked for. The fake has to honour range() or a
+    // paged read never terminates.
+    range(from, to) { return builder({ ...state, from, to }); },
     then(resolve) {
       calls.push(state);
       if (state.head) {
@@ -138,7 +143,8 @@ function aggClient({ countsByValue = {}, rows = [] } = {}) {
         const key = bucket ? String(bucket[1]) : "__all__";
         return resolve({ count: countsByValue[key] ?? 0, error: null });
       }
-      return resolve({ data: rows, error: null });
+      const page = state.from === undefined ? rows : rows.slice(state.from, state.to + 1);
+      return resolve({ data: page, error: null });
     },
   });
   return {

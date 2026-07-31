@@ -4,7 +4,12 @@ const test = require("node:test");
 const { handleMcpMessage } = require("../lib/mcp/server");
 const { redactAuditArgs } = require("../lib/access-tokens");
 const { aggregateRelated, aggregateResource } = require("../lib/resman-api");
-const { unitsResource, transactionsResource, RESMAN_RESOURCES } = require("../lib/resman-resources");
+const {
+  unitsResource,
+  transactionsResource,
+  mlgwPaymentsResource,
+  RESMAN_RESOURCES,
+} = require("../lib/resman-resources");
 
 /**
  * The MCP surface beyond the query resolvers: audit redaction, the prompts and
@@ -314,6 +319,76 @@ function memClient(tables) {
     }),
   };
 }
+
+// -------------------------------------------------------- server row cap ---
+
+/**
+ * A client that enforces PostgREST's server-side 1,000-row ceiling: it honours
+ * `.range()` but never returns more than a page, whatever `.limit()` asks for.
+ */
+function cappedClient(tables, pageCap = 1000) {
+  const build = (rows, state) => ({
+    eq: (c, v) => build(rows.filter((r) => String(r[c]) === String(v)), state),
+    is: () => build(rows, state),
+    not: (c) => build(rows.filter((r) => r[c] !== null && r[c] !== undefined), state),
+    gte: (c, v) => build(rows.filter((r) => r[c] != null && String(r[c]) >= String(v)), state),
+    lte: (c, v) => build(rows.filter((r) => r[c] != null && String(r[c]) <= String(v)), state),
+    lt: (c, v) => build(rows.filter((r) => r[c] != null && String(r[c]) < String(v)), state),
+    or: () => build(rows, state),
+    in: (c, keys) => build(rows.filter((r) => keys.includes(String(r[c]))), state),
+    order: (c) => build([...rows].sort((a, b) => String(a[c]).localeCompare(String(b[c]))), state),
+    limit: (n) => build(rows, { ...state, limit: n }),
+    range: (from, to) => build(rows, { ...state, from, to }),
+    maybeSingle: () => Promise.resolve({ data: rows[0] ?? null, error: null }),
+    then(resolve) {
+      let out = rows;
+      if (state.from !== undefined) out = out.slice(state.from, state.to + 1);
+      else if (state.limit !== undefined) out = out.slice(0, state.limit);
+      // The ceiling the real server applies regardless of what was asked for.
+      out = out.slice(0, pageCap);
+      return resolve({ data: state.head ? null : out, error: null, count: rows.length });
+    },
+  });
+  return {
+    from: (t) => ({ select: (_c, opts) => build(tables[t] ?? [], { head: Boolean(opts && opts.head) }) }),
+  };
+}
+
+test("a measure aggregate pages past the server's 1,000-row response cap", async () => {
+  // PostgREST caps a response at 1,000 rows however large a .limit() is. A
+  // single-shot scan therefore summed a PREFIX of the table and reported
+  // truncated:false, because 1,000 was under the 20,000 client-side cap.
+  const rows = Array.from({ length: 2_885 }, (_, i) => ({
+    id: String(i).padStart(5, "0"),
+    payment_method: "Card",
+    amount: 1,
+  }));
+  const result = await aggregateResource(
+    mlgwPaymentsResource,
+    new URLSearchParams(),
+    { groupBy: null, groupValues: [], metric: "sum", measure: "amount" },
+    cappedClient({ mlgw_payments: rows }),
+  );
+  assert.equal(result.scanned, 2_885, "every row is read, not just the first page");
+  assert.equal(result.buckets[0].value, 2_885, "the sum covers the whole table");
+  assert.equal(result.truncated, false);
+});
+
+test("a scan that genuinely exceeds the cap still reports truncated", async () => {
+  const rows = Array.from({ length: 20_500 }, (_, i) => ({
+    id: String(i).padStart(6, "0"),
+    payment_method: "Card",
+    amount: 1,
+  }));
+  const result = await aggregateResource(
+    mlgwPaymentsResource,
+    new URLSearchParams(),
+    { groupBy: null, groupValues: [], metric: "sum", measure: "amount" },
+    cappedClient({ mlgw_payments: rows }),
+  );
+  assert.equal(result.scanned, 20_000, "stops at the client-side cap");
+  assert.equal(result.truncated, true, "and says so, rather than implying completeness");
+});
 
 // ------------------------------------------------ sampled-domain backstop ---
 

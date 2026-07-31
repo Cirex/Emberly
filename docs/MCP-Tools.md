@@ -3,7 +3,7 @@
 What the Emberly MCP server can answer, and how to ask. For connecting a client, see
 [[MCP Server Setup]].
 
-The server is **read-only** and exposes seven tools, five prompts and two attachable resources
+The server is **read-only** and exposes nine tools, five prompts and two attachable resources
 over the ResMan + MLGW mirror. The design rule throughout: **you name a capability, never a
 column or an expression**. Every searchable, groupable, sortable and joinable column is
 declared per-resource in `apps/web/lib/resman-resources.ts`. Anything absent from those lists
@@ -15,7 +15,7 @@ gate-log tables were list-only, which made utility spend and gate activity unask
 
 ---
 
-## The seven tools
+## The nine tools
 
 | Tool | Use it for |
 |---|---|
@@ -26,6 +26,8 @@ gate-log tables were list-only, which made utility spend and gate activity unask
 | `aggregate_related` | Totalling one resource **grouped by another's** attribute — charges by building, work orders by occupancy. |
 | `get_resource` | One row by id. |
 | `related_resource` | Walk a declared relation to another resource. |
+| `detect_anomalies` | Which entities moved most against **their own** history. |
+| `data_freshness` | How current each resource is, and which have stopped syncing. |
 
 ### The order that works
 
@@ -151,6 +153,48 @@ a single target row by the many parents pointing at it is the question asked bac
 
 The measure is validated against the **target's** allowlist. Reaching a column through a join
 is not a way around the resource that owns it.
+
+---
+
+## Anomalies
+
+`aggregate_resource` with a `period` tells you what the property spent. `detect_anomalies`
+tells you **which accounts moved**, which is what generates work. A property-level total hides
+the case worth acting on — one unit's usage tripling while the portfolio barely twitches.
+
+```json
+{ "resource": "mlgw/bills", "entity": "mlgw_account_id", "measure": "amount_due",
+  "period": { "column": "bill_date", "interval": "month" } }
+```
+
+Every entity is scored **against its own history**, never against the population. A large
+account and a small one have different normals, and a shared baseline would flag every large
+account forever. `entity` must be one of the resource's declared `entities` — high cardinality
+is fine here precisely because only outliers come back.
+
+Read the output as triage, not verdict. Each row carries the inputs that produced it —
+`baseline_mean`, `baseline_stddev`, `baseline_periods` — so you can see when a dramatic
+`z` rests on three flat months.
+
+- **An entity needs 3 prior periods** (tunable via `min_baseline`) or it is not scored at all.
+- **Absent ≠ zero.** An entity with no row in the focus period is skipped, not scored as a
+  −100% collapse. "No bill this month" and "a bill of 0.00" are different claims.
+- **A flat history falls back to percent change**, labelled `method: "pct_change"`. Zero spread
+  makes a z-score infinite — true, but useless for ranking.
+- **No usable rows says so explicitly.** If the measure is entirely null the report says there
+  was nothing to score, because "no water anomalies" and "no water data" are different claims —
+  and MLGW publishes no water readings on these accounts, so this is live.
+
+## Freshness
+
+`data_freshness` reports every resource's row count, last sync, last change, and **how far it
+lags the freshest resource**.
+
+Staleness is deliberately *relative*. An absolute threshold flags everything after a quiet
+weekend; lagging the freshest table is what actually indicates a sync that stopped — which is
+how `units` sat frozen for eleven days while `work-orders` kept updating and nothing said so.
+
+Call it before reporting any number that has to be current.
 
 ---
 
@@ -309,6 +353,19 @@ rows they scan, so they were never affected.
 
 `(other)` also collects rows whose period column is null — they belong to no calendar bucket.
 
+### PostgREST caps every response at 1,000 rows
+
+`.limit(20000)` against a 3,542-row table returns **1,000 rows and no error**. Every scan in
+the engine therefore pages, ordered by the id column so offset paging is a total order and no
+row lands on two pages.
+
+This bit for real: a `sum` over `mlgw/payments` was quietly a sum over the first 1,000 of 2,885
+rows, and reported `truncated: false` because 1,000 was under the client-side 20,000 cap. Count
+aggregates were never affected — they use exact HEAD counts and transfer no rows.
+
+If you are writing new code against this mirror, do not trust a short response to mean "that
+was all of it".
+
 ### An empty table is not a zero
 
 `query_resource` and `aggregate_resource` add a `note` when the resource has **no rows at all**,
@@ -363,6 +420,7 @@ ranges:     { reported: "date_reported" },
 groupable:  ["status", "priority"],      // LOW-CARDINALITY only
 measures:   ["market_rent", "balance"],  // numeric only
 periods:    { reported: { column: "date_reported", kind: "date" } },  // kind matters — see below
+entities:   ["resman_unit_id", "technician"],   // per-entity series; HIGH cardinality is fine
 sortable:   ["date_reported", "number"],
 relations:  [{ name: "unit", resource: "units",
                localColumn: "resman_unit_id", foreignColumn: "resman_unit_id", kind: "one" }],

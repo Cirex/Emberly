@@ -356,12 +356,14 @@ export async function describeResourceData(
   const distinct: ResourceProfile["distinct_values"] = {};
   let sampled = 0;
   if (resource.groupable.length > 0) {
-    const { data, error } = await client
-      .from(resource.table)
-      .select(resource.groupable.join(","))
-      .limit(DISTINCT_SAMPLE);
-    if (error) throw error;
-    const rows = (data ?? []) as Record<string, unknown>[];
+    // Paged for the same reason as everywhere else: a bare .limit(5000) comes
+    // back with 1,000 rows, which would make `sampled` — and therefore
+    // `domain_complete` — describe a sample four-fifths smaller than reported.
+    const { rows } = await fetchPaged(
+      () => client.from(resource.table).select([...new Set([...resource.groupable, resource.idColumn])].join(",")),
+      resource.idColumn,
+      DISTINCT_SAMPLE,
+    );
     sampled = rows.length;
     for (const column of resource.groupable) {
       const tally = new Map<string | null, number>();
@@ -420,6 +422,51 @@ const OTHER_BUCKET = "(other)";
 
 /** Hard ceiling on rows a measure aggregate will pull to compute in-process. */
 const AGGREGATE_SCAN_CAP = 20_000;
+
+/**
+ * Rows PostgREST returns per response, no matter what `.limit()` asks for.
+ *
+ * This is a SERVER-side ceiling (`db-max-rows`), not a client preference:
+ * `.limit(20000)` against a 3,542-row table returns exactly 1,000 and reports
+ * no error. Every scan below therefore has to PAGE, and any code that took a
+ * short response as "that was all of it" was silently computing on a prefix —
+ * which is how a sum over 2,885 payments was quietly a sum over 1,000.
+ */
+const POSTGREST_PAGE_SIZE = 1_000;
+
+/**
+ * Read up to `cap` rows by paging, rather than trusting one `.limit()`.
+ *
+ * `build` must return a FRESH query each call — a supabase-js builder is
+ * single-use once awaited.
+ *
+ * Ordering by the id column is not cosmetic. Offset paging over an unordered
+ * result is non-deterministic: Postgres may return rows in a different order
+ * per request, so a row can appear on two pages while another appears on none.
+ * The id is unique, so ordering by it makes the sort a TOTAL order and the
+ * paging stable — the same lesson `listResource` already learned on
+ * work-orders, where it cost 71 silently-missing rows per full load.
+ */
+async function fetchPaged(
+  build: () => QueryBuilder,
+  idColumn: string,
+  cap: number = AGGREGATE_SCAN_CAP,
+): Promise<{ rows: Record<string, unknown>[]; truncated: boolean }> {
+  const rows: Record<string, unknown>[] = [];
+  for (let offset = 0; offset < cap; offset += POSTGREST_PAGE_SIZE) {
+    const size = Math.min(POSTGREST_PAGE_SIZE, cap - offset);
+    const { data, error } = await build()
+      .order(idColumn, { ascending: true })
+      .range(offset, offset + size - 1);
+    if (error) throw error;
+    const page = (data ?? []) as Record<string, unknown>[];
+    rows.push(...page);
+    // A short page means the result set is exhausted — the only reliable
+    // end-of-data signal, since the server never says "there is more".
+    if (page.length < size) return { rows, truncated: false };
+  }
+  return { rows, truncated: true };
+}
 
 /**
  * Group-and-measure over a resource, honouring every filter `listResource`
@@ -570,12 +617,14 @@ export async function aggregateResource(
   const columns = [opts.measure];
   if (opts.groupBy) columns.push(opts.groupBy);
   if (period) columns.push(period.column);
-  const { data, error } = await applyPredicates(
-    client.from(resource.table).select([...new Set(columns)].join(",")),
-  ).limit(AGGREGATE_SCAN_CAP);
-  if (error) throw error;
-
-  const rows = (data ?? []) as Record<string, unknown>[];
+  // Paged, not `.limit()`-ed: PostgREST caps a response at 1,000 rows however
+  // large a limit is asked for, so a single call would compute this sum over a
+  // prefix of the table and report it as complete.
+  const scanColumns = [...new Set([...columns, resource.idColumn])];
+  const { rows, truncated: scanTruncated } = await fetchPaged(
+    () => applyPredicates(client.from(resource.table).select(scanColumns.join(","))),
+    resource.idColumn,
+  );
   // A measure scan derives its buckets from the rows themselves, so it is
   // immune to the sampled-domain problem the count path has to reconcile.
   const acc = new Map<string, { group: string | null; period?: string; n: number; sum: number; min: number; max: number }>();
@@ -635,7 +684,7 @@ export async function aggregateResource(
   }
   sortBuckets(buckets, opts.metric, Boolean(period));
 
-  return { ...base, buckets, scanned: rows.length, truncated: rows.length >= AGGREGATE_SCAN_CAP };
+  return { ...base, buckets, scanned: rows.length, truncated: scanTruncated };
 }
 
 /**
@@ -754,19 +803,21 @@ export async function aggregateRelated(
   const parentColumns = opts.groupBy
     ? [relation.localColumn, opts.groupBy]
     : [relation.localColumn];
-  let parentQuery = client.from(parent.table).select([...new Set(parentColumns)].join(","));
-  for (const { column, value } of resolveFilters(parent, searchParams)) {
-    parentQuery = parentQuery.eq(column, value);
-  }
-  for (const b of resolveRanges(parent, searchParams)) {
-    parentQuery = b.op === "gte" ? parentQuery.gte(b.column, b.value) : parentQuery.lte(b.column, b.value);
-  }
   const parentSearch = resolveSearch(parent, searchParams);
-  if (parentSearch) parentQuery = parentQuery.or(parentSearch.expression);
 
-  const { data: parentData, error: parentError } = await parentQuery.limit(RELATED_PARENT_CAP);
-  if (parentError) throw parentError;
-  const parentRows = (parentData ?? []) as Record<string, unknown>[];
+  const { rows: parentRows, truncated: parentTruncated } = await fetchPaged(
+    () => {
+      let q = client.from(parent.table).select([...new Set([...parentColumns, parent.idColumn])].join(","));
+      for (const { column, value } of resolveFilters(parent, searchParams)) q = q.eq(column, value);
+      for (const b of resolveRanges(parent, searchParams)) {
+        q = b.op === "gte" ? q.gte(b.column, b.value) : q.lte(b.column, b.value);
+      }
+      if (parentSearch) q = q.or(parentSearch.expression);
+      return q;
+    },
+    parent.idColumn,
+    RELATED_PARENT_CAP,
+  );
 
   const groupByKey = new Map<string, string | null>();
   for (const row of parentRows) {
@@ -798,13 +849,15 @@ export async function aggregateRelated(
 
   for (let i = 0; i < keys.length && scanned < AGGREGATE_SCAN_CAP; i += RELATED_KEY_CHUNK) {
     const chunk = keys.slice(i, i + RELATED_KEY_CHUNK);
-    const { data, error } = await client
-      .from(target.table)
-      .select(targetColumns.join(","))
-      .in(relation.foreignColumn, chunk)
-      .limit(AGGREGATE_SCAN_CAP - scanned);
-    if (error) throw error;
-    const rows = (data ?? []) as Record<string, unknown>[];
+    const { rows, truncated: chunkTruncated } = await fetchPaged(
+      () => client
+        .from(target.table)
+        .select([...new Set([...targetColumns, target.idColumn])].join(","))
+        .in(relation.foreignColumn, chunk),
+      target.idColumn,
+      AGGREGATE_SCAN_CAP - scanned,
+    );
+    if (chunkTruncated) targetTruncated = true;
     scanned += rows.length;
 
     for (const row of rows) {
@@ -859,8 +912,37 @@ export async function aggregateRelated(
     scanned,
     truncated: targetTruncated,
     parents_scanned: parentRows.length,
-    parents_truncated: parentRows.length >= RELATED_PARENT_CAP,
+    parents_truncated: parentTruncated,
   };
+}
+
+/**
+ * Pull just the columns a per-entity series needs, honouring the same filters,
+ * ranges and search as every other read.
+ *
+ * Capped like the measure aggregates, and the cap is REPORTED rather than
+ * absorbed: a truncated scan gives some entities a partial history, which does
+ * not make their baselines approximate — it makes them wrong.
+ */
+export async function scanForSeries(
+  resource: ResmanResource,
+  searchParams: URLSearchParams,
+  columns: readonly string[],
+  client: UntypedSupabase = pmClient(),
+): Promise<{ rows: Record<string, unknown>[]; truncated: boolean }> {
+  const search = resolveSearch(resource, searchParams);
+  return fetchPaged(
+    () => {
+      let q = client.from(resource.table).select([...new Set([...columns, resource.idColumn])].join(","));
+      for (const { column, value } of resolveFilters(resource, searchParams)) q = q.eq(column, value);
+      for (const b of resolveRanges(resource, searchParams)) {
+        q = b.op === "gte" ? q.gte(b.column, b.value) : q.lte(b.column, b.value);
+      }
+      if (search) q = q.or(search.expression);
+      return q;
+    },
+    resource.idColumn,
+  );
 }
 
 /** Executes a detail (by-id) query for a resource. Returns null when not found. */

@@ -100,6 +100,14 @@ interface ResmanResourceDef<T extends TableName> {
    * property's local zone, because a UTC boundary cuts a Memphis night in half.
    */
   periods?: Readonly<Record<string, { column: ColumnOf<T>; kind: "date" | "timestamp" }>>;
+  /**
+   * Columns identifying a SUBJECT for per-entity time series (an account, a
+   * unit, a technician). Unlike `groupable` these are deliberately HIGH
+   * cardinality: anomaly detection returns only the outliers, so the answer
+   * stays small even when the entity space does not. They are not groupable and
+   * do not become so by appearing here — nothing can enumerate them.
+   */
+  entities?: readonly ColumnOf<T>[];
   /** Columns the caller may sort by (beyond the resource's default order). */
   sortable?: readonly ColumnOf<T>[];
   /**
@@ -151,6 +159,7 @@ export interface ResmanResource {
   groupable: readonly string[];
   measures: readonly string[];
   periods: Readonly<Record<string, { column: string; kind: "date" | "timestamp" }>>;
+  entities: readonly string[];
   sortable: readonly string[];
   relations: readonly ResmanRelation[];
 }
@@ -174,6 +183,7 @@ function defineResource<T extends TableName>(def: ResmanResourceDef<T>): ResmanR
     groupable: def.groupable ?? [],
     measures: def.measures ?? [],
     periods: def.periods ?? {},
+    entities: def.entities ?? [],
     // The default sort column is always sortable — asking for the order the
     // resource already uses should never be rejected.
     sortable: def.sortable ?? [def.order.column],
@@ -313,6 +323,7 @@ export const unitsResource = defineResource({
     "deposit_held", "deposit_required", "times_late", "bedrooms", "bathrooms",
   ],
   sortable: ["number", "market_rent", "lease_rent", "balance", "lease_end_date", "move_in_date"],
+  entities: ["resman_unit_id"],
   periods: {
     move_in: { column: "move_in_date", kind: "date" },
     move_out: { column: "move_out_date", kind: "date" },
@@ -367,6 +378,7 @@ export const leasesResource = defineResource({
   groupable: ["status", "approval_status", "is_current_lease", "is_most_recent_lease", "leasing_agent", "resman_property_id"],
   measures: ["market_rent", "resident_rent", "hap_rent", "monthly_charge", "balance", "collection_balance"],
   sortable: ["start_date", "end_date", "balance", "move_out_date"],
+  entities: ["resman_unit_id"],
   periods: {
     start: { column: "start_date", kind: "date" },
     end: { column: "end_date", kind: "date" },
@@ -451,6 +463,7 @@ export const transactionsResource = defineResource({
   groupable: ["transaction_type", "category", "resman_property_id"],
   measures: ["charges", "credits", "balance"],
   sortable: ["date", "charges", "credits"],
+  entities: ["resman_unit_id", "resman_lease_id"],
   periods: { date: { column: "date", kind: "date" } },
   relations: [
     { name: "unit", resource: "units", localColumn: "resman_unit_id", foreignColumn: "resman_unit_id", kind: "one" },
@@ -492,6 +505,7 @@ export const workOrdersResource = defineResource({
   ],
   measures: [],
   sortable: ["date_reported", "date_scheduled", "date_completed", "number"],
+  entities: ["resman_unit_id", "technician", "category"],
   periods: {
     reported: { column: "date_reported", kind: "date" },
     scheduled: { column: "date_scheduled", kind: "date" },
@@ -588,6 +602,7 @@ export const mlgwBillsResource = defineResource({
     "solid_waste_fee_total", "sewer_charge_total", "average_temperature",
   ],
   sortable: ["bill_date", "due_date", "amount_due"],
+  entities: ["mlgw_account_id"],
   periods: {
     bill_date: { column: "bill_date", kind: "date" },
     due_date: { column: "due_date", kind: "date" },
@@ -624,6 +639,7 @@ export const mlgwPaymentsResource = defineResource({
   groupable: ["status", "payment_method", "resman_property_id"],
   measures: ["amount"],
   sortable: ["paid_date", "amount"],
+  entities: ["mlgw_account_id"],
   periods: { paid_date: { column: "paid_date", kind: "date" } },
   relations: [
     { name: "account", resource: "mlgw/accounts", localColumn: "mlgw_account_id",

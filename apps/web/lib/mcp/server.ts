@@ -1,7 +1,7 @@
 /**
  * Read-only staff MCP server for the ResMan/MLGW mirror data.
  *
- * Seven tools over the existing query engine (lib/resman-api):
+ * Nine tools over the existing query engine (lib/resman-api):
  *   - list_resources     — catalog: what exists and what each can do
  *   - describe_resource  — one resource in depth: columns, capabilities, the
  *                          VALUES its groupable columns actually hold, row
@@ -14,6 +14,8 @@
  *   - aggregate_related  — group one resource by ANOTHER's attribute
  *   - get_resource       — one row by id
  *   - related_resource   — walk a DECLARED relation to another resource
+ *   - detect_anomalies   — which entities moved most against THEIR OWN history
+ *   - data_freshness     — how current each resource is, and which stopped
  *
  * Plus two MCP primitives beyond tools: `prompts` (canned analyses that encode
  * the traps in this data) and `resources` (a scope-filtered schema catalog and
@@ -33,6 +35,7 @@
  * Every tool call is scope-checked against the staff's allowlist and audited.
  */
 import { logAccessTokenUse } from "../access-tokens";
+import { detectAnomalies, MIN_BASELINE_PERIODS, toAnomalyInputs } from "../anomalies";
 import { checkRateLimit } from "../rate-limit";
 import {
   DEFAULT_TIMEZONE,
@@ -45,6 +48,7 @@ import {
   describeResourceData,
   getResource,
   listResource,
+  scanForSeries,
   type PeriodSpec,
 } from "../resman-api";
 import { RESMAN_RESOURCES, type ResmanResource } from "../resman-resources";
@@ -217,6 +221,7 @@ const TOOLS: McpTool[] = [
         groupable: r.groupable,
         measures: r.measures,
         periods: Object.keys(r.periods),
+        entities: r.entities,
         relations: r.relations.map((rel) => `${rel.name} -> ${rel.resource} (${rel.kind})`),
       }));
       // Columns are deliberately NOT included here — thirteen resources' worth
@@ -262,6 +267,7 @@ const TOOLS: McpTool[] = [
             periods: Object.entries(resource.periods).map(([name, p]) => ({
               column: name, kind: p.kind, intervals: PERIOD_INTERVALS,
             })),
+            entities: resource.entities,
           },
           relations: resource.relations,
           row_count: profile.row_count,
@@ -508,6 +514,169 @@ const TOOLS: McpTool[] = [
         ctx.client,
       );
       return { resource: target.name, text: json(result) };
+    },
+  },
+  {
+    name: "detect_anomalies",
+    description:
+      "Find the entities whose latest period moved most against THEIR OWN history — 'which utility accounts spiked this month', 'which units' charges jumped'. Each entity is scored against its own baseline, never against other entities, so a large account is not permanently flagged for being large. Returns ranked outliers with the baseline that produced each score. This is triage for a human, not a verdict.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        resource: { type: "string", enum: RESOURCE_NAMES, description: "Resource holding the series." },
+        entity: {
+          type: "string",
+          description: "Column identifying the subject (see describe_resource 'entities'), e.g. 'mlgw_account_id'.",
+        },
+        measure: { type: "string", description: "Numeric column to track. Must be one of the resource's measures." },
+        period: {
+          type: "object",
+          properties: {
+            column: { type: "string" },
+            interval: { type: "string", enum: [...PERIOD_INTERVALS] },
+            timezone: { type: "string" },
+          },
+          required: ["column"],
+          additionalProperties: false,
+        },
+        focus_period: {
+          type: "string",
+          description: "Period label to score (e.g. '2026-06'). Defaults to the latest present in the data.",
+        },
+        min_baseline: {
+          type: "integer", minimum: 2, maximum: 24,
+          description: `Prior periods an entity needs before it can be scored (default ${MIN_BASELINE_PERIODS}).`,
+        },
+        limit: { type: "integer", minimum: 1, maximum: 100, description: "Max anomalies returned (default 20)." },
+        filters: { type: "object", additionalProperties: { type: ["string", "boolean"] } },
+        ranges: { type: "object", additionalProperties: { type: ["string", "number"] } },
+      },
+      required: ["resource", "entity", "measure", "period"],
+      additionalProperties: false,
+    },
+    async run(args, ctx) {
+      const resource = resolveResource(ctx.staff, String(args.resource ?? ""));
+      const entity = String(args.entity ?? "");
+      const measure = String(args.measure ?? "");
+      if (!resource.entities.includes(entity)) {
+        throw new McpToolError(
+          `"${entity}" is not an entity column on ${resource.name}. Available: ${resource.entities.join(", ") || "(none)"}.`,
+        );
+      }
+      if (!resource.measures.includes(measure)) {
+        throw new McpToolError(
+          `"${measure}" is not a measure on ${resource.name}. Measures: ${resource.measures.join(", ") || "(none)"}.`,
+        );
+      }
+      const period = resolvePeriodArg(resource, args.period);
+      if (!period) throw new McpToolError("detect_anomalies requires a period.");
+
+      const { rows, truncated } = await scanForSeries(
+        resource,
+        toParams(args, resource),
+        [entity, period.column, measure],
+        ctx.client,
+      );
+      const report = detectAnomalies(
+        toAnomalyInputs(rows, {
+          entityColumn: entity, periodColumn: period.column, measure,
+          interval: period.interval, kind: period.kind, timezone: period.timezone,
+        }),
+        {
+          limit: args.limit ? Number(args.limit) : undefined,
+          minBaseline: args.min_baseline ? Number(args.min_baseline) : undefined,
+          focusPeriod: args.focus_period ? String(args.focus_period) : undefined,
+        },
+      );
+      if (truncated) {
+        report.notes.unshift(
+          "The scan hit its row cap, so some entities have INCOMPLETE history and their baselines are wrong. Narrow the range before trusting these scores.",
+        );
+      }
+      return {
+        resource: resource.name,
+        text: json({ ...report, entity_column: entity, measure, interval: period.interval, scanned: rows.length, truncated }),
+      };
+    },
+  },
+  {
+    name: "data_freshness",
+    description:
+      "Report how current each resource is: row count, when the scraper last saw it, when it last changed, and how far it lags the freshest resource. Use this before reporting any number that has to be current — it is how you catch a table that silently stopped syncing while its neighbours kept going.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        stale_after_hours: {
+          type: "number", minimum: 1,
+          description: "Lag behind the freshest resource, in hours, at which a resource is flagged stale (default 24).",
+        },
+      },
+      additionalProperties: false,
+    },
+    async run(args, ctx) {
+      const staleAfter = args.stale_after_hours ? Number(args.stale_after_hours) : 24;
+      const visible = RESMAN_RESOURCES.filter((r) => inScope(ctx.staff, r.name));
+
+      const rows = await Promise.all(
+        visible.map(async (r) => {
+          const newest = async (column: string): Promise<string | null> => {
+            if (!r.selectColumns.includes(column)) return null;
+            const { data } = await ctx.client
+              .from(r.table).select(column).not(column, "is", null)
+              .order(column, { ascending: false }).limit(1);
+            const value = (data as Record<string, unknown>[] | null)?.[0]?.[column];
+            return value === null || value === undefined ? null : String(value);
+          };
+          const [countResult, syncedAt, updatedAt] = await Promise.all([
+            ctx.client.from(r.table).select(r.idColumn, { count: "exact", head: true }),
+            newest("synced_at"),
+            newest("updated_at"),
+          ]);
+          return {
+            resource: r.name,
+            row_count: (countResult as { count: number | null }).count ?? 0,
+            last_synced_at: syncedAt,
+            last_updated_at: updatedAt,
+          };
+        }),
+      );
+
+      // Staleness is RELATIVE. An absolute threshold flags everything after a
+      // quiet weekend; lagging the freshest table is what actually indicates a
+      // sync that stopped — which is how `units` sat frozen for twelve days
+      // while work-orders kept updating, and nothing said so.
+      const stamps = rows.map((r) => (r.last_synced_at ? Date.parse(r.last_synced_at) : NaN)).filter((n) => !Number.isNaN(n));
+      const freshest = stamps.length > 0 ? Math.max(...stamps) : null;
+      const enriched = rows.map((r) => {
+        const ms = r.last_synced_at ? Date.parse(r.last_synced_at) : NaN;
+        const lagHours = freshest !== null && !Number.isNaN(ms) ? (freshest - ms) / 3_600_000 : null;
+        return {
+          ...r,
+          lag_hours: lagHours === null ? null : Math.round(lagHours * 10) / 10,
+          stale: lagHours !== null && lagHours > staleAfter,
+        };
+      });
+      enriched.sort((a, b) => (b.lag_hours ?? -1) - (a.lag_hours ?? -1));
+
+      const stale = enriched.filter((r) => r.stale).map((r) => r.resource);
+      const empty = enriched.filter((r) => r.row_count === 0).map((r) => r.resource);
+      return {
+        resource: "",
+        text: json({
+          freshest_sync: freshest === null ? null : new Date(freshest).toISOString(),
+          stale_after_hours: staleAfter,
+          resources: enriched,
+          stale,
+          empty,
+          notes: [
+            "synced_at is when the scraper last SAW a row; updated_at is when it last CHANGED. A large gap between them is normal on quiet data.",
+            stale.length > 0
+              ? `STALE: ${stale.join(", ")} — these lag the freshest resource by more than ${staleAfter}h. Treat their numbers as out of date and check the sync before reporting them.`
+              : "No resource lags the freshest by more than the threshold.",
+            empty.length > 0 ? `EMPTY (0 rows, never populated): ${empty.join(", ")}.` : null,
+          ].filter(Boolean),
+        }),
+      };
     },
   },
   {
@@ -782,6 +951,7 @@ function catalogText(staff: McpStaff): string {
       measures: r.measures,
       sortable: r.sortable,
       periods: Object.entries(r.periods).map(([name, p]) => ({ column: name, kind: p.kind })),
+      entities: r.entities,
       relations: r.relations.map((rel) => ({
         name: rel.name, target: rel.resource, kind: rel.kind, note: rel.note,
       })),

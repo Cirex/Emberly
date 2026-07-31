@@ -325,6 +325,12 @@ function resolveRelatedArg(
     assertScope(target, arg.scope);
     params.set("scope", arg.scope);
   }
+  if (typeof arg.search === "string" && arg.search.trim()) {
+    if (target.searchable.length === 0) {
+      throw new McpToolError(`${target.name} declares nothing searchable, so it cannot be searched through a relation.`);
+    }
+    params.set("q", arg.search.trim());
+  }
   // "Has no OPEN work order" needs the join filtered BEFORE the null test,
   // which a left-join-is-null cannot express. Refusing beats answering "has no
   // work orders at all" to a question about open ones.
@@ -348,6 +354,11 @@ const RELATED_SCHEMA = {
         "true (default) = has at least one matching related row. false = has NONE at all, and cannot be combined with child filters.",
     },
     scope: { type: "string", description: "A canonical scope on the RELATED resource, e.g. 'open' on work-orders." },
+    search: {
+      type: "string",
+      description:
+        "Substring search across the RELATED resource's searchable columns — 'leases where a resident is named Hernandez' is this, in one call.",
+    },
     filters: { type: "object", additionalProperties: { type: ["string", "boolean"] } },
     ranges: { type: "object", additionalProperties: { type: ["string", "number"] } },
   },

@@ -142,6 +142,15 @@ group the result (by building, say) in the same call.
   refusing.
 - **The related resource is scope-checked separately.** Filtering units by work orders reveals
   something about work orders.
+- **`search` works on the child too**, which is what makes name lookups one call:
+
+  ```json
+  { "resource": "leases", "scope": "current",
+    "related": { "relation": "residents", "search": "hernandez" } }
+  ```
+
+  It reaches only the target's declared `searchable` columns — residents stay name-only, so a
+  join is not a way around the withheld contact fields.
 
 **Only FK-backed relations can be filtered.** PostgREST resolves embeds from the foreign-key
 graph, so `units → work_orders`, `units → leases`, `leases → residents` and

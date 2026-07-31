@@ -354,6 +354,12 @@ function applyRelated(query: QueryBuilder, related: RelatedFilter): QueryBuilder
   for (const b of resolveRanges(related.target, related.params)) {
     out = b.op === "gte" ? out.gte(`${table}.${b.column}`, b.value) : out.lte(`${table}.${b.column}`, b.value);
   }
+  // A substring search on the CHILD — "leases where a resident is named X".
+  // PostgREST scopes an embedded or() with referencedTable, which is what makes
+  // this one query instead of two.
+  const childSearch = resolveSearch(related.target, related.params);
+  if (childSearch) out = out.or(childSearch.expression, { referencedTable: table });
+
   const { filters, any } = resolveScope(related.target, related.params.get("scope"));
   for (const pred of filters) {
     const col = `${table}.${pred.column}`;

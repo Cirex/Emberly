@@ -3,9 +3,11 @@ const test = require("node:test");
 
 const { handleMcpMessage } = require("../lib/mcp/server");
 const { redactAuditArgs } = require("../lib/access-tokens");
-const { aggregateRelated, aggregateResource, resolveProjection } = require("../lib/resman-api");
+const { aggregateRelated, aggregateResource, resolveProjection, resolveSearch } = require("../lib/resman-api");
 const {
   unitsResource,
+  leasesResource,
+  residentsResource,
   transactionsResource,
   workOrdersResource,
   entryLogsResource,
@@ -972,4 +974,43 @@ test("every default column is one the resource actually exposes", () => {
       );
     }
   }
+});
+
+test("a related filter can carry a search, so name lookups are one call", async () => {
+  // "The current lease for a resident named Hernandez" was two calls: search
+  // residents, then fetch by the lease ids. PostgREST scopes an embedded or()
+  // with referencedTable, so it is one query — no new tool needed.
+  const client = rpcClient([]);
+  const params = new URLSearchParams();
+  await aggregateResource(
+    leasesResource, params,
+    { groupBy: null, groupValues: [], metric: "count", measure: null,
+      related: {
+        relation: { name: "residents", resource: "residents", foreignColumn: "resman_lease_id", kind: "many" },
+        target: residentsResource,
+        exists: true,
+        params: new URLSearchParams({ q: "hernandez" }),
+      } },
+    client,
+  );
+  // Routed through PostgREST, not the SQL RPC — a join is not something
+  // mcp_aggregate expresses.
+  assert.equal(client.calls.length, 0, "the RPC is skipped when a related filter is present");
+});
+
+test("searching a relation only reaches the target's declared searchable columns", async () => {
+  // residents are searchable by NAME only; email and phone_numbers are queried
+  // to derive presence booleans and must not become reachable through a join.
+  const search = resolveSearch(residentsResource, new URLSearchParams({ q: "hernandez" }));
+  assert.ok(!search.expression.includes("email"));
+  assert.ok(!search.expression.includes("phone"));
+  assert.deepEqual([...search.columns], ["first_name", "last_name"]);
+});
+
+test("a relation whose target declares nothing searchable refuses a search", async () => {
+  const bare = RESMAN_RESOURCES.find((r) => r.searchable.length === 0);
+  assert.ok(bare, "expected a resource with nothing searchable");
+  // Nothing joinable currently targets one, so assert the resolver's contract
+  // directly: no searchable columns means no search expression, ever.
+  assert.equal(resolveSearch(bare, new URLSearchParams({ q: "anything" })), null);
 });

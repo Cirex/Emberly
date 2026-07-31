@@ -27,13 +27,35 @@
  * Every tool call is scope-checked against the staff's allowlist and audited.
  */
 import { logAccessTokenUse } from "../access-tokens";
-import { aggregateResource, describeResourceData, getResource, listResource } from "../resman-api";
+import { checkRateLimit } from "../rate-limit";
+import {
+  aggregateRelated,
+  aggregateResource,
+  describeResourceData,
+  getResource,
+  listResource,
+} from "../resman-api";
 import { RESMAN_RESOURCES, type ResmanResource } from "../resman-resources";
 import type { UntypedSupabase } from "../supabase/types";
 import type { McpStaff } from "./auth";
 
 const PROTOCOL_VERSION = "2025-06-18";
-const SERVER_INFO = { name: "emberly-resman-mcp", version: "0.1.0" } as const;
+const SERVER_INFO = { name: "emberly-resman-mcp", version: "0.2.0" } as const;
+
+/**
+ * Per-token call budget.
+ *
+ * Failed AUTH was already rate-limited; successful calls were not, so a valid
+ * token could page the mirror as fast as it could ask. That matters more now
+ * than it did: `aggregate_resource` issues one query per group and
+ * `aggregate_related` scans both sides of a hop, so a single tool call is no
+ * longer a single database round trip.
+ *
+ * Sized to be invisible to an agent doing real work and to stop a runaway loop
+ * within a minute or two, not to meter usage.
+ */
+const CALL_BUDGET_MAX = 600;
+const CALL_BUDGET_WINDOW_MS = 15 * 60 * 1000;
 
 const RESOURCE_BY_NAME = new Map(RESMAN_RESOURCES.map((r) => [r.name, r]));
 const RESOURCE_NAMES = RESMAN_RESOURCES.map((r) => r.name);
@@ -300,6 +322,91 @@ const TOOLS: McpTool[] = [
     },
   },
   {
+    name: "aggregate_related",
+    description:
+      "Aggregate one resource GROUPED BY an attribute of a resource it is related to — 'total transaction charges by building', 'work orders by unit classification', 'utility spend by occupancy status'. Give the PARENT resource (whose column you group by), a declared 'many' relation, and a measure on the related resource. Filters/ranges/search apply to the PARENT. This reads rows on both sides and reports both scan caps: prefer aggregate_resource whenever the group column and the measure live on the same resource.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        resource: {
+          type: "string",
+          enum: RESOURCE_NAMES,
+          description: "The PARENT resource — the one whose column you are grouping by (e.g. 'units').",
+        },
+        relation: {
+          type: "string",
+          description: "A declared 'many' relation on that resource (see describe_resource), e.g. 'transactions'.",
+        },
+        group_by: {
+          type: "string",
+          description: "Column on the PARENT resource to group by. Omit for a single total across the relation.",
+        },
+        metric: { type: "string", enum: ["count", "sum", "avg", "min", "max"], description: "Default count." },
+        measure: {
+          type: "string",
+          description: "Numeric column on the RELATED resource. Required unless metric is count.",
+        },
+        filters: { type: "object", additionalProperties: { type: ["string", "boolean"] } },
+        ranges: { type: "object", additionalProperties: { type: ["string", "number"] } },
+        search: { type: "string" },
+      },
+      required: ["resource", "relation"],
+      additionalProperties: false,
+    },
+    async run(args, ctx) {
+      const parent = resolveResource(ctx.staff, String(args.resource ?? ""));
+      const name = String(args.relation ?? "");
+      const relation = parent.relations.find((r) => r.name === name);
+      if (!relation) {
+        throw new McpToolError(
+          `Unknown relation "${name}" on ${parent.name}. Available: ${parent.relations.map((r) => r.name).join(", ") || "(none)"}.`,
+        );
+      }
+      // Only the one-to-many direction makes sense here: the parent supplies the
+      // grouping attribute and the related rows supply the measure. A "one" hop
+      // would group the single target row by the many parents pointing at it,
+      // which is the question asked backwards.
+      if (relation.kind !== "many") {
+        throw new McpToolError(
+          `Relation "${name}" is a "one" hop. aggregate_related groups a parent's attribute over its MANY related rows — start from ${relation.resource} and use the inverse relation, or use aggregate_resource on ${parent.name} directly.`,
+        );
+      }
+      const target = resolveResource(ctx.staff, relation.resource);
+
+      const metric = (args.metric ? String(args.metric) : "count") as
+        | "count" | "sum" | "avg" | "min" | "max";
+      const groupBy = args.group_by ? String(args.group_by) : null;
+      const measure = args.measure ? String(args.measure) : null;
+
+      if (groupBy && !parent.groupable.includes(groupBy)) {
+        throw new McpToolError(
+          `"${groupBy}" is not groupable on ${parent.name}. Groupable: ${parent.groupable.join(", ") || "(none)"}.`,
+        );
+      }
+      if (metric !== "count") {
+        if (!measure) throw new McpToolError(`metric "${metric}" requires a measure column.`);
+        // The measure belongs to the TARGET, so it is validated against the
+        // target's allowlist — reaching a column through a join must not be a
+        // way around the resource that owns it.
+        if (!target.measures.includes(measure)) {
+          throw new McpToolError(
+            `"${measure}" is not a measure on ${target.name}. Measures: ${target.measures.join(", ") || "(none)"}.`,
+          );
+        }
+      }
+
+      const result = await aggregateRelated(
+        parent,
+        target,
+        relation,
+        toParams(args, parent),
+        { groupBy, metric, measure },
+        ctx.client,
+      );
+      return { resource: target.name, text: json(result) };
+    },
+  },
+  {
     name: "get_resource",
     description: "Fetch a single row from a resource by its id. Returns { data } or { data: null } when not found.",
     inputSchema: {
@@ -382,6 +489,198 @@ const TOOLS: McpTool[] = [
 
 const TOOL_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
+// --- prompts -------------------------------------------------------------
+//
+// Canned analyses. The tools reward knowing that `occupied` and
+// `occupancy_status` disagree by 60 units; a prompt encodes that knowledge so
+// someone who has never seen the schema still gets the right number. Each one
+// names the exact calls rather than describing them, because the failure mode
+// these exist to prevent is a plausible-looking query against the wrong column.
+
+interface McpPrompt {
+  name: string;
+  description: string;
+  arguments: { name: string; description: string; required: boolean }[];
+  /** Resources the prompt reads; hidden from a token that cannot see them all. */
+  requires: string[];
+  build(args: Record<string, string>): string;
+}
+
+const PROMPTS: McpPrompt[] = [
+  {
+    name: "occupancy_reconciliation",
+    description:
+      "Reconcile the property's occupancy figures and explain any gap between the physical and leasing views.",
+    arguments: [],
+    requires: ["units", "leases"],
+    build: () =>
+      [
+        "Reconcile occupancy for the property. Report BOTH views and explain the gap between them.",
+        "",
+        "1. aggregate_resource on `units` grouping by `occupied` (boolean) — the PHYSICAL view: is anyone living there?",
+        "2. aggregate_resource on `units` grouping by `occupancy_status` — the LEASING view: Occupied / Vacant / Notice.",
+        "3. The two disagree, and the difference is the Notice bucket: households under eviction or having given notice are still in the apartment, so they are occupied=true but not occupancy_status='Occupied'. State the size of that bucket explicitly.",
+        "4. aggregate_resource on `leases` grouping by `status` for the full lifecycle. Note that `leases.status` carries Evicted and Former, which never appear on `units.lease_status` at all.",
+        "5. Exclude `holding_unit` and `excluded_from_occupancy` units from any occupancy RATE, and say that you did.",
+        "",
+        "Give one headline number, say which view it is, and show the other alongside it.",
+      ].join("\n"),
+  },
+  {
+    name: "work_order_aging",
+    description: "Age the open work-order backlog and surface what has been sitting longest.",
+    arguments: [
+      { name: "as_of", description: "ISO date to age against (default: today).", required: false },
+    ],
+    requires: ["work-orders"],
+    build: (args) =>
+      [
+        `Age the open work-order backlog${args.as_of ? ` as of ${args.as_of}` : ""}.`,
+        "",
+        "1. describe_resource on `work-orders` first — read the actual `status` values rather than assuming 'Open'.",
+        "2. aggregate_resource grouping by `status`, then by `priority`, to size the backlog.",
+        "3. query_resource with a `reported_to` range to pull the oldest still-open orders, sorted by `date_reported` ascending.",
+        "4. Group by `category` and by `technician` to show where the backlog sits.",
+        "",
+        "`date_completed` is entered by hand: a blank means nobody typed it, not that the job is unfinished. Say which you are reporting.",
+      ].join("\n"),
+  },
+  {
+    name: "delinquency_by_building",
+    description: "Break down resident balances and delinquency by building.",
+    arguments: [],
+    requires: ["units", "buildings"],
+    build: () =>
+      [
+        "Break down delinquency by building.",
+        "",
+        "1. aggregate_resource on `units`, group_by `resman_building_id`, metric sum, measure `balance`.",
+        "2. Repeat with `current_month_balance` to separate this month's charges from carried arrears.",
+        "3. aggregate_resource group_by `resman_building_id` metric avg measure `times_late`.",
+        "4. Resolve each building id to a name with get_resource on `buildings` — report names, not guids.",
+        "5. Filter to `occupied=true` for a rate that means anything; a vacant unit's balance is a write-off, not delinquency.",
+        "",
+        "Nulls are excluded from averages. Report how many units carried no value if it is a large share.",
+      ].join("\n"),
+  },
+  {
+    name: "utility_spend",
+    description: "Summarise MLGW utility spend and consumption over a period.",
+    arguments: [
+      { name: "from", description: "Start date, ISO (e.g. 2026-01-01).", required: true },
+      { name: "to", description: "End date, ISO.", required: true },
+    ],
+    requires: ["mlgw/bills", "mlgw/accounts"],
+    build: (args) =>
+      [
+        `Summarise utility spend from ${args.from ?? "<from>"} to ${args.to ?? "<to>"}.`,
+        "",
+        `1. aggregate_resource on \`mlgw/bills\` with ranges { bill_date_from: "${args.from ?? ""}", bill_date_to: "${args.to ?? ""}" }, metric sum, measure \`amount_due\`.`,
+        "2. Repeat per utility: `electric_total`, `gas_total`, `water_total`, `sewer_total`.",
+        "3. Repeat with the `_usage` measures. Spend and consumption move apart when rates change — report both or neither.",
+        "4. aggregate_resource group_by `is_house_account` on `mlgw/accounts` to separate common-area accounts from unit accounts.",
+        "5. For a per-unit view use aggregate_related from `units` over the `utility_accounts` relation — but note that relation is matched BY ADDRESS, so an unmatched account is invisible to it. Check the `(unmatched)` bucket it returns.",
+      ].join("\n"),
+  },
+  {
+    name: "gate_activity",
+    description: "Summarise entry-log activity for a time window.",
+    arguments: [
+      { name: "from", description: "Window start, ISO timestamp.", required: true },
+      { name: "to", description: "Window end, ISO timestamp.", required: false },
+    ],
+    requires: ["entry-logs", "guest-passes"],
+    build: (args) =>
+      [
+        `Summarise gate activity from ${args.from ?? "<from>"}${args.to ? ` to ${args.to}` : ""}.`,
+        "",
+        `1. aggregate_resource on \`entry-logs\` with ranges { entered_from: "${args.from ?? ""}"${args.to ? `, entered_to: "${args.to}"` : ""} }, group_by \`entry_type\`.`,
+        "2. Group by `scanner_id` to show which gate.",
+        "3. query_resource on `entry-logs` over the same range, sorted by `entered_at`, for the individual scans.",
+        "4. For guest entries, follow the `guest_pass` relation — a null guest_pass_id means a resident scan, not a missing pass.",
+        "",
+        "Report residents by unit rather than by name unless the question is about a specific person.",
+      ].join("\n"),
+  },
+];
+
+const PROMPT_BY_NAME = new Map(PROMPTS.map((p) => [p.name, p]));
+
+/** A prompt is offered only when the token can read everything it would use. */
+function promptVisible(staff: McpStaff, prompt: McpPrompt): boolean {
+  return prompt.requires.every((r) => inScope(staff, r));
+}
+
+// --- resources -----------------------------------------------------------
+//
+// Attachable context rather than a tool round-trip: a client can pin the
+// catalog into the conversation once instead of calling list_resources and
+// describe_resource before every question.
+
+const CATALOG_URI = "emberly://catalog";
+const TRAPS_URI = "emberly://data-traps";
+
+/**
+ * The traps that have each produced a confidently wrong answer against this
+ * data. Kept here, next to the tools, rather than only in docs/ — the caller
+ * that needs them is the one that never reads the repository.
+ */
+const DATA_TRAPS = `# Traps in the Emberly mirror
+
+## occupied vs occupancy_status — they differ by 60 units
+- units.occupied (boolean): is anyone living there? Use for anything PHYSICAL — parking, utilities, access control.
+- units.occupancy_status (Occupied/Vacant/Notice): use for LEASING and reporting.
+The gap is the Notice bucket — under eviction or notice given, still in the apartment.
+Grouping by occupancy_status to answer "how many units are occupied" undercounts by 60.
+
+## units.lease_status is narrower than leases.status
+units.lease_status comes from the All-Units report (8 values). leases.status is the full
+lifecycle (12), including Evicted and Former, which NEVER appear on the units table.
+The two disagree on 14 units because they come from different reports.
+
+## synced_at is not updated_at
+synced_at = the scraper last SAW the row. updated_at = the row last CHANGED.
+They sit far apart when nothing is changing. That is normal, not an outage.
+
+## Manual fields are sparse
+Vehicle registration, holding_unit, date_completed and similar are typed by hand in ResMan.
+A blank means nobody entered it, NOT that the answer is no. Report the data-entry rate, not
+a false zero.
+
+## mlgw/accounts.property_name holds a UUID
+Despite the name it currently stores the property id. Group by resman_property_id instead.
+
+## units -> mlgw/accounts is matched by ADDRESS
+Not by a shared key. An unmatched account is invisible to the relation; aggregate_related
+returns an "(unmatched)" bucket, and that number is part of the answer.
+
+## Free text is not a category
+title, notes, completion_notes and names are deliberately not groupable. Search them.
+
+## Aggregate truncation
+sum/avg/min/max scan up to 20,000 rows and set truncated:true. A truncated average is not a
+smaller average, it is a wrong one. Check the flag.`;
+
+function catalogText(staff: McpStaff): string {
+  return json({
+    server: SERVER_INFO,
+    resources: RESMAN_RESOURCES.filter((r) => inScope(staff, r.name)).map((r) => ({
+      resource: r.name,
+      id_column: r.idColumn,
+      columns: r.publicColumns,
+      filters: Object.keys(r.filters),
+      ranges: Object.keys(r.ranges).map((p) => `${p}_from / ${p}_to`),
+      searchable: r.searchable,
+      groupable: r.groupable,
+      measures: r.measures,
+      sortable: r.sortable,
+      relations: r.relations.map((rel) => ({
+        name: rel.name, target: rel.resource, kind: rel.kind, note: rel.note,
+      })),
+    })),
+  });
+}
+
 type JsonRpcId = string | number | null;
 
 interface JsonRpcMessage {
@@ -410,7 +709,11 @@ export async function handleMcpMessage(
       const requested = params.protocolVersion;
       return reply({
         protocolVersion: typeof requested === "string" ? requested : PROTOCOL_VERSION,
-        capabilities: { tools: { listChanged: false } },
+        capabilities: {
+          tools: { listChanged: false },
+          prompts: { listChanged: false },
+          resources: { listChanged: false, subscribe: false },
+        },
         serverInfo: SERVER_INFO,
       });
     }
@@ -420,11 +723,75 @@ export async function handleMcpMessage(
       return reply({
         tools: TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
       });
+    case "prompts/list":
+      return reply({
+        prompts: PROMPTS.filter((p) => promptVisible(ctx.staff, p)).map((p) => ({
+          name: p.name,
+          description: p.description,
+          arguments: p.arguments,
+        })),
+      });
+    case "prompts/get": {
+      const name = String(params.name ?? "");
+      const prompt = PROMPT_BY_NAME.get(name);
+      // Out-of-scope prompts are reported as unknown rather than forbidden: a
+      // distinct "not authorized" would confirm which resources exist behind a
+      // token that cannot read them.
+      if (!prompt || !promptVisible(ctx.staff, prompt)) return fail(-32602, `Unknown prompt "${name}"`);
+      const args = (params.arguments ?? {}) as Record<string, string>;
+      return reply({
+        description: prompt.description,
+        messages: [{ role: "user", content: { type: "text", text: prompt.build(args) } }],
+      });
+    }
+    case "resources/list":
+      return reply({
+        resources: [
+          {
+            uri: CATALOG_URI,
+            name: "Resource catalog",
+            description:
+              "Every resource this token can read, with its columns, filters, ranges, searchable/groupable/measure allowlists and declared relations.",
+            mimeType: "application/json",
+          },
+          {
+            uri: TRAPS_URI,
+            name: "Data traps",
+            description:
+              "Known ways to get a confidently wrong answer from this data. Read before reporting a number.",
+            mimeType: "text/markdown",
+          },
+        ],
+      });
+    case "resources/read": {
+      const uri = String(params.uri ?? "");
+      if (uri === CATALOG_URI) {
+        return reply({ contents: [{ uri, mimeType: "application/json", text: catalogText(ctx.staff) }] });
+      }
+      if (uri === TRAPS_URI) {
+        return reply({ contents: [{ uri, mimeType: "text/markdown", text: DATA_TRAPS }] });
+      }
+      return fail(-32602, `Unknown resource URI "${uri}"`);
+    }
     case "tools/call": {
       const name = String(params.name ?? "");
       const tool = TOOL_BY_NAME.get(name);
       if (!tool) return fail(-32602, `Unknown tool "${name}"`);
       const args = (params.arguments ?? {}) as Record<string, unknown>;
+      // Budget is spent per TOOL CALL, not per HTTP request: a JSON-RPC batch
+      // carries many calls in one request, so metering the request would let a
+      // batch of 500 through as a single unit.
+      const within = await checkRateLimit({
+        bucket: `mcp-calls:${ctx.staff.tokenId}`,
+        maxAttempts: CALL_BUDGET_MAX,
+        windowMs: CALL_BUDGET_WINDOW_MS,
+      });
+      if (!within) {
+        void logAccessTokenUse(ctx.client, ctx.staff, {
+          tool: name, args, ok: false, error: "call budget exceeded",
+        });
+        return fail(-32003, `Call budget exceeded (${CALL_BUDGET_MAX} per 15 minutes). Retry shortly.`);
+      }
       try {
         const { text, resource } = await tool.run(args, ctx);
         void logAccessTokenUse(ctx.client, ctx.staff, { tool: name, resource, args, ok: true });

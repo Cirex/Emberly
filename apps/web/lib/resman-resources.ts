@@ -184,6 +184,22 @@ export const propertiesResource = defineResource({
   ],
   filters: { account: "resman_account_id" },
   order: { column: "name", ascending: true },
+  searchable: ["name", "custom_name", "abbreviation"],
+  ranges: { unit_count: "unit_count" },
+  // Single-property today, so these group columns are all degenerate. They are
+  // declared anyway: the shape is right for a second property, and a bucket of
+  // one is an honest answer where a missing capability is a dead end.
+  groupable: ["property_type", "state", "city", "management_company"],
+  measures: ["unit_count"],
+  sortable: ["name", "unit_count"],
+  relations: [
+    { name: "buildings", resource: "buildings", localColumn: "resman_property_id",
+      foreignColumn: "resman_property_id", kind: "many" },
+    { name: "units", resource: "units", localColumn: "resman_property_id",
+      foreignColumn: "resman_property_id", kind: "many" },
+    { name: "floorplans", resource: "floorplans", localColumn: "resman_property_id",
+      foreignColumn: "resman_property_id", kind: "many" },
+  ],
 });
 
 export const buildingsResource = defineResource({
@@ -195,6 +211,15 @@ export const buildingsResource = defineResource({
   ],
   filters: { property: "resman_property_id" },
   order: { column: "name", ascending: true },
+  searchable: ["name"],
+  groupable: ["resman_property_id"],
+  sortable: ["name"],
+  relations: [
+    { name: "property", resource: "properties", localColumn: "resman_property_id",
+      foreignColumn: "resman_property_id", kind: "one" },
+    { name: "units", resource: "units", localColumn: "resman_building_id",
+      foreignColumn: "resman_building_id", kind: "many" },
+  ],
 });
 
 export const floorplansResource = defineResource({
@@ -207,6 +232,18 @@ export const floorplansResource = defineResource({
   ],
   filters: { property: "resman_property_id" },
   order: { column: "name", ascending: true },
+  searchable: ["name", "description"],
+  ranges: { square_feet: "square_feet", market_rent: "market_rent" },
+  groupable: ["resman_property_id"],
+  measures: ["square_feet", "market_rent"],
+  sortable: ["name", "square_feet", "market_rent"],
+  relations: [
+    { name: "property", resource: "properties", localColumn: "resman_property_id",
+      foreignColumn: "resman_property_id", kind: "one" },
+    { name: "units", resource: "units", localColumn: "resman_floorplan_id",
+      foreignColumn: "resman_floorplan_id", kind: "many",
+      note: "floorplans.market_rent is the PLAN's asking rent; units.market_rent is the unit's own. They differ." },
+  ],
 });
 
 export const unitsResource = defineResource({
@@ -274,6 +311,13 @@ export const unitsResource = defineResource({
       foreignColumn: "resman_unit_id", kind: "many" },
     { name: "transactions", resource: "transactions", localColumn: "resman_unit_id",
       foreignColumn: "resman_unit_id", kind: "many" },
+    { name: "utility_accounts", resource: "mlgw/accounts", localColumn: "resman_unit_id",
+      foreignColumn: "resman_unit_id", kind: "many",
+      note: "MLGW accounts matched to this unit BY ADDRESS, not by a shared key — absence may mean unmatched rather than no service." },
+    { name: "building", resource: "buildings", localColumn: "resman_building_id",
+      foreignColumn: "resman_building_id", kind: "one" },
+    { name: "floorplan", resource: "floorplans", localColumn: "resman_floorplan_id",
+      foreignColumn: "resman_floorplan_id", kind: "one" },
   ],
 });
 
@@ -445,8 +489,27 @@ export const mlgwAccountsResource = defineResource({
     property: "resman_property_id",
     unit: "resman_unit_id",
     account_number: "account_number",
+    is_house_account: "is_house_account",
   },
+  booleanFilters: ["is_house_account"],
   order: { column: "account_number", ascending: true },
+  searchable: ["service_address", "unit_number", "account_number"],
+  ranges: { due_now: "due_now", due_date: "due_date" },
+  // NOT groupable by `property_name`: despite the name it currently holds the
+  // property UUID, not a name, so grouping by it produces a bucket labelled
+  // with a guid. Group by resman_property_id and mean it.
+  groupable: ["is_house_account", "resman_property_id"],
+  measures: ["due_now"],
+  sortable: ["account_number", "due_now", "due_date"],
+  relations: [
+    { name: "bills", resource: "mlgw/bills", localColumn: "id",
+      foreignColumn: "mlgw_account_id", kind: "many" },
+    { name: "payments", resource: "mlgw/payments", localColumn: "id",
+      foreignColumn: "mlgw_account_id", kind: "many" },
+    { name: "unit", resource: "units", localColumn: "resman_unit_id",
+      foreignColumn: "resman_unit_id", kind: "one",
+      note: "Matched by address, not a ResMan key — an unmatched account has a null resman_unit_id." },
+  ],
 });
 
 // Bills: raw jsonb and file_path (a private Storage path to the source PDF,
@@ -477,6 +540,29 @@ export const mlgwBillsResource = defineResource({
   },
   booleanFilters: ["is_current"],
   order: { column: "bill_date", ascending: false },
+  ranges: {
+    bill_date: "bill_date",
+    due_date: "due_date",
+    amount_due: "amount_due",
+    gas_read_end: "gas_read_end_date",
+    electric_read_end: "electric_read_end_date",
+    water_read_end: "water_read_end_date",
+  },
+  groupable: ["is_current", "bill_for", "resman_property_id"],
+  // The per-utility totals are what "what did we spend on water in Q1" needs.
+  // Usage columns sit alongside them because spend and consumption move apart —
+  // a rate change shows up in one and not the other.
+  measures: [
+    "amount_due", "balance_forward", "gas_total", "electric_total", "water_total",
+    "sewer_total", "gas_usage", "electric_usage", "water_usage", "sewer_usage",
+    "other_mlgw_total", "non_mlgw_total", "storm_water_fee_total",
+    "solid_waste_fee_total", "sewer_charge_total", "average_temperature",
+  ],
+  sortable: ["bill_date", "due_date", "amount_due"],
+  relations: [
+    { name: "account", resource: "mlgw/accounts", localColumn: "mlgw_account_id",
+      foreignColumn: "id", kind: "one" },
+  ],
 });
 
 // Payments: card fields are already absent from the schema; free-text
@@ -495,8 +581,20 @@ export const mlgwPaymentsResource = defineResource({
     account: "mlgw_account_id",
     reference_number: "reference_number",
     status: "status",
+    payment_method: "payment_method",
   },
   order: { column: "paid_date", ascending: false },
+  searchable: ["account_number", "reference_number", "authorization_number"],
+  ranges: { paid_date: "paid_date", amount: "amount" },
+  // NOT `account_selection`: 190 distinct values over 2,885 rows — high enough
+  // that grouping by it enumerates rather than aggregates.
+  groupable: ["status", "payment_method", "resman_property_id"],
+  measures: ["amount"],
+  sortable: ["paid_date", "amount"],
+  relations: [
+    { name: "account", resource: "mlgw/accounts", localColumn: "mlgw_account_id",
+      foreignColumn: "id", kind: "one" },
+  ],
 });
 
 // --- First-party domain --------------------------------------------------
@@ -519,8 +617,21 @@ export const guestPassesResource = defineResource({
   filters: {
     resident: "resident_id",
     status: "status",
+    email_delivery_status: "email_delivery_status",
   },
   order: { column: "created_at", ascending: false },
+  // Searchable by guest name for the same reason residents are: "did we issue a
+  // pass to this person" is the question the table exists to answer. NOT
+  // groupable by it — that turns an aggregate into a guest list.
+  searchable: ["guest_name"],
+  ranges: { created: "created_at", expires: "expires_at", used: "used_at" },
+  groupable: ["status", "email_delivery_status"],
+  sortable: ["created_at", "expires_at", "used_at"],
+  relations: [
+    { name: "entries", resource: "entry-logs", localColumn: "id",
+      foreignColumn: "guest_pass_id", kind: "many",
+      note: "Scans made against this pass. A pass with no entries was issued but never used." },
+  ],
 });
 
 // The scan ledger verify-pass writes. `notes` stays: it's operational entry
@@ -541,6 +652,19 @@ export const entryLogsResource = defineResource({
     unit_address: "unit_address",
   },
   order: { column: "entered_at", ascending: false },
+  searchable: ["tenant_name", "unit_address", "notes"],
+  // The whole point of this table: "who came through the gate last night" is a
+  // time window, and without a range on entered_at it is unaskable.
+  ranges: { entered: "entered_at" },
+  // `tenant_name` is deliberately absent — grouping by it enumerates residents
+  // by how often they come and go. Search it instead.
+  groupable: ["entry_type", "scanner_id", "property_name"],
+  sortable: ["entered_at"],
+  relations: [
+    { name: "guest_pass", resource: "guest-passes", localColumn: "guest_pass_id",
+      foreignColumn: "id", kind: "one",
+      note: "Null for a resident scan — only guest entries carry a pass." },
+  ],
 });
 
 export const RESMAN_RESOURCES: readonly ResmanResource[] = [

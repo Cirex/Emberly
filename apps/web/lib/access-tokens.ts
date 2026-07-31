@@ -21,7 +21,11 @@ export interface AccessTokenSubject {
   subjectId: string;
   label: string;
   role: string;
-  /** Resource-name allowlist; empty means all resources. */
+  /**
+   * Resource-name allowlist. EMPTY GRANTS NOTHING on the MCP surface; `["*"]`
+   * is how you ask for everything. (The REST surface additionally gates on
+   * `role` — see tokenForbiddenForResource.)
+   */
   scopes: string[];
 }
 
@@ -182,6 +186,55 @@ export interface TokenAuditEntry {
   error?: string;
 }
 
+/**
+ * Argument keys carrying CALLER-SUPPLIED FREE TEXT, which the audit log must
+ * never store verbatim.
+ *
+ * Ids, filter values and column names are all drawn from a fixed vocabulary and
+ * are the point of the audit trail — they record which rows a token touched.
+ * A search term is different in kind: it is typed by a human, it is matched
+ * against names, and `{"resource":"residents","search":"hernandez"}` puts a
+ * resident's surname in a log table nobody classifies as holding PII, forever.
+ *
+ * Substring search shipped in the same change that made this reachable, so this
+ * redaction is part of that feature, not a later cleanup.
+ */
+const REDACTED_ARG_KEYS = new Set(["search", "q"]);
+
+/** Depth ceiling — arguments are shallow, and a cycle must not hang the logger. */
+const REDACT_MAX_DEPTH = 6;
+
+/**
+ * Replace a free-text argument with its shape: how long it was, and a short
+ * digest so the SAME term is recognisably the same across calls.
+ *
+ * That keeps the two things an audit trail actually needs — "this token ran a
+ * search" and "it ran the same search eleven times" — without keeping the term.
+ * The digest is not a reversible record: an 8-hex prefix over an unbounded input
+ * space confirms a guess you already hold, it does not yield the value.
+ */
+function redactFreeText(value: unknown): unknown {
+  if (typeof value !== "string") return value === undefined ? undefined : "[redacted]";
+  return {
+    redacted: true,
+    length: value.length,
+    digest: createHash("sha256").update(value).digest("hex").slice(0, 8),
+  };
+}
+
+/** Recursively redact free-text argument values. Exported for tests. */
+export function redactAuditArgs(args: unknown, depth = 0): unknown {
+  if (args === null || typeof args !== "object") return args;
+  if (depth >= REDACT_MAX_DEPTH) return "[truncated]";
+  if (Array.isArray(args)) return args.map((item) => redactAuditArgs(item, depth + 1));
+
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args as Record<string, unknown>)) {
+    out[key] = REDACTED_ARG_KEYS.has(key) ? redactFreeText(value) : redactAuditArgs(value, depth + 1);
+  }
+  return out;
+}
+
 /** Record one token use for attribution. Best-effort — never throws. */
 export async function logAccessTokenUse(
   client: UntypedSupabase,
@@ -197,7 +250,9 @@ export async function logAccessTokenUse(
       kind: subject.kind,
       tool: entry.tool,
       resource: entry.resource ?? "",
-      arguments: entry.args ?? null,
+      // Redacted HERE rather than at the call site, so no future caller can
+      // forget: everything that reaches the audit table goes through this.
+      arguments: entry.args === undefined ? null : redactAuditArgs(entry.args),
       ok: entry.ok,
       error: entry.error ?? "",
     });

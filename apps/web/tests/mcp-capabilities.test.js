@@ -248,7 +248,14 @@ test("every declared relation points at a real resource and a filterable column"
 test("groupable columns never include free text or a person's name", () => {
   // Grouping by a name turns an aggregate into an enumeration; grouping by free
   // text is a full dump wearing an aggregate's clothes.
-  const banned = ["title", "notes", "completion_notes", "first_name", "last_name", "tenant_names", "ledger_description"];
+  const banned = [
+    "title", "notes", "completion_notes", "first_name", "last_name",
+    // Both spellings: `tenant_names` on units, `tenant_name` on entry_logs.
+    // Grouping the gate log by resident name ranks people by how often they
+    // come and go, which is surveillance wearing an aggregate's clothes.
+    "tenant_names", "tenant_name", "guest_name",
+    "ledger_description", "service_address", "unit_address",
+  ];
   for (const resource of RESMAN_RESOURCES) {
     for (const column of resource.groupable) {
       assert.ok(!banned.includes(column), `${resource.name} must not be groupable by ${column}`);

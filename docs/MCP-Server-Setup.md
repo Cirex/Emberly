@@ -17,6 +17,11 @@ everywhere:
 
 The server is **read-only** — it never mutates ResMan/MLGW data.
 
+It advertises three MCP capabilities: **tools** (seven), **prompts** (five canned analyses)
+and **resources** (a scope-filtered schema catalog and a data-traps sheet). Clients that
+support prompts and resources will surface those automatically; tool-only clients still get
+the full query surface.
+
 For what the tools actually *do* — searching, grouping, joining, and the handful of traps in
 this data that will otherwise give you a confidently wrong number — see [[MCP Tools]].
 
@@ -36,6 +41,8 @@ also shows ready-to-paste setup snippets with the token filled in for each clien
 - Revoke at any time from the same page; the client loses access immediately.
 - The token is a secret embedded in the client config — store the config securely and
   rotate/revoke as needed.
+- **Each token gets 600 tool calls per 15 minutes.** Ample for real work; it exists to cap a
+  runaway loop. Over the limit the client sees JSON-RPC error `-32003` and should retry later.
 
 **Your endpoint URL** is your deployment origin + `/api/mcp`, e.g.
 `https://emberly.example.com/api/mcp` (or `http://localhost:3010/api/mcp` in dev). Localhost

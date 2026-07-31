@@ -498,6 +498,175 @@ export async function aggregateResource(
   return { ...base, buckets, scanned: rows.length, truncated: rows.length >= AGGREGATE_SCAN_CAP };
 }
 
+export interface RelatedAggregateResult extends AggregateResult {
+  /** The resource the group column belongs to (the parent side of the hop). */
+  grouped_by_resource: string;
+  relation: string;
+  /** Parent rows read to build the key -> group map. */
+  parents_scanned: number;
+  /** True when either side hit its scan cap — the numbers are then INCOMPLETE. */
+  parents_truncated: boolean;
+}
+
+/** Parent rows read to build the join map before the target is touched. */
+const RELATED_PARENT_CAP = 20_000;
+/**
+ * Keys per `in(...)` batch. PostgREST takes filters in the query string, so a
+ * batch of uuids becomes URL length — 100 keys is ~3.8 KB, comfortably inside
+ * every proxy's request-line limit. Larger batches are fewer round trips and a
+ * 431 waiting to happen.
+ */
+const RELATED_KEY_CHUNK = 100;
+
+/**
+ * Aggregate one resource GROUPED BY an attribute of a resource it is related to:
+ * "total transaction charges by building", "work orders by unit classification",
+ * "utility spend by whether the unit is occupied".
+ *
+ * PostgREST cannot express this as a single grouped join over the mirror, so it
+ * runs as a two-sided scan:
+ *
+ *   1. Read the parent's join key and group column (predicates apply to the
+ *      PARENT — "occupied units", "buildings on this property").
+ *   2. Read the target's join key and measure in `in(...)` batches over those
+ *      keys, and fold each row into its parent's bucket.
+ *
+ * Both sides are capped and both caps are REPORTED. Unlike `aggregateResource`,
+ * even a `count` here has to read rows: the grouping attribute lives on the
+ * other table, so there is no per-group predicate a HEAD count could use. That
+ * makes this the expensive tool of the set — reach for `aggregate_resource`
+ * whenever the group column is on the same resource as the measure.
+ *
+ * Rows whose foreign key matched no scanned parent are counted separately as
+ * `unmatched` rather than silently dropped: on an address-matched relation like
+ * units -> mlgw/accounts, that number IS the answer to "how much are we failing
+ * to attribute".
+ */
+export async function aggregateRelated(
+  parent: ResmanResource,
+  target: ResmanResource,
+  relation: { localColumn: string; foreignColumn: string; name: string },
+  searchParams: URLSearchParams,
+  opts: {
+    groupBy: string | null;
+    metric: "count" | "sum" | "avg" | "min" | "max";
+    measure: string | null;
+  },
+  client: UntypedSupabase = pmClient(),
+): Promise<RelatedAggregateResult> {
+  // --- 1. parent side: join key -> group value ---
+  const parentColumns = opts.groupBy
+    ? [relation.localColumn, opts.groupBy]
+    : [relation.localColumn];
+  let parentQuery = client.from(parent.table).select([...new Set(parentColumns)].join(","));
+  for (const { column, value } of resolveFilters(parent, searchParams)) {
+    parentQuery = parentQuery.eq(column, value);
+  }
+  for (const b of resolveRanges(parent, searchParams)) {
+    parentQuery = b.op === "gte" ? parentQuery.gte(b.column, b.value) : parentQuery.lte(b.column, b.value);
+  }
+  const parentSearch = resolveSearch(parent, searchParams);
+  if (parentSearch) parentQuery = parentQuery.or(parentSearch.expression);
+
+  const { data: parentData, error: parentError } = await parentQuery.limit(RELATED_PARENT_CAP);
+  if (parentError) throw parentError;
+  const parentRows = (parentData ?? []) as Record<string, unknown>[];
+
+  const groupByKey = new Map<string, string | null>();
+  for (const row of parentRows) {
+    const key = row[relation.localColumn];
+    if (key === null || key === undefined || key === "") continue;
+    groupByKey.set(String(key), opts.groupBy ? ((row[opts.groupBy] ?? null) as string | null) : null);
+  }
+
+  const acc = new Map<string | null, { n: number; sum: number; min: number; max: number }>();
+  const bump = (group: string | null, value: number | null) => {
+    const cur = acc.get(group) ?? { n: 0, sum: 0, min: Infinity, max: -Infinity };
+    cur.n += 1;
+    if (value !== null) {
+      cur.sum += value;
+      cur.min = Math.min(cur.min, value);
+      cur.max = Math.max(cur.max, value);
+    }
+    acc.set(group, cur);
+  };
+
+  // --- 2. target side: fold each row into its parent's bucket ---
+  const keys = [...groupByKey.keys()];
+  const targetColumns = opts.measure
+    ? [...new Set([relation.foreignColumn, opts.measure])]
+    : [relation.foreignColumn];
+  let scanned = 0;
+  let unmatched = 0;
+  let targetTruncated = false;
+
+  for (let i = 0; i < keys.length && scanned < AGGREGATE_SCAN_CAP; i += RELATED_KEY_CHUNK) {
+    const chunk = keys.slice(i, i + RELATED_KEY_CHUNK);
+    const { data, error } = await client
+      .from(target.table)
+      .select(targetColumns.join(","))
+      .in(relation.foreignColumn, chunk)
+      .limit(AGGREGATE_SCAN_CAP - scanned);
+    if (error) throw error;
+    const rows = (data ?? []) as Record<string, unknown>[];
+    scanned += rows.length;
+
+    for (const row of rows) {
+      const fk = row[relation.foreignColumn];
+      const key = fk === null || fk === undefined ? "" : String(fk);
+      if (!groupByKey.has(key)) {
+        unmatched += 1;
+        continue;
+      }
+      const group = groupByKey.get(key) ?? null;
+      if (opts.metric === "count" || !opts.measure) {
+        bump(group, null);
+        continue;
+      }
+      // Same null discipline as aggregateResource: Number(null) is 0, so a
+      // missing measure must be rejected before coercion, not after.
+      const raw = row[opts.measure];
+      if (raw === null || raw === undefined || raw === "") continue;
+      const value = Number(raw);
+      if (!Number.isFinite(value)) continue;
+      bump(group, value);
+    }
+    if (scanned >= AGGREGATE_SCAN_CAP) targetTruncated = true;
+  }
+
+  const buckets: AggregateBucket[] = [...acc.entries()].map(([group, a]) => ({
+    group,
+    count: a.n,
+    ...(opts.metric === "count"
+      ? {}
+      : {
+          value:
+            a.n === 0 || a.min === Infinity ? null
+            : opts.metric === "sum" ? a.sum
+            : opts.metric === "avg" ? a.sum / a.n
+            : opts.metric === "min" ? a.min
+            : a.max,
+        }),
+  }));
+  buckets.sort((x, y) =>
+    opts.metric === "count" ? y.count - x.count : (y.value ?? 0) - (x.value ?? 0),
+  );
+
+  return {
+    resource: target.name,
+    grouped_by_resource: parent.name,
+    relation: relation.name,
+    group_by: opts.groupBy,
+    metric: opts.metric,
+    measure: opts.measure,
+    buckets: unmatched > 0 ? [...buckets, { group: "(unmatched)", count: unmatched }] : buckets,
+    scanned,
+    truncated: targetTruncated,
+    parents_scanned: parentRows.length,
+    parents_truncated: parentRows.length >= RELATED_PARENT_CAP,
+  };
+}
+
 /** Executes a detail (by-id) query for a resource. Returns null when not found. */
 export async function getResource(
   resource: ResmanResource,

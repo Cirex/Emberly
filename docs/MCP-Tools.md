@@ -3,23 +3,27 @@
 What the Emberly MCP server can answer, and how to ask. For connecting a client, see
 [[MCP Server Setup]].
 
-The server is **read-only** and exposes six tools over the ResMan + MLGW mirror. The design
-rule throughout: **you name a capability, never a column or an expression**. Every searchable,
-groupable, sortable and joinable column is declared per-resource in
-`apps/web/lib/resman-resources.ts`. Anything absent from those lists is unreachable however
-the request is phrased — which is what lets the surface be expressive without becoming
-arbitrary SQL over resident data.
+The server is **read-only** and exposes seven tools, five prompts and two attachable resources
+over the ResMan + MLGW mirror. The design rule throughout: **you name a capability, never a
+column or an expression**. Every searchable, groupable, sortable and joinable column is
+declared per-resource in `apps/web/lib/resman-resources.ts`. Anything absent from those lists
+is unreachable however the request is phrased — which is what lets the surface be expressive
+without becoming arbitrary SQL over resident data.
+
+All thirteen resources declare capabilities. (Through v0.1 only five did; the MLGW and
+gate-log tables were list-only, which made utility spend and gate activity unaskable.)
 
 ---
 
-## The six tools
+## The seven tools
 
 | Tool | Use it for |
 |---|---|
 | `list_resources` | What exists, and what each resource can do. Start here. |
 | `describe_resource` | One resource in depth — columns, capabilities, **the values its columns actually hold**, row count, freshness. |
 | `query_resource` | Rows: filters, ranges, substring search, sort, projection, paging. |
-| `aggregate_resource` | Counting and totalling. One call instead of paging a table. |
+| `aggregate_resource` | Counting and totalling within one resource. One call instead of paging a table. |
+| `aggregate_related` | Totalling one resource **grouped by another's** attribute — charges by building, work orders by occupancy. |
 | `get_resource` | One row by id. |
 | `related_resource` | Walk a declared relation to another resource. |
 
@@ -30,6 +34,9 @@ arbitrary SQL over resident data.
    and skipping it is how you end up filtering on a status the property has never used, getting
    zero rows, and reporting "none" — which reads exactly like a real zero.
 3. `query_resource` / `aggregate_resource` — ask the question.
+
+Clients that support MCP **prompts** can skip straight to a canned analysis; see
+[Prompts](#prompts) below.
 
 ---
 
@@ -59,6 +66,75 @@ Filters, ranges and search all apply to aggregates exactly as they do to queries
 { "resource": "units", "group_by": "resman_building_id", "metric": "avg",
   "measure": "market_rent", "filters": { "occupancy_status": "Occupied" } }
 ```
+
+---
+
+## Aggregating across a relation
+
+`aggregate_resource` groups by a column on the resource being measured. When the grouping
+attribute lives on a **different** resource — "charges by building" (charges are on
+transactions, building is on units) — use `aggregate_related`.
+
+Give the **parent** (whose column you group by), a declared `many` relation, and a measure on
+the related resource:
+
+```json
+{ "resource": "units", "relation": "transactions",
+  "group_by": "resman_building_id", "metric": "sum", "measure": "charges" }
+```
+
+Filters, ranges and search apply to the **parent**, which is what makes "work-order count for
+*occupied* units only" expressible.
+
+Three things to know:
+
+- **It reads rows on both sides.** PostgREST can't express a grouped join over the mirror, so
+  this scans the parent for its join keys, then scans the target in batches. Even `count` reads
+  rows here. **Prefer `aggregate_resource` whenever the group column and the measure live on
+  the same resource.**
+- **Both caps are reported** — `truncated` and `parents_truncated`. Check them.
+- **An `(unmatched)` bucket is part of the answer.** Target rows whose key matched no scanned
+  parent are counted there rather than dropped. On an address-matched relation like
+  `units → utility_accounts`, that number *is* "how much are we failing to attribute".
+
+Only `many` hops work. A `one` hop is refused with a message naming the way round — grouping
+a single target row by the many parents pointing at it is the question asked backwards.
+
+The measure is validated against the **target's** allowlist. Reaching a column through a join
+is not a way around the resource that owns it.
+
+---
+
+## Prompts
+
+Canned analyses that encode what you'd otherwise have to know. `prompts/list`:
+
+| Prompt | Arguments |
+|---|---|
+| `occupancy_reconciliation` | — |
+| `work_order_aging` | `as_of` |
+| `delinquency_by_building` | — |
+| `utility_spend` | `from`, `to` (required) |
+| `gate_activity` | `from` (required), `to` |
+
+Each names the exact calls to make and the trap to avoid, so someone who has never seen the
+schema still gets the right number — `occupancy_reconciliation` reports both occupancy views
+and the 60-unit gap rather than picking one and being quietly wrong.
+
+**A prompt is only offered when the token can read every resource it would touch**, and a
+prompt out of scope reads as *unknown* rather than *forbidden* — a distinct "not authorized"
+would confirm which resources exist behind a token that cannot see them.
+
+## Attachable resources
+
+For clients that support MCP resources, two are readable as context instead of a tool call:
+
+| URI | What |
+|---|---|
+| `emberly://catalog` | Every resource this token can read, with columns, filters, ranges, allowlists and relations. Scope-filtered. |
+| `emberly://data-traps` | The traps below, in brief. Read before reporting a number. |
+
+Pinning the catalog once saves a `list_resources` + `describe_resource` round trip per question.
 
 ---
 
@@ -159,6 +235,18 @@ far apart when nothing is changing, which is normal, not an outage.
 `title`, `notes` and `completion_notes` are not groupable, on purpose — grouping by free text
 is a full table dump wearing an aggregate's clothes. Search them instead.
 
+### `mlgw/accounts.property_name` holds a UUID
+
+Despite the name, the column currently stores the property id, so grouping by it produces a
+bucket labelled with a guid. It is deliberately **not** groupable — group by
+`resman_property_id` and mean it. (The underlying sync bug is separate and still open.)
+
+### `units → utility_accounts` is matched by address, not by a key
+
+MLGW knows nothing about ResMan unit ids; the link is inferred from the service address. An
+account whose address didn't match is **invisible** to that relation — so a per-unit utility
+figure is a lower bound. `aggregate_related` returns an `(unmatched)` bucket; report it.
+
 ### Manual fields are sparse
 
 Vehicle registration, `holding_unit` and similar are entered by hand in ResMan. A blank means
@@ -167,12 +255,30 @@ file; that is a data-entry rate, not a car-ownership rate. Say which you are rep
 
 ---
 
-## Scopes
+## Scopes, budget and audit
 
 A token reads only the resources in its scope list. **An empty list grants nothing** — use
-`*` for everything. See [[MCP Server Setup]].
+`*` for everything. See [[MCP Server Setup]]. A relation's target is checked independently of
+its source, so no hop widens a token's reach.
 
-Every tool call is written to `access_token_audit_log` with the tool, resource and arguments.
+**Call budget: 600 tool calls per token per 15 minutes.** Spent per *tool call*, not per HTTP
+request — a JSON-RPC batch carries many calls in one request, so metering the request would
+let a batch of 500 through as one unit. Exceeding it returns JSON-RPC error `-32003`. Sized to
+be invisible to real work and to stop a runaway loop within a minute or two.
+
+Every tool call is written to `access_token_audit_log` with the tool, resource and arguments —
+**with free text redacted.** Ids, filter values and column names are kept: they are drawn from
+a fixed vocabulary and they are the point of the trail, recording which rows a token touched.
+A `search` term is different in kind — typed by a human, matched against names — so it is
+stored as its length plus an 8-hex digest:
+
+```json
+{ "resource": "residents", "search": { "redacted": true, "length": 9, "digest": "a1b2c3d4" } }
+```
+
+That keeps the two things the trail needs — *a search ran*, and *the same search ran eleven
+times* — without keeping the term. Redaction happens inside `logAccessTokenUse`, not at the
+call sites, so a future caller cannot forget it.
 
 ---
 
@@ -191,9 +297,18 @@ relations:  [{ name: "unit", resource: "units",
                localColumn: "resman_unit_id", foreignColumn: "resman_unit_id", kind: "one" }],
 ```
 
-Two rules the tests enforce (`apps/web/tests/mcp-capabilities.test.js`):
+Rules the tests enforce (`apps/web/tests/mcp-capabilities.test.js`,
+`apps/web/tests/mcp-server-surface.test.js`):
 
 - **Never make a withheld column searchable.** Matching on a value leaks it even when the
   column is not returned.
 - **Never make a name or free-text column groupable.** Grouping by a person's name turns an
-  aggregate into an enumeration of people.
+  aggregate into an enumeration of people — `tenant_name` on the gate log is the sharp case:
+  grouping by it ranks residents by how often they come and go.
+- **Every relation must point at a real resource** and, for a `many` hop, at a column the
+  target exposes as a filter.
+- **Every resource must declare at least one capability.** A resource reachable only as an
+  undifferentiated list is how the MLGW and gate tables sat for a release.
+
+If a new free-text argument is ever added to a tool, add its key to `REDACTED_ARG_KEYS` in
+`apps/web/lib/access-tokens.ts`.

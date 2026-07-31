@@ -7,6 +7,42 @@ and the **sync worker** on Coolify, and the **three iOS apps** on EAS.
 For per-variable detail, see [[Environment Variables]]. For connecting AI clients to the
 deployed MCP server, see [[MCP Server Setup]].
 
+## Versioning
+
+```bash
+bun run version                      # every app, and any drift
+bun run version security patch       # 2.0.1 → 2.0.2
+bun run version manager minor        # 1.0.0 → 1.1.0
+bun run version resident major       # 1.0.0 → 2.0.0
+bun run version security --set 2.1.0 # exact — for reconciling drift
+bun run version security patch --dry-run
+```
+
+**A version is not in one file.** An Expo app here carries it in four, and
+nothing else keeps them in step:
+
+| where | what reads it |
+| --- | --- |
+| `package.json` → `version` | workspace metadata only |
+| `app.json` → `expo.version` | Expo tooling |
+| `ios/<App>/Info.plist` → `CFBundleShortVersionString` | **what ships** |
+| `ios/<App>.xcodeproj/project.pbxproj` → `MARKETING_VERSION` ×2 | **what ships** |
+
+The last two matter most. `ios/` is **committed** in this repo, so EAS treats
+these as bare projects and does not run `expo prebuild` — the native values are
+what reach TestFlight, and `app.json` never gets read. Bumping `app.json` alone
+ships the old version under a new number in the changelog, which nobody notices
+until a crash report points at a build that supposedly does not exist.
+
+All four apps were drifted when this tool was written: `security` was `1.0.0` in
+`package.json` and `2.0.1` everywhere else, and `maintenance` / `manager` /
+`resident` had `MARKETING_VERSION` at `1.1` / `1.0` / `1.0` against `x.y.0` in
+the plist. All reconciled to what actually ships.
+
+Build numbers are **not** touched — `eas.json` sets
+`appVersionSource: "remote"` with `autoIncrement`, so EAS owns `CFBundleVersion`.
+Writing it here would fight the service that already manages it.
+
 ## What deploys where
 
 | Deployable | Package | Platform | Config source |
@@ -300,8 +336,23 @@ The mobile apps build with **EAS Build** and are configured through `EXPO_PUBLIC
 
 ### Build & submit
 
-Preferred — `scripts/eas-release.sh` runs the preflight checks first, then builds
-(run from the repo root, app dir as the argument):
+Preferred — `bun run release <app>`, the front door for every app including web.
+It checks the version is unambiguous, then hands mobile apps to
+`scripts/eas-release.sh` and web to Vercel:
+
+```bash
+bun run release security --dry-run   # preflight only, ships nothing
+bun run release security --submit    # build → TestFlight
+bun run release web --preview        # preview URL
+bun run release web                  # production (prompts first)
+```
+
+It refuses to ship an app whose version disagrees with itself — see
+[Versioning](#versioning) for why that is a real failure mode rather than
+tidiness.
+
+`scripts/eas-release.sh` is still there and unchanged if you want the mobile
+path directly (run from the repo root, app dir as the argument):
 
 ```bash
 scripts/eas-release.sh apps/security --dry-run    # preflight only: version, git, env diff

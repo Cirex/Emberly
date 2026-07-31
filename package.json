@@ -19,7 +19,9 @@
     "web:dev": "bun run --filter '@emberly/web' dev",
     "web:build": "bun run --filter '@emberly/web' build",
     "resident:start": "bun run --filter '@emberly/resident' start",
-    "sync:build": "bun run --filter '@emberly/sync' build"
+    "sync:build": "bun run --filter '@emberly/sync' build",
+    "version": "bun scripts/version.mjs",
+    "release": "scripts/release.sh"
   },
   "devDependencies": {
     "prettier": "^3.9.6",

@@ -1,6 +1,11 @@
 /**
  * ResManConfiguration / ResManCompany — subdomain/account/company + derived
- * consumer/auth base URLs. Backed by a resman_companies row. Design §3.1.
+ * consumer/auth base URLs. Design §3.1.
+ *
+ * Built from ENV, not from the database. The Swift original read a
+ * `resman_companies` row so one install could serve several ResMan accounts;
+ * this deployment serves one, so the table was never queried and was dropped on
+ * 2026-08-02 (deltas/2026-08-02-drop-resman-companies.sql).
  *
  * Ported from KrakenCore/Services/ResMan/ResManConfiguration.swift +
  * ResManCompany.swift. Also carries the request-tuning constants that the Swift

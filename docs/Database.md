@@ -5,13 +5,13 @@
 > above each `create table` in that same file. To change this document, change the
 > schema or its comments.
 
-55 tables · 788 columns · **37 declared foreign keys** · 21 inferred references
+54 tables · 781 columns · **37 declared foreign keys** · 17 inferred references
 
 ## How to read the relationships
 
 This is the part that will bite you, so it comes first.
 
-Only **37** relationships across 55 tables are declared foreign keys. The rest are
+Only **37** relationships across 54 tables are declared foreign keys. The rest are
 **convention**: a column holding another table's id, with nothing in the database
 enforcing it. Both join identically in a query. They differ in every other way:
 
@@ -44,7 +44,7 @@ column, so no constraint and no inference can cover them.
 
 ## Contents
 
-**ResMan mirror** — [`resman_buildings`](#resmanbuildings), [`resman_companies`](#resmancompanies), [`resman_floorplans`](#resmanfloorplans), [`resman_lease_addresses`](#resmanleaseaddresses), [`resman_lease_alternate_contacts`](#resmanleasealternatecontacts), [`resman_lease_employment`](#resmanleaseemployment), [`resman_lease_insurance`](#resmanleaseinsurance), [`resman_lease_vehicles`](#resmanleasevehicles), [`resman_leases`](#resmanleases), [`resman_properties`](#resmanproperties), [`resman_residents`](#resmanresidents), [`resman_sync_runs`](#resmansyncruns), [`resman_sync_state`](#resmansyncstate), [`resman_transactions`](#resmantransactions), [`resman_units`](#resmanunits), [`resman_work_orders`](#resmanworkorders)
+**ResMan mirror** — [`resman_buildings`](#resmanbuildings), [`resman_floorplans`](#resmanfloorplans), [`resman_lease_addresses`](#resmanleaseaddresses), [`resman_lease_alternate_contacts`](#resmanleasealternatecontacts), [`resman_lease_employment`](#resmanleaseemployment), [`resman_lease_insurance`](#resmanleaseinsurance), [`resman_lease_vehicles`](#resmanleasevehicles), [`resman_leases`](#resmanleases), [`resman_properties`](#resmanproperties), [`resman_residents`](#resmanresidents), [`resman_sync_runs`](#resmansyncruns), [`resman_sync_state`](#resmansyncstate), [`resman_transactions`](#resmantransactions), [`resman_units`](#resmanunits), [`resman_work_orders`](#resmanworkorders)
 
 **Utilities (MLGW)** — [`mlgw_accounts`](#mlgwaccounts), [`mlgw_bills`](#mlgwbills), [`mlgw_exception_reviews`](#mlgwexceptionreviews), [`mlgw_payments`](#mlgwpayments)
 
@@ -82,29 +82,6 @@ resman_buildings (from Building)
 | `updated_at` | timestamptz | yes |  |  | default `now()` |
 
 **Referenced by** — [`resman_units.resman_building_id`](#resmanunits) (FK), [`unit_snapshots.resman_building_id`](#unitsnapshots)
-
-### `resman_companies`
-
-ResMan (resman_*) + MLGW (mlgw_*) sync-mirror schema
-Ported from the Swift "Kraken" package (docs/resman-port-design.md §2).
-Natural source-id text primary keys; enums as text + check constraints;
-RLS enabled with no policies (service role only); updated_at via the
-existing public.update_updated_at_column() trigger. Migration:
-lib/supabase/migrations/20260711_resman_mlgw_sync.sql
-
-resman_companies (config/tenant; no credentials stored here)
-
-| column | type | null | key | references | notes |
-| --- | --- | --- | --- | --- | --- |
-| `resman_account_id` | text | no | **PK** |  |  |
-| `subdomain` | text | no |  |  |  |
-| `company_name` | text | no |  |  | default `''` |
-| `consumer_base_url` | text | no |  |  | default `''` |
-| `auth_base_url` | text | no |  |  | default `''` |
-| `created_at` | timestamptz | yes |  |  | default `now()` |
-| `updated_at` | timestamptz | yes |  |  | default `now()` |
-
-**Referenced by** — [`map_sync_access_requests.resman_account_id`](#mapsyncaccessrequests), [`map_sync_keys.resman_account_id`](#mapsynckeys), [`resman_properties.resman_account_id`](#resmanproperties), [`resman_sync_runs.resman_account_id`](#resmansyncruns)
 
 ### `resman_floorplans`
 
@@ -259,12 +236,24 @@ resman_leases (from Lease)
 
 ### `resman_properties`
 
+ResMan (resman_*) + MLGW (mlgw_*) sync-mirror schema
+Ported from the Swift "Kraken" package (docs/resman-port-design.md §2).
+Natural source-id text primary keys; enums as text + check constraints;
+RLS enabled with no policies (service role only); updated_at via the
+existing public.update_updated_at_column() trigger. Migration:
+lib/supabase/migrations/20260711_resman_mlgw_sync.sql
+
+resman_companies was dropped on 2026-08-02 (deltas/2026-08-02-drop-resman-companies.sql).
+It held the subdomain / account / company config for a multi-tenant install.
+This deployment serves one ResMan account, and the sync derives those values
+from ENV (supabase/sync/src/resman/config.ts) — the table was never read.
+
 resman_properties (from Property)
 
 | column | type | null | key | references | notes |
 | --- | --- | --- | --- | --- | --- |
 | `resman_property_id` | text | no | **PK** |  |  |
-| `resman_account_id` | text | no |  | → ref [`resman_companies.resman_account_id`](#resmancompanies) | default `'1659'` |
+| `resman_account_id` | text | no |  |  | default `'1659'` |
 | `name` | text | no |  |  | default `''` |
 | `custom_name` | text | no |  |  | user-set; sync must never overwrite · default `''` |
 | `abbreviation` | text | no |  |  | default `''` |
@@ -329,7 +318,7 @@ resman_sync_runs (one row per job execution)
 | --- | --- | --- | --- | --- | --- |
 | `id` | uuid | no | **PK** |  | default `gen_random_uuid()` |
 | `job` | text | no |  |  |  |
-| `resman_account_id` | text | yes |  | → ref [`resman_companies.resman_account_id`](#resmancompanies) |  |
+| `resman_account_id` | text | yes |  |  |  |
 | `resman_property_id` | text | yes |  | → ref [`resman_properties.resman_property_id`](#resmanproperties) |  |
 | `status` | text | no |  |  |  |
 | `started_at` | timestamptz | no |  |  | default `now()` |
@@ -501,9 +490,9 @@ resman_work_orders (from WorkOrder)
 
 **Allowed values**
 
-- `callback_status` — `none`, `possible`, `confirmed`, `dismissed`
 - `priority` — `Emergency`, `High`, `Normal`, `Low`
 - `status` — `Not Started`, `Scheduled`, `In Progress`, `Completed`, `Closed`, `Canceled`
+- `callback_status` — `none`, `possible`, `confirmed`, `dismissed`
 
 ## Utilities (MLGW)
 
@@ -634,7 +623,7 @@ The annotation layer the security app draws on, plus the key exchange that lets 
 | --- | --- | --- | --- | --- | --- |
 | `id` | uuid | no | **PK** |  | default `gen_random_uuid()` |
 | `resman_account_id` | text | no |  | → FK [`map_sync_keys.resman_account_id`](#mapsynckeys) |  |
-| `property_id` | text | no |  | → FK [`map_sync_keys.property_id`](#mapsynckeys) |  |
+| `property_id` | text | no |  | → FK [`map_annotations.property_id`](#mapannotations) |  |
 | `feature_key` | text | no |  | → FK [`map_annotations.feature_key`](#mapannotations) |  |
 | `action` | text | no |  |  |  |
 | `annotation_id` | uuid | yes |  | → FK [`map_annotations.id`](#mapannotations) |  |
@@ -658,7 +647,7 @@ The annotation layer the security app draws on, plus the key exchange that lets 
 | `annotation_id` | uuid | no |  | → FK [`map_annotations.id`](#mapannotations) |  |
 | `resman_account_id` | text | no |  | → FK [`map_annotations.resman_account_id`](#mapannotations) |  |
 | `property_id` | text | no |  | → FK [`map_sync_keys.property_id`](#mapsynckeys) |  |
-| `feature_key` | text | no |  | → FK [`map_sync_keys.feature_key`](#mapsynckeys) | default `'property_map.annotations'` |
+| `feature_key` | text | no |  | → FK [`map_annotations.feature_key`](#mapannotations) | default `'property_map.annotations'` |
 | `storage_path` | text | no |  |  |  |
 | `content_type` | text | no |  |  |  |
 | `byte_size` | integer | no |  |  |  |
@@ -705,12 +694,12 @@ The annotation layer the security app draws on, plus the key exchange that lets 
 
 **Allowed values**
 
-- `line_weight` — `thin`, `medium`, `thick`
-- `layer` — `staff`, `security`, `utility`
-- `kind` — `pin`, `utility_pin`, `utility_line`
-- `utility_type` — `water`, `sewer`, `gas`, `electrical`, `internet`, `other`
-- `line_style` — `solid`, `dashed`, `dotted`
 - `origin` — `sync`, `admin`, `scanner`
+- `line_weight` — `thin`, `medium`, `thick`
+- `line_style` — `solid`, `dashed`, `dotted`
+- `utility_type` — `water`, `sewer`, `gas`, `electrical`, `internet`, `other`
+- `kind` — `pin`, `utility_pin`, `utility_line`
+- `layer` — `staff`, `security`, `utility`
 
 ### `map_cameras`
 
@@ -742,7 +731,7 @@ stores the truth.
 | column | type | null | key | references | notes |
 | --- | --- | --- | --- | --- | --- |
 | `id` | uuid | no | **PK** |  | default `gen_random_uuid()` |
-| `resman_account_id` | text | no |  | → ref [`resman_companies.resman_account_id`](#resmancompanies) |  |
+| `resman_account_id` | text | no |  |  |  |
 | `property_id` | text | no |  |  |  |
 | `property_name` | text | no |  |  |  |
 | `feature_key` | text | no |  |  |  |
@@ -771,7 +760,7 @@ stores the truth.
 | --- | --- | --- | --- | --- | --- |
 | `id` | uuid | no | **PK** |  | default `gen_random_uuid()` |
 | `key_hash` | text | no | UQ |  |  |
-| `resman_account_id` | text | no |  | → ref [`resman_companies.resman_account_id`](#resmancompanies) |  |
+| `resman_account_id` | text | no |  |  |  |
 | `property_id` | text | no |  |  |  |
 | `property_name` | text | no |  |  |  |
 | `feature_key` | text | no |  |  |  |
@@ -884,10 +873,10 @@ Admin: exception alerts
 
 **Allowed values**
 
-- `status` — `open`, `resolved`
-- `alert_type` — `resident_access_stale`, `resident_access_denied`, `scanner_offline`, `guest_pass_denied`, `security_scan_denied`
 - `severity` — `info`, `warning`, `critical`
 - `subject_type` — `resident`, `guest_pass`, `scanner`, `system`
+- `status` — `open`, `resolved`
+- `alert_type` — `resident_access_stale`, `resident_access_denied`, `scanner_offline`, `guest_pass_denied`, `security_scan_denied`
 
 ### `admin_audit_logs`
 
@@ -1058,8 +1047,8 @@ idempotently (pm_tasks). ResMan is never written.
 
 **Allowed values**
 
-- `cadence` — `monthly`, `quarterly`, `semiannual`, `annual`
 - `scope_type` — `all`, `building`, `classification`
+- `cadence` — `monthly`, `quarterly`, `semiannual`, `annual`
 
 ## Gate entry
 
@@ -1286,8 +1275,8 @@ out, so a restart cannot re-notify the same finding.
 
 **Allowed values**
 
-- `severity` — `info`, `warn`, `critical`
 - `kind` — `anomaly`, `staleness`
+- `severity` — `info`, `warn`, `critical`
 
 > ⚠️ Row-level security is **not** enabled on this table.
 

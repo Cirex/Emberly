@@ -690,25 +690,10 @@ alter table public.map_annotation_audit_logs enable row level security;
 -- lib/supabase/migrations/20260711_resman_mlgw_sync.sql
 -- ============================================================
 
--- ------------------------------------------------------------
--- resman_companies (config/tenant; no credentials stored here)
--- ------------------------------------------------------------
-create table if not exists public.resman_companies (
-  resman_account_id text primary key,
-  subdomain text not null,
-  company_name text not null default '',
-  consumer_base_url text not null default '',
-  auth_base_url text not null default '',
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
-drop trigger if exists resman_companies_updated_at on public.resman_companies;
-create trigger resman_companies_updated_at
-  before update on public.resman_companies
-  for each row execute function public.update_updated_at_column();
-
-alter table public.resman_companies enable row level security;
+-- resman_companies was dropped on 2026-08-02 (deltas/2026-08-02-drop-resman-companies.sql).
+-- It held the subdomain / account / company config for a multi-tenant install.
+-- This deployment serves one ResMan account, and the sync derives those values
+-- from ENV (supabase/sync/src/resman/config.ts) — the table was never read.
 
 -- ------------------------------------------------------------
 -- resman_properties (from Property)

@@ -5,7 +5,7 @@
  * scrapers/ reports/ jobs/ derive/ subtrees on top of them.
  *
  *   client.ts          — authenticated HTTP client + OIDC login + rate-limited choke point
- *   config.ts          — company/account/subdomain + derived base URLs + tuning (resman_companies)
+ *   config.ts          — company/account/subdomain + derived base URLs + tuning (from ENV)
  *   session-store.ts   — persist the cookie jar between cron runs
  *   scheduler.ts       — bounded-concurrency request scheduler (sequential within a worker)
  *   csv.ts             — DevExpress CSV parser + header lookup + scalar parsers

@@ -1053,35 +1053,6 @@ export interface Database {
           },
         ];
       };
-      resman_companies: {
-        Row: {
-          resman_account_id: string;
-          subdomain: string;
-          company_name: string;
-          consumer_base_url: string;
-          auth_base_url: string;
-          created_at: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          resman_account_id: string;
-          subdomain: string;
-          company_name?: string;
-          consumer_base_url?: string;
-          auth_base_url?: string;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          resman_account_id?: string;
-          subdomain?: string;
-          company_name?: string;
-          consumer_base_url?: string;
-          auth_base_url?: string;
-          updated_at?: string | null;
-        };
-        Relationships: [];
-      };
       resman_properties: {
         Row: {
           resman_property_id: string;

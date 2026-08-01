@@ -6,7 +6,6 @@ const test = require("node:test");
 const { mock } = require("bun:test");
 const { z } = require("zod");
 
-const { MAP_ANNOTATIONS_FEATURE_KEY } = require("../lib/map-annotation-service");
 const {
   annotationKindFields,
   isUtilityKind,
@@ -17,21 +16,6 @@ const { layersFor } = require("../lib/map-annotation-service");
 
 // The same composition every annotation body schema uses.
 const KindSchema = z.object({ ...annotationKindFields }).superRefine(validateAnnotationKindFields);
-
-function syncKey(overrides = {}) {
-  return {
-    id: "key-1",
-    resman_account_id: "1659",
-    property_id: "property-1",
-    property_name: "Emberly Apartments",
-    feature_key: MAP_ANNOTATIONS_FEATURE_KEY,
-    capabilities: { read: true, create: true, update: true, delete: true },
-    requester_display_name: "Jane Staff",
-    requester_resman_login_hash: "hmac-sha256:abc",
-    device_id: "device-1",
-    ...overrides,
-  };
-}
 
 function layeredRow(overrides = {}) {
   return {

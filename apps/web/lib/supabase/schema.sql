@@ -456,77 +456,12 @@ create trigger resident_devices_updated_at
 
 alter table resident_devices enable row level security;
 
-create table if not exists public.map_sync_access_requests (
-  id uuid primary key default gen_random_uuid(),
-  resman_account_id text not null,
-  property_id text not null,
-  property_name text not null,
-  feature_key text not null,
-  requester_display_name text,
-  requester_resman_login_hash text,
-  device_id text not null,
-  status text not null check (status in ('pending', 'approved', 'rejected', 'claimed', 'revoked')),
-  claim_token_hash text,
-  approved_by text,
-  approved_at timestamptz,
-  rejected_by text,
-  rejected_at timestamptz,
-  rejection_reason text,
-  revoked_by text,
-  revoked_at timestamptz,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
-create index if not exists map_sync_access_requests_scope_idx
-  on public.map_sync_access_requests (resman_account_id, property_id, feature_key, device_id);
-
-create index if not exists map_sync_access_requests_status_idx
-  on public.map_sync_access_requests (status, created_at desc);
-
-create unique index if not exists map_sync_access_requests_active_unique_idx
-  on public.map_sync_access_requests (resman_account_id, property_id, feature_key, device_id)
-  where status in ('pending', 'approved');
-
-drop trigger if exists map_sync_access_requests_updated_at on public.map_sync_access_requests;
-create trigger map_sync_access_requests_updated_at
-  before update on public.map_sync_access_requests
-  for each row execute function public.update_updated_at_column();
-
-alter table public.map_sync_access_requests enable row level security;
-
-create table if not exists public.map_sync_keys (
-  id uuid primary key default gen_random_uuid(),
-  key_hash text unique not null,
-  resman_account_id text not null,
-  property_id text not null,
-  property_name text not null,
-  feature_key text not null,
-  capabilities jsonb not null default '{"read":true,"create":true,"update":true,"delete":true}'::jsonb,
-  requester_display_name text,
-  requester_resman_login_hash text,
-  device_id text not null,
-  active boolean not null default true,
-  last_used_at timestamptz,
-  revoked_by text,
-  revoked_at timestamptz,
-  created_at timestamptz default now()
-);
-
-create index if not exists map_sync_keys_scope_idx
-  on public.map_sync_keys (resman_account_id, property_id, feature_key, active);
-
-create unique index if not exists map_sync_keys_scope_reference_idx
-  on public.map_sync_keys (id, resman_account_id, property_id, feature_key);
-
-create unique index if not exists map_sync_keys_active_scope_device_unique_idx
-  on public.map_sync_keys (resman_account_id, property_id, feature_key, device_id)
-  where active is true;
-
-create index if not exists map_sync_keys_device_idx
-  on public.map_sync_keys (device_id, created_at desc);
-
-alter table public.map_sync_keys enable row level security;
+-- map_sync_access_requests and map_sync_keys were dropped on 2026-08-02
+-- (deltas/2026-08-02-drop-map-sync-subsystem.sql). They backed a device
+-- enrolment handshake for an external sync client that was never built; no
+-- client in this repo could create the first row, and both held zero rows.
+-- Annotations are written through /api/admin/map-annotations, which accepts a
+-- maintenance staff token or a security scanner key.
 
 create table if not exists public.map_annotations (
   id uuid primary key default gen_random_uuid(),
@@ -571,27 +506,15 @@ create table if not exists public.map_annotations (
   flow_arrows boolean,
   origin text not null default 'sync'
     constraint map_annotations_origin_check check (origin in ('sync', 'admin', 'scanner')),
-  created_by_key_id uuid,
   created_by_display_name text,
   created_by_resman_login_hash text,
   created_at timestamptz default now(),
-  updated_by_key_id uuid,
   updated_by_display_name text,
   updated_at timestamptz default now(),
-  deleted_by_key_id uuid,
   deleted_by_display_name text,
   deleted_at timestamptz,
   version integer not null default 1 check (version > 0),
-  constraint map_annotations_feature_key_check check (feature_key = 'property_map.annotations'),
-  constraint map_annotations_created_key_scope_fkey
-    foreign key (created_by_key_id, resman_account_id, property_id, feature_key)
-    references public.map_sync_keys (id, resman_account_id, property_id, feature_key),
-  constraint map_annotations_updated_key_scope_fkey
-    foreign key (updated_by_key_id, resman_account_id, property_id, feature_key)
-    references public.map_sync_keys (id, resman_account_id, property_id, feature_key),
-  constraint map_annotations_deleted_key_scope_fkey
-    foreign key (deleted_by_key_id, resman_account_id, property_id, feature_key)
-    references public.map_sync_keys (id, resman_account_id, property_id, feature_key)
+  constraint map_annotations_feature_key_check check (feature_key = 'property_map.annotations')
 );
 
 create unique index if not exists map_annotations_scope_reference_idx
@@ -622,8 +545,6 @@ create table if not exists public.map_annotation_photos (
   storage_path text not null,
   content_type text not null,
   byte_size integer not null check (byte_size >= 0),
-  -- Either a map-sync key (external client) or a plain first-party actor.
-  created_by_key_id uuid,
   created_by text not null default '',
   created_at timestamptz default now(),
   deleted_at timestamptz,
@@ -631,10 +552,7 @@ create table if not exists public.map_annotation_photos (
   constraint map_annotation_photos_annotation_scope_fkey
     foreign key (annotation_id, resman_account_id, property_id, feature_key)
     references public.map_annotations (id, resman_account_id, property_id, feature_key)
-    on delete cascade,
-  constraint map_annotation_photos_created_key_scope_fkey
-    foreign key (created_by_key_id, resman_account_id, property_id, feature_key)
-    references public.map_sync_keys (id, resman_account_id, property_id, feature_key)
+    on delete cascade
 );
 
 create index if not exists map_annotation_photos_annotation_idx
@@ -658,7 +576,6 @@ create table if not exists public.map_annotation_audit_logs (
     'annotation.delete'
   )),
   annotation_id uuid,
-  sync_key_id uuid,
   actor_display_name text,
   actor_resman_login_hash text,
   admin_user_id text,
@@ -667,10 +584,7 @@ create table if not exists public.map_annotation_audit_logs (
   created_at timestamptz default now(),
   constraint map_annotation_audit_logs_annotation_scope_fkey
     foreign key (annotation_id, resman_account_id, property_id, feature_key)
-    references public.map_annotations (id, resman_account_id, property_id, feature_key),
-  constraint map_annotation_audit_logs_sync_key_scope_fkey
-    foreign key (sync_key_id, resman_account_id, property_id, feature_key)
-    references public.map_sync_keys (id, resman_account_id, property_id, feature_key)
+    references public.map_annotations (id, resman_account_id, property_id, feature_key)
 );
 
 create index if not exists map_annotation_audit_logs_property_idx

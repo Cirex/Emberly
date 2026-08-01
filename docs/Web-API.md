@@ -4,7 +4,7 @@
 > change the route's docblock and regenerate.** Each entry's prose is the docblock
 > above that handler, so it lives next to the code and is updated in the same edit.
 
-110 routes, 132 handlers.
+103 routes, 123 handlers.
 
 ## Conventions
 
@@ -35,7 +35,6 @@ shown — a token without it gets 403 even though it authenticated fine.
 
 - [`/api/resman`](#apiresman) — 45 routes
 - [`/api/admin`](#apiadmin) — 36 routes
-- [`/api/map`](#apimap) — 7 routes
 - [`/api/mlgw`](#apimlgw) — 6 routes
 - [`/api/resident`](#apiresident) — 5 routes
 - [`/api/auth`](#apiauth) — 4 routes
@@ -1093,95 +1092,6 @@ a tag they no longer need, same as they can add one.
   - `400` → `{ error }`
   - `500` → `{ error, ok, reviewed }`
 - **Source** — [`apps/web/app/api/admin/utilities/reviews/route.ts`](../apps/web/app/api/admin/utilities/reviews/route.ts)
-
-## /api/map
-
-Property-map annotations and the sync key exchange used by the security app.
-
-### `POST /api/map/access-requests`
-
-- **Auth** — **public by design** — device enrolment REQUEST — unauthenticated by definition, since the caller has no credential yet. Rate limited by source; grants nothing until an admin approves.
-- **Returns**
-  - `400` → `{ error, details }`
-  - `409` → `{ error, reason }`
-  - `429` → `{ error }`
-  - `500` → `{ error, requestId, status, claimToken }`
-- **Source** — [`apps/web/app/api/map/access-requests/route.ts`](../apps/web/app/api/map/access-requests/route.ts)
-
-### `POST /api/map/access-requests/:requestId/claim`
-
-- **Auth** — **public by design** — redeems an admin-approved request with a one-time claim code. The code is the credential. Rate limited by source.
-- **Returns**
-  - `400` → `{ error, details }`
-  - `403` → `{ error }`
-  - `404` → `{ error }`
-  - `409` → `{ error, status, reason }`
-  - `429` → `{ error }`
-  - `500` → `{ error, syncKey, propertyId, featureKey, capabilities, key }`
-- **Source** — [`apps/web/app/api/map/access-requests/[requestId]/claim/route.ts`](../apps/web/app/api/map/access-requests/[requestId]/claim/route.ts)
-
-### `POST /api/map/admin/access-requests/:requestId/approve`
-
-- **Auth** — admin session
-- **Returns**
-  - `404` → `{ error }`
-  - `409` → `{ error, status }`
-  - `500` → `{ error, request }`
-- **Source** — [`apps/web/app/api/map/admin/access-requests/[requestId]/approve/route.ts`](../apps/web/app/api/map/admin/access-requests/[requestId]/approve/route.ts)
-
-### `POST /api/map/admin/access-requests/:requestId/reject`
-
-- **Auth** — admin session
-- **Returns**
-  - `400` → `{ error, details }`
-  - `404` → `{ error }`
-  - `409` → `{ error, status }`
-  - `500` → `{ error, request }`
-- **Source** — [`apps/web/app/api/map/admin/access-requests/[requestId]/reject/route.ts`](../apps/web/app/api/map/admin/access-requests/[requestId]/reject/route.ts)
-
-### `POST /api/map/admin/sync-keys/:keyId/revoke`
-
-- **Auth** — admin session
-- **Returns**
-  - `404` → `{ error }`
-  - `409` → `{ error }`
-  - `500` → `{ error, key }`
-- **Source** — [`apps/web/app/api/map/admin/sync-keys/[keyId]/revoke/route.ts`](../apps/web/app/api/map/admin/sync-keys/[keyId]/revoke/route.ts)
-
-### `GET /api/map/properties/:propertyId/annotations`
-
-- **Auth** — map sync key, capability `read`
-- **Returns**
-  - `500` → `{ error, annotations }`
-- **Source** — [`apps/web/app/api/map/properties/[propertyId]/annotations/route.ts`](../apps/web/app/api/map/properties/[propertyId]/annotations/route.ts)
-
-### `POST /api/map/properties/:propertyId/annotations`
-
-- **Auth** — map sync key, capability `create`
-- **Returns**
-  - `400` → `{ error, details }`
-  - `500` → `{ error, annotation }`
-- **Source** — [`apps/web/app/api/map/properties/[propertyId]/annotations/route.ts`](../apps/web/app/api/map/properties/[propertyId]/annotations/route.ts)
-
-### `PATCH /api/map/properties/:propertyId/annotations/:annotationId`
-
-- **Auth** — map sync key, capability `update`
-- **Returns**
-  - `400` → `{ error, details }`
-  - `404` → `{ error }`
-  - `409` → `{ error, reason, currentVersion }`
-  - `500` → `{ error, annotation }`
-- **Source** — [`apps/web/app/api/map/properties/[propertyId]/annotations/[annotationId]/route.ts`](../apps/web/app/api/map/properties/[propertyId]/annotations/[annotationId]/route.ts)
-
-### `DELETE /api/map/properties/:propertyId/annotations/:annotationId`
-
-- **Auth** — map sync key, capability `delete`
-- **Returns**
-  - `400` → `{ error, details }`
-  - `404` → `{ error }`
-  - `409` → `{ error, reason, currentVersion }`
-  - `500` → `{ error, ok }`
-- **Source** — [`apps/web/app/api/map/properties/[propertyId]/annotations/[annotationId]/route.ts`](../apps/web/app/api/map/properties/[propertyId]/annotations/[annotationId]/route.ts)
 
 ## /api/mlgw
 

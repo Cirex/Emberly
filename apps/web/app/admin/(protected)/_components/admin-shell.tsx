@@ -45,7 +45,6 @@ const navGroups: Array<{
     label: "System",
     items: [
       { href: "/admin/audit", label: "Audit Log", icon: "audit" },
-      { href: "/admin/map-sync", label: "Map Data", icon: "map" },
       { href: "/admin/mcp-tokens", label: "Access Tokens", icon: "audit" },
       { href: "/admin/users", label: "Admin Users", icon: "users", superAdminOnly: true },
     ],

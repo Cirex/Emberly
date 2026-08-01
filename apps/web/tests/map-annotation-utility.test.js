@@ -6,13 +6,13 @@ const test = require("node:test");
 const { mock } = require("bun:test");
 const { z } = require("zod");
 
-const { MAP_ANNOTATIONS_FEATURE_KEY } = require("../lib/map-sync");
+const { MAP_ANNOTATIONS_FEATURE_KEY } = require("../lib/map-annotation-service");
 const {
   annotationKindFields,
   isUtilityKind,
   validateAnnotationKindFields,
 } = require("../lib/map-annotation-kinds");
-const { buildAnnotationCreateInsert, buildAnnotationUpdatePatch } = require("../lib/map-annotations");
+const { buildAnnotationResponse } = require("../lib/map-annotations");
 const { layersFor } = require("../lib/map-annotation-service");
 
 // The same composition every annotation body schema uses.
@@ -133,70 +133,13 @@ test("run presentation fields parse on a line, default to absent, and are reject
   assert.equal(KindSchema.safeParse({ kind: "pin", flowArrows: true }).success, false);
 });
 
-test("sync create insert routes utility kinds to the utility layer", () => {
-  const points = [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.4 }];
-  const insert = buildAnnotationCreateInsert(
-    syncKey(),
-    { title: "Sewer run", colorHex: "#663300", normalizedX: 0.1, normalizedY: 0.2, kind: "utility_line", utilityType: "sewer", points },
-    "2026-07-21T12:00:00.000Z",
-  );
 
-  assert.equal(insert.layer, "utility");
-  assert.equal(insert.kind, "utility_line");
-  assert.equal(insert.utility_type, "sewer");
-  assert.deepEqual(insert.points, points);
-
-  const pin = buildAnnotationCreateInsert(
-    syncKey(),
-    { title: "Gate code", colorHex: "#ffcc00", normalizedX: 0.1, normalizedY: 0.2 },
-    "2026-07-21T12:00:00.000Z",
-  );
-  assert.equal(pin.layer, "staff");
-  assert.equal(pin.kind, "pin");
-  assert.equal(pin.utility_type, null);
-  assert.equal(pin.points, null);
-});
-
-test("sync update patch forces the utility layer only for utility kinds", () => {
-  const utility = buildAnnotationUpdatePatch(
-    syncKey(),
-    { title: "Gas riser", colorHex: "#ff0000", normalizedX: 0.5, normalizedY: 0.5, kind: "utility_pin", utilityType: "gas" },
-    3,
-    "2026-07-21T12:00:00.000Z",
-  );
-  assert.equal(utility.layer, "utility");
-  assert.equal(utility.kind, "utility_pin");
-  assert.equal(utility.utility_type, "gas");
-  assert.equal(utility.points, null);
-
-  const pin = buildAnnotationUpdatePatch(
-    syncKey(),
-    { title: "Gate code", colorHex: "#ffcc00", normalizedX: 0.5, normalizedY: 0.5 },
-    3,
-    "2026-07-21T12:00:00.000Z",
-  );
-  assert.equal("layer" in pin, false);
-  assert.equal(pin.kind, "pin");
-  assert.equal(pin.utility_type, null);
-  assert.equal(pin.points, null);
-});
 
 test("both surfaces list the shared utility layer alongside their own", () => {
   assert.deepEqual(layersFor({ adminId: "scanner:device-1" }), ["security", "utility"]);
   assert.deepEqual(layersFor({ adminId: "admin-1" }), ["staff", "security", "utility"]);
 });
 
-test("sync annotation routes read and write the staff plus utility layers", () => {
-  for (const routePath of [
-    "app/api/map/properties/[propertyId]/annotations/route.ts",
-    "app/api/map/properties/[propertyId]/annotations/[annotationId]/route.ts",
-  ]) {
-    const source = fs.readFileSync(path.join(process.cwd(), routePath), "utf8");
-    assert.match(source, /\.in\("layer", \["staff", "utility"\]\)/);
-    assert.doesNotMatch(source, /\.eq\("layer", "staff"\)/);
-    assert.match(source, /kind, utility_type, points/);
-  }
-});
 
 test("admin create route forces scanner utility pins onto the utility layer", async () => {
   const operations = [];
@@ -255,49 +198,6 @@ test("admin create route rejects utility annotations missing utilityType or poin
   assert.equal(supabaseCreated, false);
 });
 
-test("sync create route writes utility lines to the utility layer", async () => {
-  const operations = [];
-  const points = [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.4 }, { x: 0.5, y: 0.6 }];
-  const row = layeredRow({ kind: "utility_line", utility_type: "sewer", points, origin: "sync" });
-  const scripts = [
-    { table: "map_sync_keys", select: { data: syncKey(), error: null } },
-    { table: "map_sync_keys", update: { data: null, error: null } },
-    { table: "map_annotations", insert: { data: row, error: null } },
-    { table: "map_annotation_audit_logs", insert: { data: null, error: null } },
-  ];
-  const route = loadRouteWithMocks("app/api/map/properties/[propertyId]/annotations/route.ts", {
-    "@/lib/supabase/admin": {
-      createAdminClient: () => scriptedSupabase(scripts, operations),
-      createUntypedAdminClient: () => scriptedSupabase(scripts, operations),
-    },
-  });
-
-  const response = await route.POST(
-    jsonRequest({
-      title: "Sewer run",
-      normalizedX: 0.1,
-      normalizedY: 0.2,
-      colorHex: "#663300",
-      kind: "utility_line",
-      utilityType: "sewer",
-      points,
-    }, { authorization: "Bearer emsync_secret" }),
-    { params: Promise.resolve({ propertyId: "property-1" }) }
-  );
-  const body = await response.json();
-
-  assert.equal(response.status, 200);
-  assert.equal(body.annotation.kind, "utility_line");
-  assert.equal(body.annotation.utilityType, "sewer");
-  assert.deepEqual(body.annotation.points, points);
-
-  const insert = operations.find((operation) => operation.table === "map_annotations" && operation.action === "insert");
-  assert.ok(insert);
-  assert.equal(insert.row.layer, "utility");
-  assert.equal(insert.row.kind, "utility_line");
-  assert.equal(insert.row.utility_type, "sewer");
-  assert.deepEqual(insert.row.points, points);
-});
 
 // Same bun:test mock.module harness as tests/map-annotations.test.js — this
 // suite runs in its own process (the package.json `test` script runs each file

@@ -5,13 +5,13 @@
 > above each `create table` in that same file. To change this document, change the
 > schema or its comments.
 
-54 tables · 781 columns · **37 declared foreign keys** · 17 inferred references
+52 tables · 742 columns · **32 declared foreign keys** · 17 inferred references
 
 ## How to read the relationships
 
 This is the part that will bite you, so it comes first.
 
-Only **37** relationships across 54 tables are declared foreign keys. The rest are
+Only **32** relationships across 52 tables are declared foreign keys. The rest are
 **convention**: a column holding another table's id, with nothing in the database
 enforcing it. Both join identically in a query. They differ in every other way:
 
@@ -48,7 +48,7 @@ column, so no constraint and no inference can cover them.
 
 **Utilities (MLGW)** — [`mlgw_accounts`](#mlgwaccounts), [`mlgw_bills`](#mlgwbills), [`mlgw_exception_reviews`](#mlgwexceptionreviews), [`mlgw_payments`](#mlgwpayments)
 
-**Property map** — [`map_annotation_audit_logs`](#mapannotationauditlogs), [`map_annotation_photos`](#mapannotationphotos), [`map_annotations`](#mapannotations), [`map_cameras`](#mapcameras), [`map_sync_access_requests`](#mapsyncaccessrequests), [`map_sync_keys`](#mapsynckeys)
+**Property map** — [`map_annotation_audit_logs`](#mapannotationauditlogs), [`map_annotation_photos`](#mapannotationphotos), [`map_annotations`](#mapannotations), [`map_cameras`](#mapcameras)
 
 **Guest passes** — [`guest_pass_bans`](#guestpassbans), [`guest_pass_unit_bans`](#guestpassunitbans), [`guest_passes`](#guestpasses)
 
@@ -490,9 +490,9 @@ resman_work_orders (from WorkOrder)
 
 **Allowed values**
 
+- `callback_status` — `none`, `possible`, `confirmed`, `dismissed`
 - `priority` — `Emergency`, `High`, `Normal`, `Low`
 - `status` — `Not Started`, `Scheduled`, `In Progress`, `Completed`, `Closed`, `Canceled`
-- `callback_status` — `none`, `possible`, `confirmed`, `dismissed`
 
 ## Utilities (MLGW)
 
@@ -622,12 +622,11 @@ The annotation layer the security app draws on, plus the key exchange that lets 
 | column | type | null | key | references | notes |
 | --- | --- | --- | --- | --- | --- |
 | `id` | uuid | no | **PK** |  | default `gen_random_uuid()` |
-| `resman_account_id` | text | no |  | → FK [`map_sync_keys.resman_account_id`](#mapsynckeys) |  |
+| `resman_account_id` | text | no |  | → FK [`map_annotations.resman_account_id`](#mapannotations) |  |
 | `property_id` | text | no |  | → FK [`map_annotations.property_id`](#mapannotations) |  |
 | `feature_key` | text | no |  | → FK [`map_annotations.feature_key`](#mapannotations) |  |
 | `action` | text | no |  |  |  |
 | `annotation_id` | uuid | yes |  | → FK [`map_annotations.id`](#mapannotations) |  |
-| `sync_key_id` | uuid | yes |  | → FK [`map_sync_keys.id`](#mapsynckeys) |  |
 | `actor_display_name` | text | yes |  |  |  |
 | `actor_resman_login_hash` | text | yes |  |  |  |
 | `admin_user_id` | text | yes |  |  |  |
@@ -646,24 +645,30 @@ The annotation layer the security app draws on, plus the key exchange that lets 
 | `id` | uuid | no | **PK** |  | default `gen_random_uuid()` |
 | `annotation_id` | uuid | no |  | → FK [`map_annotations.id`](#mapannotations) |  |
 | `resman_account_id` | text | no |  | → FK [`map_annotations.resman_account_id`](#mapannotations) |  |
-| `property_id` | text | no |  | → FK [`map_sync_keys.property_id`](#mapsynckeys) |  |
+| `property_id` | text | no |  | → FK [`map_annotations.property_id`](#mapannotations) |  |
 | `feature_key` | text | no |  | → FK [`map_annotations.feature_key`](#mapannotations) | default `'property_map.annotations'` |
 | `storage_path` | text | no |  |  |  |
 | `content_type` | text | no |  |  |  |
 | `byte_size` | integer | no |  |  |  |
-| `created_by_key_id` | uuid | yes |  | → FK [`map_sync_keys.id`](#mapsynckeys) |  |
 | `created_by` | text | no |  |  | default `''` |
 | `created_at` | timestamptz | yes |  |  | default `now()` |
 | `deleted_at` | timestamptz | yes |  |  |  |
 
 ### `map_annotations`
 
+map_sync_access_requests and map_sync_keys were dropped on 2026-08-02
+(deltas/2026-08-02-drop-map-sync-subsystem.sql). They backed a device
+enrolment handshake for an external sync client that was never built; no
+client in this repo could create the first row, and both held zero rows.
+Annotations are written through /api/admin/map-annotations, which accepts a
+maintenance staff token or a security scanner key.
+
 | column | type | null | key | references | notes |
 | --- | --- | --- | --- | --- | --- |
 | `id` | uuid | no | **PK** |  | default `gen_random_uuid()` |
-| `resman_account_id` | text | no |  | → FK [`map_sync_keys.resman_account_id`](#mapsynckeys) |  |
-| `property_id` | text | no |  | → FK [`map_sync_keys.property_id`](#mapsynckeys) |  |
-| `feature_key` | text | no |  | → FK [`map_sync_keys.feature_key`](#mapsynckeys) | default `'property_map.annotations'` |
+| `resman_account_id` | text | no |  |  |  |
+| `property_id` | text | no |  |  |  |
+| `feature_key` | text | no |  |  | default `'property_map.annotations'` |
 | `title` | text | no |  |  |  |
 | `notes` | text | no |  |  | default `''` |
 | `normalized_x` | float8 | no |  |  |  |
@@ -677,14 +682,11 @@ The annotation layer the security app draws on, plus the key exchange that lets 
 | `line_weight` | text | yes |  |  |  |
 | `flow_arrows` | boolean | yes |  |  |  |
 | `origin` | text | no |  |  | default `'sync'` |
-| `created_by_key_id` | uuid | yes |  | → FK [`map_sync_keys.id`](#mapsynckeys) |  |
 | `created_by_display_name` | text | yes |  |  |  |
 | `created_by_resman_login_hash` | text | yes |  |  |  |
 | `created_at` | timestamptz | yes |  |  | default `now()` |
-| `updated_by_key_id` | uuid | yes |  | → FK [`map_sync_keys.id`](#mapsynckeys) |  |
 | `updated_by_display_name` | text | yes |  |  |  |
 | `updated_at` | timestamptz | yes |  |  | default `now()` |
-| `deleted_by_key_id` | uuid | yes |  | → FK [`map_sync_keys.id`](#mapsynckeys) |  |
 | `deleted_by_display_name` | text | yes |  |  |  |
 | `deleted_at` | timestamptz | yes |  |  |  |
 | `version` | integer | no |  |  | default `1` |
@@ -694,12 +696,12 @@ The annotation layer the security app draws on, plus the key exchange that lets 
 
 **Allowed values**
 
-- `origin` — `sync`, `admin`, `scanner`
 - `line_weight` — `thin`, `medium`, `thick`
-- `line_style` — `solid`, `dashed`, `dotted`
-- `utility_type` — `water`, `sewer`, `gas`, `electrical`, `internet`, `other`
-- `kind` — `pin`, `utility_pin`, `utility_line`
 - `layer` — `staff`, `security`, `utility`
+- `kind` — `pin`, `utility_pin`, `utility_line`
+- `utility_type` — `water`, `sewer`, `gas`, `electrical`, `internet`, `other`
+- `line_style` — `solid`, `dashed`, `dotted`
+- `origin` — `sync`, `admin`, `scanner`
 
 ### `map_cameras`
 
@@ -725,56 +727,6 @@ stores the truth.
 | `updated_by_display_name` | text | yes |  |  |  |
 | `created_at` | timestamptz | yes |  |  | default `now()` |
 | `updated_at` | timestamptz | yes |  |  | default `now()` |
-
-### `map_sync_access_requests`
-
-| column | type | null | key | references | notes |
-| --- | --- | --- | --- | --- | --- |
-| `id` | uuid | no | **PK** |  | default `gen_random_uuid()` |
-| `resman_account_id` | text | no |  |  |  |
-| `property_id` | text | no |  |  |  |
-| `property_name` | text | no |  |  |  |
-| `feature_key` | text | no |  |  |  |
-| `requester_display_name` | text | yes |  |  |  |
-| `requester_resman_login_hash` | text | yes |  |  |  |
-| `device_id` | text | no |  |  |  |
-| `status` | text | no |  |  |  |
-| `claim_token_hash` | text | yes |  |  |  |
-| `approved_by` | text | yes |  |  |  |
-| `approved_at` | timestamptz | yes |  |  |  |
-| `rejected_by` | text | yes |  |  |  |
-| `rejected_at` | timestamptz | yes |  |  |  |
-| `rejection_reason` | text | yes |  |  |  |
-| `revoked_by` | text | yes |  |  |  |
-| `revoked_at` | timestamptz | yes |  |  |  |
-| `created_at` | timestamptz | yes |  |  | default `now()` |
-| `updated_at` | timestamptz | yes |  |  | default `now()` |
-
-**Allowed values**
-
-- `status` — `pending`, `approved`, `rejected`, `claimed`, `revoked`
-
-### `map_sync_keys`
-
-| column | type | null | key | references | notes |
-| --- | --- | --- | --- | --- | --- |
-| `id` | uuid | no | **PK** |  | default `gen_random_uuid()` |
-| `key_hash` | text | no | UQ |  |  |
-| `resman_account_id` | text | no |  |  |  |
-| `property_id` | text | no |  |  |  |
-| `property_name` | text | no |  |  |  |
-| `feature_key` | text | no |  |  |  |
-| `capabilities` | jsonb | no |  |  | default `'{"read": true, "create": true, ` |
-| `requester_display_name` | text | yes |  |  |  |
-| `requester_resman_login_hash` | text | yes |  |  |  |
-| `device_id` | text | no |  |  |  |
-| `active` | boolean | no |  |  | default `true` |
-| `last_used_at` | timestamptz | yes |  |  |  |
-| `revoked_by` | text | yes |  |  |  |
-| `revoked_at` | timestamptz | yes |  |  |  |
-| `created_at` | timestamptz | yes |  |  | default `now()` |
-
-**Referenced by** — [`map_annotation_audit_logs.feature_key`](#mapannotationauditlogs) (FK), [`map_annotation_audit_logs.property_id`](#mapannotationauditlogs) (FK), [`map_annotation_audit_logs.resman_account_id`](#mapannotationauditlogs) (FK), [`map_annotation_audit_logs.sync_key_id`](#mapannotationauditlogs) (FK), [`map_annotation_photos.created_by_key_id`](#mapannotationphotos) (FK), [`map_annotation_photos.feature_key`](#mapannotationphotos) (FK), [`map_annotation_photos.property_id`](#mapannotationphotos) (FK), [`map_annotation_photos.resman_account_id`](#mapannotationphotos) (FK), [`map_annotations.created_by_key_id`](#mapannotations) (FK), [`map_annotations.deleted_by_key_id`](#mapannotations) (FK), [`map_annotations.feature_key`](#mapannotations) (FK), [`map_annotations.feature_key`](#mapannotations) (FK), [`map_annotations.feature_key`](#mapannotations) (FK), [`map_annotations.property_id`](#mapannotations) (FK), [`map_annotations.property_id`](#mapannotations) (FK), [`map_annotations.property_id`](#mapannotations) (FK), [`map_annotations.resman_account_id`](#mapannotations) (FK), [`map_annotations.resman_account_id`](#mapannotations) (FK), [`map_annotations.resman_account_id`](#mapannotations) (FK), [`map_annotations.updated_by_key_id`](#mapannotations) (FK)
 
 ## Guest passes
 
@@ -844,8 +796,8 @@ instead of outliving the household it was set against.
 
 **Allowed values**
 
-- `email_delivery_status` — `pending`, `sent`, `failed`
 - `status` — `active`, `revoked`, `used`
+- `email_delivery_status` — `pending`, `sent`, `failed`
 
 ## Admin & audit
 
@@ -874,9 +826,9 @@ Admin: exception alerts
 **Allowed values**
 
 - `severity` — `info`, `warning`, `critical`
-- `subject_type` — `resident`, `guest_pass`, `scanner`, `system`
 - `status` — `open`, `resolved`
 - `alert_type` — `resident_access_stale`, `resident_access_denied`, `scanner_offline`, `guest_pass_denied`, `security_scan_denied`
+- `subject_type` — `resident`, `guest_pass`, `scanner`, `system`
 
 ### `admin_audit_logs`
 
@@ -993,8 +945,8 @@ and never stored. (Scanner keys are separate: see scanner_devices.)
 
 **Allowed values**
 
-- `kind` — `mcp`, `api_resman`
 - `subject_type` — `admin_user`, `scanner`
+- `kind` — `mcp`, `api_resman`
 
 ## Preventive maintenance
 

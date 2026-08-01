@@ -82,10 +82,15 @@ function columnNotes() {
 async function ensureLoaded() {
   const client = new Client({ connectionString: SCRATCH_DB, ssl: false });
   await client.connect();
-  const { rows } = await client.query(
-    "select count(*)::int n from information_schema.tables where table_schema='public' and table_type='BASE TABLE'",
-  );
-  if (rows[0].n > 0) { await client.end(); return; }
+
+  // ALWAYS rebuild. This used to skip when the database already had tables,
+  // which meant a scratch database left over from an earlier run silently
+  // produced a document describing the OLD schema — it reported two dropped
+  // tables as still present. A doc generator that can go stale is the exact
+  // failure it exists to prevent, and reloading costs about a second.
+  await client.query("drop schema public cascade");
+  await client.query("create schema public");
+  await client.query("drop schema if exists storage cascade");
 
   await client.query("create extension if not exists pgcrypto");
   for (const role of ["anon", "authenticated", "service_role"]) {

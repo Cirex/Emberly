@@ -575,124 +575,6 @@ export interface Database {
           },
         ];
       };
-      map_sync_access_requests: {
-        Row: {
-          id: string;
-          resman_account_id: string;
-          property_id: string;
-          property_name: string;
-          feature_key: string;
-          requester_display_name: string | null;
-          requester_resman_login_hash: string | null;
-          device_id: string;
-          status: "pending" | "approved" | "rejected" | "claimed" | "revoked";
-          claim_token_hash: string | null;
-          approved_by: string | null;
-          approved_at: string | null;
-          rejected_by: string | null;
-          rejected_at: string | null;
-          rejection_reason: string | null;
-          revoked_by: string | null;
-          revoked_at: string | null;
-          created_at: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          id?: string;
-          resman_account_id: string;
-          property_id: string;
-          property_name: string;
-          feature_key: string;
-          requester_display_name?: string | null;
-          requester_resman_login_hash?: string | null;
-          device_id: string;
-          status: "pending" | "approved" | "rejected" | "claimed" | "revoked";
-          claim_token_hash?: string | null;
-          approved_by?: string | null;
-          approved_at?: string | null;
-          rejected_by?: string | null;
-          rejected_at?: string | null;
-          rejection_reason?: string | null;
-          revoked_by?: string | null;
-          revoked_at?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          id?: string;
-          resman_account_id?: string;
-          property_id?: string;
-          property_name?: string;
-          feature_key?: string;
-          requester_display_name?: string | null;
-          requester_resman_login_hash?: string | null;
-          device_id?: string;
-          status?: "pending" | "approved" | "rejected" | "claimed" | "revoked";
-          claim_token_hash?: string | null;
-          approved_by?: string | null;
-          approved_at?: string | null;
-          rejected_by?: string | null;
-          rejected_at?: string | null;
-          rejection_reason?: string | null;
-          revoked_by?: string | null;
-          revoked_at?: string | null;
-          updated_at?: string | null;
-        };
-        Relationships: [];
-      };
-      map_sync_keys: {
-        Row: {
-          id: string;
-          key_hash: string;
-          resman_account_id: string;
-          property_id: string;
-          property_name: string;
-          feature_key: string;
-          capabilities: Json;
-          requester_display_name: string | null;
-          requester_resman_login_hash: string | null;
-          device_id: string;
-          active: boolean;
-          last_used_at: string | null;
-          revoked_by: string | null;
-          revoked_at: string | null;
-          created_at: string | null;
-        };
-        Insert: {
-          id?: string;
-          key_hash: string;
-          resman_account_id: string;
-          property_id: string;
-          property_name: string;
-          feature_key: string;
-          capabilities?: Json;
-          requester_display_name?: string | null;
-          requester_resman_login_hash?: string | null;
-          device_id: string;
-          active?: boolean;
-          last_used_at?: string | null;
-          revoked_by?: string | null;
-          revoked_at?: string | null;
-          created_at?: string | null;
-        };
-        Update: {
-          id?: string;
-          key_hash?: string;
-          resman_account_id?: string;
-          property_id?: string;
-          property_name?: string;
-          feature_key?: string;
-          capabilities?: Json;
-          requester_display_name?: string | null;
-          requester_resman_login_hash?: string | null;
-          device_id?: string;
-          active?: boolean;
-          last_used_at?: string | null;
-          revoked_by?: string | null;
-          revoked_at?: string | null;
-        };
-        Relationships: [];
-      };
       map_cameras: {
         Row: {
           id: string;
@@ -757,7 +639,6 @@ export interface Database {
           bound_lease_id: string | null;
           status_trigger: string | null;
           origin: string;
-          created_by_key_id: string | null;
           created_by_display_name: string | null;
           created_at: string | null;
           updated_at: string | null;
@@ -772,7 +653,6 @@ export interface Database {
           bound_lease_id?: string | null;
           status_trigger?: string | null;
           origin?: string;
-          created_by_key_id?: string | null;
           created_by_display_name?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
@@ -811,14 +691,11 @@ export interface Database {
           line_style: string | null;
           line_weight: string | null;
           flow_arrows: boolean | null;
-          created_by_key_id: string | null;
           created_by_display_name: string | null;
           created_by_resman_login_hash: string | null;
           created_at: string | null;
-          updated_by_key_id: string | null;
           updated_by_display_name: string | null;
           updated_at: string | null;
-          deleted_by_key_id: string | null;
           deleted_by_display_name: string | null;
           deleted_at: string | null;
           version: number;
@@ -842,14 +719,11 @@ export interface Database {
           line_style?: string | null;
           line_weight?: string | null;
           flow_arrows?: boolean | null;
-          created_by_key_id?: string | null;
           created_by_display_name?: string | null;
           created_by_resman_login_hash?: string | null;
           created_at?: string | null;
-          updated_by_key_id?: string | null;
           updated_by_display_name?: string | null;
           updated_at?: string | null;
-          deleted_by_key_id?: string | null;
           deleted_by_display_name?: string | null;
           deleted_at?: string | null;
           version?: number;
@@ -873,39 +747,15 @@ export interface Database {
           line_style?: string | null;
           line_weight?: string | null;
           flow_arrows?: boolean | null;
-          created_by_key_id?: string | null;
           created_by_display_name?: string | null;
           created_by_resman_login_hash?: string | null;
-          updated_by_key_id?: string | null;
           updated_by_display_name?: string | null;
           updated_at?: string | null;
-          deleted_by_key_id?: string | null;
           deleted_by_display_name?: string | null;
           deleted_at?: string | null;
           version?: number;
         };
         Relationships: [
-          {
-            foreignKeyName: "map_annotations_created_key_scope_fkey";
-            columns: ["created_by_key_id", "resman_account_id", "property_id", "feature_key"];
-            isOneToOne: false;
-            referencedRelation: "map_sync_keys";
-            referencedColumns: ["id", "resman_account_id", "property_id", "feature_key"];
-          },
-          {
-            foreignKeyName: "map_annotations_deleted_key_scope_fkey";
-            columns: ["deleted_by_key_id", "resman_account_id", "property_id", "feature_key"];
-            isOneToOne: false;
-            referencedRelation: "map_sync_keys";
-            referencedColumns: ["id", "resman_account_id", "property_id", "feature_key"];
-          },
-          {
-            foreignKeyName: "map_annotations_updated_key_scope_fkey";
-            columns: ["updated_by_key_id", "resman_account_id", "property_id", "feature_key"];
-            isOneToOne: false;
-            referencedRelation: "map_sync_keys";
-            referencedColumns: ["id", "resman_account_id", "property_id", "feature_key"];
-          },
         ];
       };
       map_annotation_photos: {
@@ -918,7 +768,6 @@ export interface Database {
           storage_path: string;
           content_type: string;
           byte_size: number;
-          created_by_key_id: string | null;
           created_by: string;
           created_at: string | null;
           deleted_at: string | null;
@@ -932,7 +781,6 @@ export interface Database {
           storage_path: string;
           content_type: string;
           byte_size: number;
-          created_by_key_id?: string | null;
           created_by?: string;
           created_at?: string | null;
           deleted_at?: string | null;
@@ -946,7 +794,6 @@ export interface Database {
           storage_path?: string;
           content_type?: string;
           byte_size?: number;
-          created_by_key_id?: string | null;
           created_by?: string;
           deleted_at?: string | null;
         };
@@ -956,13 +803,6 @@ export interface Database {
             columns: ["annotation_id", "resman_account_id", "property_id", "feature_key"];
             isOneToOne: false;
             referencedRelation: "map_annotations";
-            referencedColumns: ["id", "resman_account_id", "property_id", "feature_key"];
-          },
-          {
-            foreignKeyName: "map_annotation_photos_created_key_scope_fkey";
-            columns: ["created_by_key_id", "resman_account_id", "property_id", "feature_key"];
-            isOneToOne: false;
-            referencedRelation: "map_sync_keys";
             referencedColumns: ["id", "resman_account_id", "property_id", "feature_key"];
           },
         ];
@@ -983,7 +823,6 @@ export interface Database {
             | "annotation.update"
             | "annotation.delete";
           annotation_id: string | null;
-          sync_key_id: string | null;
           actor_display_name: string | null;
           actor_resman_login_hash: string | null;
           admin_user_id: string | null;
@@ -1006,7 +845,6 @@ export interface Database {
             | "annotation.update"
             | "annotation.delete";
           annotation_id?: string | null;
-          sync_key_id?: string | null;
           actor_display_name?: string | null;
           actor_resman_login_hash?: string | null;
           admin_user_id?: string | null;
@@ -1029,7 +867,6 @@ export interface Database {
             | "annotation.update"
             | "annotation.delete";
           annotation_id?: string | null;
-          sync_key_id?: string | null;
           actor_display_name?: string | null;
           actor_resman_login_hash?: string | null;
           admin_user_id?: string | null;
@@ -1042,13 +879,6 @@ export interface Database {
             columns: ["annotation_id", "resman_account_id", "property_id", "feature_key"];
             isOneToOne: false;
             referencedRelation: "map_annotations";
-            referencedColumns: ["id", "resman_account_id", "property_id", "feature_key"];
-          },
-          {
-            foreignKeyName: "map_annotation_audit_logs_sync_key_scope_fkey";
-            columns: ["sync_key_id", "resman_account_id", "property_id", "feature_key"];
-            isOneToOne: false;
-            referencedRelation: "map_sync_keys";
             referencedColumns: ["id", "resman_account_id", "property_id", "feature_key"];
           },
         ];

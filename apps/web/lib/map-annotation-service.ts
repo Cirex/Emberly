@@ -1,10 +1,16 @@
 /**
- * Layered map annotations for first-party callers (admin portal + scanner
- * iPads). The external XCMS sync client keeps its own routes and builders in
- * lib/map-annotations.ts — pinned to the 'staff' layer — while this module
- * serves the other two doors with the same semantics: optimistic versioning
- * (expectedVersion → 409-style conflict), soft delete, `since` tombstones,
- * and an audit row per mutation.
+ * Layered map annotations — the ONE way they are written.
+ *
+ * Callers reach this through /api/admin/map-annotations, which authenticates
+ * three ways via requireAdminOrScanner: an admin session, the maintenance
+ * app's per-user staff token (eapi_…), or the security app's scanner key. Each
+ * gets the same semantics: optimistic versioning (expectedVersion → 409-style
+ * conflict), soft delete, `since` tombstones, and an audit row per mutation.
+ *
+ * There used to be a second door — a device-enrolment handshake issuing sync
+ * keys for an external XCMS client, with its own routes under /api/map/. No
+ * client ever implemented the handshake, so it could not be reached at all; it
+ * was removed on 2026-08-02 along with its two tables.
  */
 import type { Database, Json } from "../types/database";
 import {
@@ -16,10 +22,16 @@ import {
   type UtilityType,
 } from "./map-annotation-kinds";
 import { buildAnnotationResponse, type AnnotationRow } from "./map-annotations";
-import { MAP_ANNOTATIONS_FEATURE_KEY } from "./map-sync";
 import type { UntypedSupabase } from "./supabase/types";
 
 export type MapAnnotationLayer = "staff" | "security" | "utility";
+
+/**
+ * Scope discriminator on every annotation row. Previously exported by
+ * lib/map-sync.ts alongside the key/claim machinery; it is the one piece of
+ * that module the live writers actually used.
+ */
+export const MAP_ANNOTATIONS_FEATURE_KEY = "property_map.annotations" as const;
 
 /**
  * The one property this deployment manages, in the same coordinates the
@@ -145,7 +157,6 @@ export async function createLayeredAnnotation(
     line_weight: input.lineWeight ?? null,
     flow_arrows: input.flowArrows ?? null,
     icon: input.icon?.trim() || "document-text",
-    created_by_key_id: null,
     created_by_display_name: actor.displayName,
     created_at: now,
     updated_by_display_name: actor.displayName,
@@ -274,7 +285,6 @@ async function audit(
     feature_key: MAP_ANNOTATIONS_FEATURE_KEY,
     action,
     annotation_id: annotationId,
-    sync_key_id: null,
     actor_display_name: actor.displayName,
     admin_user_id: actor.actorId,
     admin_display_name: actor.displayName,

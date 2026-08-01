@@ -340,7 +340,6 @@ export interface Database {
           email: string | null;
           display_name: string | null;
           role: "super_admin" | "property_manager" | "security_manager" | "viewer";
-          key_hash: string | null;
           resman_username: string | null;
           resman_person_id: string | null;
           last_login_at: string | null;
@@ -353,7 +352,6 @@ export interface Database {
           email?: string | null;
           display_name?: string | null;
           role: "super_admin" | "property_manager" | "security_manager" | "viewer";
-          key_hash?: string | null;
           resman_username?: string | null;
           resman_person_id?: string | null;
           last_login_at?: string | null;
@@ -366,7 +364,6 @@ export interface Database {
           email?: string | null;
           display_name?: string | null;
           role?: "super_admin" | "property_manager" | "security_manager" | "viewer";
-          key_hash?: string | null;
           resman_username?: string | null;
           resman_person_id?: string | null;
           last_login_at?: string | null;
@@ -692,7 +689,6 @@ export interface Database {
           line_weight: string | null;
           flow_arrows: boolean | null;
           created_by_display_name: string | null;
-          created_by_resman_login_hash: string | null;
           created_at: string | null;
           updated_by_display_name: string | null;
           updated_at: string | null;
@@ -720,7 +716,6 @@ export interface Database {
           line_weight?: string | null;
           flow_arrows?: boolean | null;
           created_by_display_name?: string | null;
-          created_by_resman_login_hash?: string | null;
           created_at?: string | null;
           updated_by_display_name?: string | null;
           updated_at?: string | null;
@@ -748,7 +743,6 @@ export interface Database {
           line_weight?: string | null;
           flow_arrows?: boolean | null;
           created_by_display_name?: string | null;
-          created_by_resman_login_hash?: string | null;
           updated_by_display_name?: string | null;
           updated_at?: string | null;
           deleted_by_display_name?: string | null;
@@ -824,7 +818,6 @@ export interface Database {
             | "annotation.delete";
           annotation_id: string | null;
           actor_display_name: string | null;
-          actor_resman_login_hash: string | null;
           admin_user_id: string | null;
           admin_display_name: string | null;
           metadata: Json;
@@ -846,7 +839,6 @@ export interface Database {
             | "annotation.delete";
           annotation_id?: string | null;
           actor_display_name?: string | null;
-          actor_resman_login_hash?: string | null;
           admin_user_id?: string | null;
           admin_display_name?: string | null;
           metadata?: Json;
@@ -868,7 +860,6 @@ export interface Database {
             | "annotation.delete";
           annotation_id?: string | null;
           actor_display_name?: string | null;
-          actor_resman_login_hash?: string | null;
           admin_user_id?: string | null;
           admin_display_name?: string | null;
           metadata?: Json;

@@ -238,14 +238,13 @@ alter table scanner_devices enable row level security;
 -- Admin users and audit logs
 -- ------------------------------------------------------------
 -- Admin users are authenticated against the ResMan staff portal; a row is created
--- on first successful login. key_hash is a legacy column from the retired shared
--- ADMIN_LOGIN_KEY model — nullable and no longer checked.
+-- on first successful login. The retired shared ADMIN_LOGIN_KEY model left a
+-- key_hash column behind; it was dropped on 2026-08-02.
 create table admin_users (
   id uuid primary key default gen_random_uuid(),
   email text unique,
   display_name text,
   role text not null check (role in ('super_admin', 'property_manager', 'security_manager', 'viewer')),
-  key_hash text unique,
   resman_username text,
   resman_person_id text,
   last_login_at timestamptz,
@@ -507,7 +506,6 @@ create table if not exists public.map_annotations (
   origin text not null default 'sync'
     constraint map_annotations_origin_check check (origin in ('sync', 'admin', 'scanner')),
   created_by_display_name text,
-  created_by_resman_login_hash text,
   created_at timestamptz default now(),
   updated_by_display_name text,
   updated_at timestamptz default now(),
@@ -577,7 +575,6 @@ create table if not exists public.map_annotation_audit_logs (
   )),
   annotation_id uuid,
   actor_display_name text,
-  actor_resman_login_hash text,
   admin_user_id text,
   admin_display_name text,
   metadata jsonb not null default '{}'::jsonb,
@@ -1557,7 +1554,6 @@ create table if not exists public.unit_tags (
   status_trigger text,
   origin text not null default 'admin'
     constraint unit_tags_origin_check check (origin in ('admin', 'scanner')),
-  created_by_key_id uuid,
   created_by_display_name text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()

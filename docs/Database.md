@@ -5,7 +5,7 @@
 > above each `create table` in that same file. To change this document, change the
 > schema or its comments.
 
-52 tables · 742 columns · **32 declared foreign keys** · 17 inferred references
+52 tables · 738 columns · **32 declared foreign keys** · 17 inferred references
 
 ## How to read the relationships
 
@@ -445,8 +445,8 @@ resman_units (from PropertyUnit)
 
 **Allowed values**
 
-- `occupancy_status` — `Occupied`, `Vacant`, `Notice`
 - `lease_status` — `Current`, `Under Eviction`, `Notice to Vacate`, `Month to Month`, `Pending`, `Pending Renewal`, `Cancelled`
+- `occupancy_status` — `Occupied`, `Vacant`, `Notice`
 
 ### `resman_work_orders`
 
@@ -490,9 +490,9 @@ resman_work_orders (from WorkOrder)
 
 **Allowed values**
 
-- `callback_status` — `none`, `possible`, `confirmed`, `dismissed`
 - `priority` — `Emergency`, `High`, `Normal`, `Low`
 - `status` — `Not Started`, `Scheduled`, `In Progress`, `Completed`, `Closed`, `Canceled`
+- `callback_status` — `none`, `possible`, `confirmed`, `dismissed`
 
 ## Utilities (MLGW)
 
@@ -628,7 +628,6 @@ The annotation layer the security app draws on, plus the key exchange that lets 
 | `action` | text | no |  |  |  |
 | `annotation_id` | uuid | yes |  | → FK [`map_annotations.id`](#mapannotations) |  |
 | `actor_display_name` | text | yes |  |  |  |
-| `actor_resman_login_hash` | text | yes |  |  |  |
 | `admin_user_id` | text | yes |  |  |  |
 | `admin_display_name` | text | yes |  |  |  |
 | `metadata` | jsonb | no |  |  | default `'{}'` |
@@ -683,7 +682,6 @@ maintenance staff token or a security scanner key.
 | `flow_arrows` | boolean | yes |  |  |  |
 | `origin` | text | no |  |  | default `'sync'` |
 | `created_by_display_name` | text | yes |  |  |  |
-| `created_by_resman_login_hash` | text | yes |  |  |  |
 | `created_at` | timestamptz | yes |  |  | default `now()` |
 | `updated_by_display_name` | text | yes |  |  |  |
 | `updated_at` | timestamptz | yes |  |  | default `now()` |
@@ -696,12 +694,12 @@ maintenance staff token or a security scanner key.
 
 **Allowed values**
 
-- `line_weight` — `thin`, `medium`, `thick`
-- `layer` — `staff`, `security`, `utility`
-- `kind` — `pin`, `utility_pin`, `utility_line`
-- `utility_type` — `water`, `sewer`, `gas`, `electrical`, `internet`, `other`
-- `line_style` — `solid`, `dashed`, `dotted`
 - `origin` — `sync`, `admin`, `scanner`
+- `line_weight` — `thin`, `medium`, `thick`
+- `line_style` — `solid`, `dashed`, `dotted`
+- `utility_type` — `water`, `sewer`, `gas`, `electrical`, `internet`, `other`
+- `kind` — `pin`, `utility_pin`, `utility_line`
+- `layer` — `staff`, `security`, `utility`
 
 ### `map_cameras`
 
@@ -826,9 +824,9 @@ Admin: exception alerts
 **Allowed values**
 
 - `severity` — `info`, `warning`, `critical`
+- `subject_type` — `resident`, `guest_pass`, `scanner`, `system`
 - `status` — `open`, `resolved`
 - `alert_type` — `resident_access_stale`, `resident_access_denied`, `scanner_offline`, `guest_pass_denied`, `security_scan_denied`
-- `subject_type` — `resident`, `guest_pass`, `scanner`, `system`
 
 ### `admin_audit_logs`
 
@@ -849,8 +847,8 @@ Admin: exception alerts
 Admin users and audit logs
 
 Admin users are authenticated against the ResMan staff portal; a row is created
-on first successful login. key_hash is a legacy column from the retired shared
-ADMIN_LOGIN_KEY model — nullable and no longer checked.
+on first successful login. The retired shared ADMIN_LOGIN_KEY model left a
+key_hash column behind; it was dropped on 2026-08-02.
 
 | column | type | null | key | references | notes |
 | --- | --- | --- | --- | --- | --- |
@@ -858,7 +856,6 @@ ADMIN_LOGIN_KEY model — nullable and no longer checked.
 | `email` | text | yes | UQ |  |  |
 | `display_name` | text | yes |  |  |  |
 | `role` | text | no |  |  |  |
-| `key_hash` | text | yes | UQ |  |  |
 | `resman_username` | text | yes |  |  |  |
 | `resman_person_id` | text | yes |  |  |  |
 | `last_login_at` | timestamptz | yes |  |  |  |
@@ -945,8 +942,8 @@ and never stored. (Scanner keys are separate: see scanner_devices.)
 
 **Allowed values**
 
-- `subject_type` — `admin_user`, `scanner`
 - `kind` — `mcp`, `api_resman`
+- `subject_type` — `admin_user`, `scanner`
 
 ## Preventive maintenance
 
@@ -1227,8 +1224,8 @@ out, so a restart cannot re-notify the same finding.
 
 **Allowed values**
 
-- `kind` — `anomaly`, `staleness`
 - `severity` — `info`, `warn`, `critical`
+- `kind` — `anomaly`, `staleness`
 
 > ⚠️ Row-level security is **not** enabled on this table.
 
@@ -1429,15 +1426,14 @@ Swift UnitTagStore into the synced model; expiration rules run server-side.
 | `bound_lease_id` | text | yes |  |  |  |
 | `status_trigger` | text | yes |  |  |  |
 | `origin` | text | no |  |  | default `'admin'` |
-| `created_by_key_id` | uuid | yes |  |  |  |
 | `created_by_display_name` | text | yes |  |  |  |
 | `created_at` | timestamptz | yes |  |  | default `now()` |
 | `updated_at` | timestamptz | yes |  |  | default `now()` |
 
 **Allowed values**
 
-- `expiry_kind` — `never`, `date`, `duration`, `move_out`, `status_change`
 - `origin` — `admin`, `scanner`
+- `expiry_kind` — `never`, `date`, `duration`, `move_out`, `status_change`
 
 ### `work_order_photos`
 

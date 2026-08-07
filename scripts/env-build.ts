@@ -62,39 +62,32 @@ interface AppTarget {
   production: string;
   /** Generated file for local development, when the app has one. */
   dev?: string;
-  /** Committed templates to harvest documentation comments from. */
-  docSources?: string[];
 }
 
 const APPS: Record<string, AppTarget> = {
   web: {
-    docSources: [".env.production.example", ".env.example"],
     dir: "apps/web",
     production: ".env.production",
     dev: ".env.local",
   },
   resident: {
-    docSources: [".env.production.example", ".env.example"],
     dir: "apps/resident",
     groups: ["mobile"],
     production: ".env.production",
   },
   security: {
-    docSources: [".env.production.example", ".env.example"],
     dir: "apps/security",
     groups: ["mobile"],
     production: ".env.production",
     dev: ".env.local",
   },
   maintenance: {
-    docSources: [".env.production.example", ".env.example"],
     dir: "apps/maintenance",
     groups: ["mobile"],
     production: ".env.production",
     dev: ".env.local",
   },
   manager: {
-    docSources: [".env.example"],
     dir: "apps/manager",
     groups: ["mobile"],
     production: ".env.production",
@@ -103,7 +96,6 @@ const APPS: Record<string, AppTarget> = {
   // The worker reads `.env`, not `.env.production` — its own .env.example says
   // to copy to `.env`, and there is no production variant in that package.
   sync: {
-    docSources: [".env.example"],
     dir: "supabase/sync",
     production: ".env",
   },
@@ -219,20 +211,32 @@ function render(lines: string[]): string {
  * That prose is the whole point of a template, so it is read from there rather
  * than regenerated as bare names.
  */
-function docsFor(key: string, exampleTexts: string[]): string[] {
-  for (const text of exampleTexts) {
-    const lines = text.split("\n");
-    const at = lines.findIndex((l) => new RegExp(`^${key}=`).test(l.trimEnd()));
-    if (at === -1) continue;
-    const block: string[] = [];
-    for (let i = at - 1; i >= 0; i -= 1) {
-      const line = lines[i].trimEnd();
-      if (line.startsWith("#")) block.unshift(line);
-      else break;
-    }
-    if (block.length) return block;
+function docsFromMarkdown(key: string, md: string): string[] {
+  // Rows look like: | `VAR_A`, `VAR_B` | **secret** | Notes… |
+  for (const line of md.split("\n")) {
+    if (!line.startsWith("|")) continue;
+    const cells = line.split("|").map((c) => c.trim());
+    if (cells.length < 4) continue;
+    const names = [...cells[1].matchAll(/`([A-Za-z_][A-Za-z0-9_]*)`/g)].map((m) => m[1]);
+    if (!names.includes(key)) continue;
+    const secret = /secret/i.test(cells[2]);
+    const notes = cells[3].replace(/\s+/g, " ").trim();
+    if (!notes) continue;
+    return [`# ${notes}${secret ? "  (SECRET)" : ""}`];
   }
   return [];
+}
+
+/**
+ * Prose for a variable, from docs/Environment-Variables.md.
+ *
+ * That table is the single committed home for per-variable documentation. It
+ * used to be split with the per-app .env*.example files, which meant deleting
+ * those would silently strip the generated template — so their prose was moved
+ * into the doc before they were removed.
+ */
+function docsFor(key: string, markdown = ""): string[] {
+  return docsFromMarkdown(key, markdown);
 }
 
 async function main(): Promise<number> {
@@ -243,7 +247,8 @@ async function main(): Promise<number> {
   const names = opts.only ? [opts.only] : Object.keys(APPS);
   let drift = 0;
   let wrote = 0;
-  const exampleTexts: string[] = [];
+  const referenceDocPath = path.join(repoRoot, "docs", "Environment-Variables.md");
+  const referenceDoc = existsSync(referenceDocPath) ? await Bun.file(referenceDocPath).text() : "";
 
   for (const name of names) {
     const app = APPS[name]!;
@@ -274,12 +279,6 @@ async function main(): Promise<number> {
       if (dev) outputs.push({ file: path.join(app.dir, app.dev), body: render(dev.lines), label: "dev" });
     }
 
-    if (opts.examples) {
-      for (const src of app.docSources ?? []) {
-        const f = path.join(repoRoot, app.dir, src);
-        if (existsSync(f)) exampleTexts.push(await Bun.file(f).text());
-      }
-    }
 
     console.log(`── ${name} ───────────────────────────────`);
     for (const out of outputs) {
@@ -335,7 +334,7 @@ async function main(): Promise<number> {
       if (vars.length === 0) continue;
       sections.push("", `# ${"═".repeat(74)}`, `# ${layerFile}`, `# ${"═".repeat(74)}`);
       for (const line of vars) {
-        const docs = docsFor(line.key!, exampleTexts);
+        const docs = docsFor(line.key!, referenceDoc);
         if (docs.length) documented += 1;
         total += 1;
         sections.push("", ...docs, `${line.key}=`);

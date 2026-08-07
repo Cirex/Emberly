@@ -3,13 +3,18 @@
 Every variable each deployable reads, where it goes, and which are secret. Each app ships a
 committed template — copy it and fill in what you need:
 
-| App | Local template | Production template |
-| --- | --- | --- |
-| `@emberly/web` | `apps/web/.env.example` → `.env.local` | `apps/web/.env.production.example` → `.env.production` |
-| `@emberly/resident` | `apps/resident/.env.example` → `.env.local` | `apps/resident/.env.production.example` → `.env.production` |
-| `@emberly/security` | `apps/security/.env.example` → `.env.local` | `apps/security/.env.production.example` → `.env.production` |
-| `@emberly/maintenance` | `apps/maintenance/.env.example` → `.env.local` | `apps/maintenance/.env.production.example` → `.env.production` |
-| `@emberly/sync` | `supabase/sync/.env.example` → `.env` | (Coolify secret store) |
+Environment files are **generated**. Edit the gitignored layered sources at the repo
+root and run `bun run env:build`:
+
+| Source | Feeds |
+| --- | --- |
+| `.env.mobile` | resident / security / maintenance |
+| `.env.<app>` | that app's `.env.production` (or `supabase/sync/.env`) |
+| `.env.<app>.local` | that app's `.env.local` overlay |
+
+`bun run env:build --check` reports drift without writing. The single committed
+template is `.env.example` at the repo root, generated from these sources plus the
+prose in this document — so documenting a variable here is what makes it appear there.
 
 **Guiding rules**
 
@@ -189,3 +194,30 @@ store in production — never in the web env, never in the iOS apps, never commi
 | --- | --- |
 | `SUPABASE_URL` | Project URL. |
 | `SUPABASE_SERVICE_ROLE_KEY` | **Secret** — bypasses RLS, server-side only. |
+
+## Variables previously documented only in per-app templates
+
+Carried here when the per-app `.env*.example` files were replaced by the single
+generated `.env.example` at the repo root. This table is now the source of prose —
+`bun run env:build --examples` reads it, so a variable documented here shows up in
+the generated template.
+
+| Var | Secret? | Notes |
+| --- | --- | --- |
+| `ADMIN_BREAKGLASS_KEY` | **secret** | Emergency break-glass only. Leave BLANK to disable (off by default → the only way in is a ResMan login). When set, it grants super_admin via the login form's "emergency key" field or the x-admin-key header. Rotate/unset after use. |
+| `ADMIN_SESSION_SECRET` | **secret** | Admin/session auth. The admin dashboard logs in with ResMan STAFF credentials (validated against the ResMan admin portal); a local admin_users row is created on first login. There is no shared admin key. |
+| `ASC_REVIEW_FIRST_NAME` | public | --- App Store Connect metadata (eas metadata:push) ------------------------- Only needed when pushing store metadata, never by the app itself. ASC_DEMO_* must be a DEDICATED review account, never a real staff member's ResMan login — App Review shares these credentials internally. |
+| `ASC_SUPPORT_URL` | public | Must RESOLVE — Apple rejects a dead privacy-policy link, and neither page exists yet (apps/web has no /privacy or /support route). |
+| `EXPO_PUBLIC_API_PORT` | public | --- API --- |
+| `EXPO_PUBLIC_BASE_URL` | public | --- API --- |
+| `EXPO_PUBLIC_DEV_TOKEN` | public | Dev-only bearer token to skip sign-in during local development. Leave unset in builds. |
+| `EXPO_PUBLIC_POSTHOG_HOST` | public | Defaults to https://us.i.posthog.com when unset. Use https://eu.i.posthog.com for EU. |
+| `EXPO_PUBLIC_POSTHOG_KEY` | public | --- PostHog (product analytics) --- Leave EXPO_PUBLIC_POSTHOG_KEY unset to disable analytics (capture() becomes a no-op). |
+| `EXPO_PUBLIC_SENTRY_DSN` | public | --- Sentry (crash + error reporting) --- This app reports to its OWN Sentry project (separate from the web + resident apps). Leave EXPO_PUBLIC_SENTRY_DSN unset to disable Sentry entirely (init is skipped). |
+| `EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` | public | Performance tracing sample rate 0..1 (default 0.2 when a DSN is set). |
+| `LANGBLY_API_KEY` | **secret** | --- Langbly (translation pre-cache) --- Translates work-order prose server-side on the cron sync so techs' phones don't. OPTIONAL: with no key, sync:translate-work-orders logs "skipping" and no-ops, so the pipeline is safe to run without it. Free tier is 500k chars/month; this property uses ~60k/month. |
+| `LANGBLY_API_URL` | public | Optional — defaults to https://api.langbly.com. Any Google Translate v2 compatible endpoint works here. |
+| `RESIDENT_ALLOWED_PORTAL_STATUSES` | public | Resident-app login gate. Residents may sign in only when their ResMan portal status is Current, Pending Renewal, or Under Eviction (always allowed). This ADDS extra statuses on top of those — comma-separated, case-insensitive — for testing with non-active accounts (e.g. "Approved,Future"). Leave blank in production. In development, "Approved" is already allowed without this. |
+| `RESMAN_PORTAL_ORIGIN` | public | ResMan portal adapter. Do not configure or store ResMan API credentials. |
+| `SCANNER_SECRET_PEPPER` | **secret** | Scanner authentication. Scanner keys live ONLY in the scanner_devices table — create/rotate them from the admin Scanners page (the key is shown once). There are no env-configured scanner keys. This pepper is the HMAC secret the stored secret_hash is derived with; changing it invalidates every existing key. |
+| `UTILITIES_MONTHLY_SPEND_GOAL` | public | --- Admin Utilities dashboard --- Optional monthly spend goal (USD) — draws the goal line on /admin/utilities. Leave unset to hide the line, matching XMS. |

@@ -53,9 +53,10 @@ Writing it here would fight the service that already manages it.
 | Security/guard iOS app | `@emberly/security` | EAS Build → App Store | `apps/security/.env.production` |
 | Maintenance iOS app | `@emberly/maintenance` | EAS Build → App Store | `apps/maintenance/.env.production` |
 
-Each app has a committed `.env.example` and `.env.production.example` listing every variable
-it reads. Copy the example to the real (gitignored) file and fill it in, or set the values in
-the platform's own secret store.
+One committed `.env.example` at the repo root lists every variable every app reads,
+grouped by layer. The real files are **generated** — edit the gitignored sources at the
+repo root (`.env.mobile`, `.env.<app>`, `.env.<app>.local`) and run `bun run env:build`.
+See [[Environment Variables]].
 
 **Observability is inert by default.** Every app boots and runs with Sentry and PostHog
 unconfigured — the SDKs no-op until their keys are set. Bring the deployments up first and

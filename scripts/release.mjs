@@ -31,34 +31,24 @@ import { $ } from "bun";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-const APPS = ["web", "maintenance", "security", "manager", "resident"] as const;
-type App = (typeof APPS)[number];
+const APPS = ["web", "maintenance", "security", "manager", "resident"];
 
-interface Options {
-  app: App;
-  dryRun: boolean;
-  assumeYes: boolean;
-  webTarget: "prod" | "preview";
-  /** Flags forwarded verbatim to eas-release.ts for mobile apps. */
-  passthru: string[];
-}
-
-function usage(): never {
+function usage() {
   console.error("usage: bun scripts/release.ts <app> [--dry-run] [--submit] [--profile <name>]");
   console.error("                              [--preview] [--allow-dirty] [--skip-env] [--yes]");
   console.error(`  <app>  ${APPS.join(" | ")}`);
   process.exit(2);
 }
 
-function parseArgs(argv: string[]): Options {
+function parseArgs(argv) {
   const [app, ...rest] = argv;
   if (!app) usage();
-  if (!APPS.includes(app as App)) {
+  if (!APPS.includes(app)) {
     console.error(`✗ unknown app: ${app} (${APPS.join(" | ")})`);
     process.exit(2);
   }
-  const opts: Options = {
-    app: app as App, dryRun: false, assumeYes: false, webTarget: "prod", passthru: [],
+  const opts = {
+    app: app, dryRun: false, assumeYes: false, webTarget: "prod", passthru: [],
   };
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i];
@@ -87,7 +77,7 @@ function parseArgs(argv: string[]): Options {
  * up labelled with a version that never existed — so this refuses before
  * anything is built rather than after.
  */
-async function resolveVersion(repoRoot: string, app: App): Promise<string> {
+async function resolveVersion(repoRoot, app) {
   const versionScript = path.join(repoRoot, "scripts", "version.mjs");
   const report = (await $`bun ${versionScript}`.cwd(repoRoot).nothrow().quiet()).stdout.toString();
   const line = report.split("\n").find((l) => new RegExp(`^${app}\\s`).test(l)) ?? "";
@@ -100,7 +90,7 @@ async function resolveVersion(repoRoot: string, app: App): Promise<string> {
   return line.trim().split(/\s+/)[1] || "?";
 }
 
-async function confirm(question: string, assumeYes: boolean): Promise<void> {
+async function confirm(question, assumeYes) {
   if (assumeYes) return;
   if (!process.stdin.isTTY) {
     console.error("✗ not a terminal and --yes not given — refusing to ship unattended");
@@ -115,7 +105,7 @@ async function confirm(question: string, assumeYes: boolean): Promise<void> {
   process.exit(1);
 }
 
-async function main(): Promise<number> {
+async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const repoRoot = path.resolve(import.meta.dir, "..");
   const version = await resolveVersion(repoRoot, opts.app);

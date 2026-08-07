@@ -27,16 +27,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-interface AppSpec {
-  /** Workspace package name, for `bun run --filter`. */
-  pkg: string;
-  /** Script in that package's package.json that starts the dev server. */
-  devScript: string;
-  /** How to describe what launching does, in the log line. */
-  what: string;
-}
-
-const APPS: Record<string, AppSpec> = {
+const APPS = {
   web:         { pkg: "@emberly/web",         devScript: "dev",   what: "next dev" },
   resident:    { pkg: "@emberly/resident",    devScript: "start", what: "expo start" },
   security:    { pkg: "@emberly/security",    devScript: "start", what: "expo start" },
@@ -49,27 +40,20 @@ const BUILT_PACKAGES = [
   { pkg: "@emberly/core", dir: "packages/core", output: "packages/core/dist" },
 ];
 
-interface Options {
-  app: string;
-  prepare: boolean;
-  checkOnly: boolean;
-  passthru: string[];
-}
-
-function usage(): never {
+function usage() {
   console.error("usage: bun run start <app> [--no-prepare] [--check] [-- <dev server args>]");
   console.error(`  <app>  ${Object.keys(APPS).join(" | ")}`);
   process.exit(2);
 }
 
-function parseArgs(argv: string[]): Options {
+function parseArgs(argv) {
   const [app, ...rest] = argv;
   if (!app) usage();
   if (!APPS[app]) {
     console.error(`✗ unknown app: ${app} (${Object.keys(APPS).join(" | ")})`);
     process.exit(2);
   }
-  const opts: Options = { app, prepare: true, checkOnly: false, passthru: [] };
+  const opts = { app, prepare: true, checkOnly: false, passthru: [] };
   const sep = rest.indexOf("--");
   const own = sep === -1 ? rest : rest.slice(0, sep);
   if (sep !== -1) opts.passthru = rest.slice(sep + 1);
@@ -84,15 +68,15 @@ function parseArgs(argv: string[]): Options {
 }
 
 /** Run a command with inherited stdio, so interactive output works. */
-async function run(cmd: string[], cwd: string): Promise<number> {
+async function run(cmd, cwd) {
   const proc = Bun.spawn(cmd, { cwd, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
   return proc.exited;
 }
 
-async function main(): Promise<number> {
+async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const repoRoot = path.resolve(import.meta.dir, "..");
-  const spec = APPS[opts.app]!;
+  const spec = APPS[opts.app];
   const appDir = path.join(repoRoot, "apps", opts.app);
 
   if (opts.prepare) {

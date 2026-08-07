@@ -51,20 +51,9 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import { parseEnvFile, type EnvMap } from "./lib/env-file";
+import { parseEnvFile } from "./lib/env-file.mjs";
 
-interface AppTarget {
-  /** Directory holding the generated files. */
-  dir: string;
-  /** Group layers stacked before this app's own file, e.g. ["mobile"]. */
-  groups?: string[];
-  /** Generated file for the deployed environment. */
-  production: string;
-  /** Generated file for local development, when the app has one. */
-  dev?: string;
-}
-
-const APPS: Record<string, AppTarget> = {
+const APPS = {
   web: {
     dir: "apps/web",
     production: ".env.production",
@@ -101,10 +90,8 @@ const APPS: Record<string, AppTarget> = {
   },
 };
 
-interface Options { check: boolean; examples: boolean; only?: string; root?: string }
-
-function parseArgs(argv: string[]): Options {
-  const opts: Options = { check: false, examples: false };
+function parseArgs(argv) {
+  const opts = { check: false, examples: false };
   for (let i = 0; i < argv.length; i += 1) {
     switch (argv[i]) {
       case "--check":    opts.check = true; break;
@@ -132,10 +119,18 @@ function parseArgs(argv: string[]): Options {
 }
 
 /** A source line kept verbatim, so hand-written documentation survives. */
-interface SourceLine { kind: "comment" | "blank" | "var"; raw: string; key?: string }
+/**
+ * A source line kept verbatim, so hand-written documentation survives.
+ *
+ * @typedef {object} SourceLine
+ * @property {"comment"|"blank"|"var"} kind
+ * @property {string} raw
+ * @property {string} [key]
+ */
 
-function readSource(file: string, text: string): SourceLine[] {
-  return text.split("\n").map((raw): SourceLine => {
+/** @param {string} file @param {string} text @returns {SourceLine[]} */
+function readSource(file, text) {
+  return text.split("\n").map((raw) => {
     const line = raw.trimEnd();
     if (line.length === 0) return { kind: "blank", raw: "" };
     if (line.startsWith("#")) return { kind: "comment", raw: line };
@@ -144,7 +139,7 @@ function readSource(file: string, text: string): SourceLine[] {
   });
 }
 
-async function loadLayer(repoRoot: string, name: string): Promise<SourceLine[] | null> {
+async function loadLayer(repoRoot, name) {
   const file = path.join(repoRoot, name);
   if (!existsSync(file)) return null;
   return readSource(name, await Bun.file(file).text());
@@ -155,9 +150,9 @@ async function loadLayer(repoRoot: string, name: string): Promise<SourceLine[] |
  * place (so a shared variable an app overrides keeps the shared file's comment
  * position), and anything new is appended under its own layer's heading.
  */
-function compose(layers: { name: string; lines: SourceLine[] }[]): { lines: string[]; vars: EnvMap } {
-  const finalValue = new Map<string, string>();
-  const owner = new Map<string, string>();
+function compose(layers) {
+  const finalValue = new Map();
+  const owner = new Map();
   for (const layer of layers) {
     for (const line of layer.lines) {
       if (line.kind !== "var" || !line.key) continue;
@@ -166,8 +161,8 @@ function compose(layers: { name: string; lines: SourceLine[] }[]): { lines: stri
     }
   }
 
-  const out: string[] = [];
-  const emitted = new Set<string>();
+  const out = [];
+  const emitted = new Set();
   for (const layer of layers) {
     const ownHere = layer.lines.some((l) => l.kind === "var" && l.key && owner.get(l.key) === layer.name && !emitted.has(l.key));
     const laterOverride = layer.lines.some((l) => l.kind === "var" && l.key && !emitted.has(l.key));
@@ -199,7 +194,7 @@ const HEADER = [
   "",
 ];
 
-function render(lines: string[]): string {
+function render(lines) {
   return `${[...HEADER, ...lines].join("\n")}\n`;
 }
 
@@ -211,7 +206,7 @@ function render(lines: string[]): string {
  * That prose is the whole point of a template, so it is read from there rather
  * than regenerated as bare names.
  */
-function docsFromMarkdown(key: string, md: string): string[] {
+function docsFromMarkdown(key, md) {
   // Rows look like: | `VAR_A`, `VAR_B` | **secret** | Notes… |
   for (const line of md.split("\n")) {
     if (!line.startsWith("|")) continue;
@@ -235,11 +230,11 @@ function docsFromMarkdown(key: string, md: string): string[] {
  * those would silently strip the generated template — so their prose was moved
  * into the doc before they were removed.
  */
-function docsFor(key: string, markdown = ""): string[] {
+function docsFor(key, markdown = "") {
   return docsFromMarkdown(key, markdown);
 }
 
-async function main(): Promise<number> {
+async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const repoRoot = opts.root ? path.resolve(opts.root) : path.resolve(import.meta.dir, "..");
 
@@ -251,18 +246,20 @@ async function main(): Promise<number> {
   const referenceDoc = existsSync(referenceDocPath) ? await Bun.file(referenceDocPath).text() : "";
 
   for (const name of names) {
-    const app = APPS[name]!;
+    const app = APPS[name];
     const appLayer = await loadLayer(repoRoot, `.env.${name}`);
     const devLayer = await loadLayer(repoRoot, `.env.${name}.local`);
 
-    const stack: { name: string; lines: SourceLine[] }[] = [];
+    /** @type {{name: string, lines: SourceLine[]}[]} */
+    const stack = [];
     for (const group of app.groups ?? []) {
       const g = await loadLayer(repoRoot, `.env.${group}`);
       if (g) stack.push({ name: `.env.${group}`, lines: g });
     }
     if (appLayer) stack.push({ name: `.env.${name}`, lines: appLayer });
 
-    const outputs: { file: string; body: string; label: string }[] = [];
+    /** @type {{file: string, body: string, label: string}[]} */
+    const outputs = [];
     // A group layer alone must not materialise config for an app that has none
     // of its own — manager has only a .env.example today, and generating a full
     // production file for it would invent configuration nobody wrote.
@@ -270,7 +267,7 @@ async function main(): Promise<number> {
     const prod = compose(stack);
     outputs.push({ file: path.join(app.dir, app.production), body: render(prod.lines), label: "production" });
 
-    let dev: ReturnType<typeof compose> | null = null;
+    let dev = null;
     if (app.dev) {
       // The dev file is an OVERLAY, emitted from its own layer alone — see the
       // header. Composing the full stack into it would write the entire
@@ -290,7 +287,7 @@ async function main(): Promise<number> {
         // headings, so byte equality would fail on a correct migration. What
         // matters is that no name appears, disappears, or changes value.
         const want = parseEnvFile(out.body);
-        const have = current === null ? new Map<string, string>() : parseEnvFile(current);
+        const have = current === null ? new Map() : parseEnvFile(current);
         const added = [...want.keys()].filter((k) => !have.has(k));
         const removed = [...have.keys()].filter((k) => !want.has(k));
         const changed = [...want.keys()].filter((k) => have.has(k) && have.get(k) !== want.get(k));
@@ -320,7 +317,7 @@ async function main(): Promise<number> {
   if (opts.examples && !opts.only) {
     // One committed template for the whole repo, sectioned by layer, values
     // blanked, prose lifted from the per-app .example files it replaces.
-    const sections: string[] = [];
+    const sections = [];
     const layerFiles = [
       ".env.mobile",
       ...Object.keys(APPS).map((n) => `.env.${n}`),
@@ -334,7 +331,7 @@ async function main(): Promise<number> {
       if (vars.length === 0) continue;
       sections.push("", `# ${"═".repeat(74)}`, `# ${layerFile}`, `# ${"═".repeat(74)}`);
       for (const line of vars) {
-        const docs = docsFor(line.key!, referenceDoc);
+        const docs = docsFor(line.key, referenceDoc);
         if (docs.length) documented += 1;
         total += 1;
         sections.push("", ...docs, `${line.key}=`);

@@ -30,26 +30,18 @@ import { $ } from "bun";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import { buildPlan, countBy, formatPlan, parseEnvFile, type EnvMap } from "./lib/env-file";
-
-interface Options {
-  app: string;
-  environments: string[];
-  prune: boolean;
-  dryRun: boolean;
-  assumeYes: boolean;
-}
+import { buildPlan, countBy, formatPlan, parseEnvFile } from "./lib/env-file.mjs";
 
 const USAGE =
   'usage: bun scripts/eas-env-sync.ts <app-dir> [--environments "production preview"] [--prune] [--dry-run] [--yes]';
 
-function parseArgs(argv: string[]): Options {
+function parseArgs(argv) {
   const [app, ...rest] = argv;
   if (!app || app.startsWith("--")) {
     console.error(USAGE);
     process.exit(2);
   }
-  const opts: Options = {
+  const opts = {
     app: app.replace(/\/+$/, ""),
     environments: ["production", "preview"],
     prune: false,
@@ -78,7 +70,7 @@ function parseArgs(argv: string[]): Options {
 }
 
 /** `eas` if it is on PATH, else `bunx eas-cli` — same probe as the shell version. */
-async function resolveEas(): Promise<string[]> {
+async function resolveEas() {
   const found = await $`command -v eas`.nothrow().quiet();
   return found.exitCode === 0 ? ["eas"] : ["bunx", "eas-cli"];
 }
@@ -88,9 +80,9 @@ async function resolveEas(): Promise<string[]> {
  * can never be proven for them and they always read as an UPDATE. Harmless —
  * `env:create --force` is idempotent — but it must not be misread as a change.
  */
-const isMaskedSecret = (value: string) => value.includes("This is a secret env variable");
+const isMaskedSecret = (value) => value.includes("This is a secret env variable");
 
-async function readRemote(eas: string[], cwd: string, environment: string): Promise<EnvMap> {
+async function readRemote(eas, cwd, environment) {
   const [bin, ...pre] = eas;
   const result = await $`${bin} ${pre} env:list --environment ${environment} --format short`
     .cwd(cwd).nothrow().quiet();
@@ -99,13 +91,13 @@ async function readRemote(eas: string[], cwd: string, environment: string): Prom
   return result.exitCode === 0 ? parseEnvFile(result.stdout.toString()) : new Map();
 }
 
-async function confirm(question: string): Promise<boolean> {
+async function confirm(question) {
   process.stdout.write(question);
   for await (const line of console) return /^y/i.test(line.trim());
   return false;
 }
 
-async function main(): Promise<number> {
+async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const repoRoot = path.resolve(import.meta.dir, "..");
   const appDir = path.resolve(repoRoot, opts.app);
@@ -141,8 +133,8 @@ async function main(): Promise<number> {
       const [bin, ...pre] = eas;
       for (const entry of plan) {
         if (entry.action !== "ADD" && entry.action !== "UPDATE") continue;
-        const value = desired.get(entry.name)!;
-        const push = await $`${bin} ${pre} env:create --environment ${environment} --name ${entry.name} --value ${value} --visibility ${entry.visibility!} --force --non-interactive`
+        const value = desired.get(entry.name);
+        const push = await $`${bin} ${pre} env:create --environment ${environment} --name ${entry.name} --value ${value} --visibility ${entry.visibility} --force --non-interactive`
           .cwd(appDir).nothrow().quiet();
         if (push.exitCode !== 0) { console.error(`     ✗ failed to push ${entry.name}`); exitCode = 1; }
       }

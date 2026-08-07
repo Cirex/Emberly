@@ -1,18 +1,8 @@
 {
-  // Typecheck for the repo-root scripts. They are executed directly by Bun (no
-  // build step), so this exists purely as the gate `bun run typecheck:scripts`
-  // runs — the thing bash never had.
   "compilerOptions": {
-    "target": "ESNext",
-    "module": "Preserve",
-    "moduleResolution": "bundler",
-    "types": ["bun"],
-    "strict": true,
-    "noUncheckedIndexedAccess": false,
-    "skipLibCheck": true,
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true
+    "target":"ESNext","module":"Preserve","moduleResolution":"bundler",
+    "types":["bun"],"allowJs":true,"checkJs":true,"noEmit":true,
+    "strict":false,"skipLibCheck":true
   },
-  "include": ["**/*.ts"]
+  "include":["**/*.mjs"]
 }

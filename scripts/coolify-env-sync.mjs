@@ -42,16 +42,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import { buildPlan, countBy, formatPlan, parseEnvFile, type EnvMap } from "./lib/env-file";
-
-interface Target {
-  /** Env file, relative to the repo root. */
-  envFile: string;
-  /** Environment variable holding this resource's Coolify uuid. */
-  uuidVar: string;
-  /** Names matching this are inlined at build time and must be flagged. */
-  buildTime?: RegExp;
-}
+import { buildPlan, countBy, formatPlan, parseEnvFile } from "./lib/env-file.mjs";
 
 /**
  * `sync` reads `.env`, not `.env.production` — the worker's own `.env.example`
@@ -59,7 +50,7 @@ interface Target {
  * Getting this wrong would silently sync an empty file, so it is declared per
  * target rather than assumed.
  */
-const TARGETS: Record<string, Target> = {
+const TARGETS = {
   web: {
     envFile: "apps/web/.env.production",
     uuidVar: "COOLIFY_WEB_UUID",
@@ -71,28 +62,20 @@ const TARGETS: Record<string, Target> = {
   },
 };
 
-interface Options {
-  target: string;
-  uuid?: string;
-  prune: boolean;
-  dryRun: boolean;
-  assumeYes: boolean;
-}
-
-function usage(): never {
+function usage() {
   console.error("usage: bun run env:coolify <target> [--uuid <uuid>] [--prune] [--dry-run] [--yes]");
   console.error(`  <target>  ${Object.keys(TARGETS).join(" | ")}`);
   process.exit(2);
 }
 
-function parseArgs(argv: string[]): Options {
+function parseArgs(argv) {
   const [target, ...rest] = argv;
   if (!target) usage();
   if (!TARGETS[target]) {
     console.error(`✗ unknown target: ${target} (${Object.keys(TARGETS).join(" | ")})`);
     process.exit(2);
   }
-  const opts: Options = { target, prune: false, dryRun: false, assumeYes: false };
+  const opts = { target, prune: false, dryRun: false, assumeYes: false };
   for (let i = 0; i < rest.length; i += 1) {
     switch (rest[i]) {
       case "--uuid": {
@@ -110,17 +93,24 @@ function parseArgs(argv: string[]): Options {
 }
 
 /** A Coolify env var as the API returns it. `uuid` is needed to delete it. */
-interface RemoteEnv {
-  uuid: string;
-  key: string;
-  value: string;
-  is_build_time?: boolean;
-}
+/**
+ * A Coolify env var as the API returns it. `uuid` is needed to delete it.
+ *
+ * @typedef {object} RemoteEnv
+ * @property {string} uuid
+ * @property {string} key
+ * @property {string} value
+ * @property {boolean} [is_build_time]
+ */
 
 class CoolifyClient {
-  constructor(private readonly baseUrl: string, private readonly token: string) {}
+  constructor(baseUrl, token) {
+    this.baseUrl = baseUrl;
+    this.token = token;
+  }
 
-  private async request(method: string, endpoint: string, body?: unknown): Promise<Response> {
+  /** @param {string} method @param {string} endpoint @param {unknown} [body] */
+  async request(method, endpoint, body) {
     return fetch(`${this.baseUrl}/api/v1${endpoint}`, {
       method,
       headers: {
@@ -132,7 +122,8 @@ class CoolifyClient {
     });
   }
 
-  async listEnvs(appUuid: string): Promise<RemoteEnv[]> {
+  /** @param {string} appUuid @returns {Promise<RemoteEnv[]>} */
+  async listEnvs(appUuid) {
     const res = await this.request("GET", `/applications/${appUuid}/envs`);
     if (!res.ok) {
       throw new Error(`GET /applications/${appUuid}/envs → ${res.status} ${res.statusText}`);
@@ -141,18 +132,20 @@ class CoolifyClient {
     // Tolerate both a bare array and a { data: [...] } envelope; which one you
     // get has varied across Coolify versions.
     const rows = Array.isArray(body) ? body : (body?.data ?? []);
-    return rows as RemoteEnv[];
+    return rows;
   }
 
   /** One call for every add and update — fewer round trips, less half-applied state. */
-  async bulkUpsert(appUuid: string, entries: Array<{ key: string; value: string; is_build_time: boolean }>): Promise<void> {
+  /** @param {string} appUuid @param {{key: string, value: string, is_build_time: boolean}[]} entries */
+  async bulkUpsert(appUuid, entries) {
     const res = await this.request("PATCH", `/applications/${appUuid}/envs/bulk`, { data: entries });
     if (!res.ok) {
       throw new Error(`PATCH /applications/${appUuid}/envs/bulk → ${res.status} ${await res.text()}`);
     }
   }
 
-  async deleteEnv(appUuid: string, envUuid: string): Promise<void> {
+  /** @param {string} appUuid @param {string} envUuid */
+  async deleteEnv(appUuid, envUuid) {
     const res = await this.request("DELETE", `/applications/${appUuid}/envs/${envUuid}`);
     if (!res.ok) {
       throw new Error(`DELETE /applications/${appUuid}/envs/${envUuid} → ${res.status} ${res.statusText}`);
@@ -160,14 +153,14 @@ class CoolifyClient {
   }
 }
 
-async function confirm(question: string): Promise<boolean> {
+async function confirm(question) {
   process.stdout.write(question);
   for await (const line of console) return /^y/i.test(line.trim());
   return false;
 }
 
 /** Load `.env.coolify` into process.env without clobbering anything already set. */
-async function loadConfig(repoRoot: string): Promise<void> {
+async function loadConfig(repoRoot) {
   const file = path.join(repoRoot, ".env.coolify");
   if (!existsSync(file)) return;
   for (const [key, value] of parseEnvFile(await Bun.file(file).text())) {
@@ -175,12 +168,12 @@ async function loadConfig(repoRoot: string): Promise<void> {
   }
 }
 
-async function main(): Promise<number> {
+async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const repoRoot = path.resolve(import.meta.dir, "..");
   await loadConfig(repoRoot);
 
-  const target = TARGETS[opts.target]!;
+  const target = TARGETS[opts.target];
   const baseUrl = process.env.COOLIFY_URL?.trim().replace(/\/+$/, "");
   const token = process.env.COOLIFY_API_TOKEN?.trim();
   const appUuid = opts.uuid ?? process.env[target.uuidVar]?.trim();
@@ -209,20 +202,20 @@ async function main(): Promise<number> {
   if (!opts.prune) console.log("  (no --prune: variables missing from the file are reported, not deleted)");
   console.log();
 
-  const client = new CoolifyClient(baseUrl!, token!);
-  let remoteRows: RemoteEnv[];
+  const client = new CoolifyClient(baseUrl, token);
+  let remoteRows;
   try {
-    remoteRows = await client.listEnvs(appUuid!);
+    remoteRows = await client.listEnvs(appUuid);
   } catch (error) {
-    console.error(`✗ could not read the resource's environment: ${(error as Error).message}`);
+    console.error(`✗ could not read the resource's environment: ${/** @type {Error} */ (error).message}`);
     return 1;
   }
 
-  const remote: EnvMap = new Map(remoteRows.map((r) => [r.key, r.value ?? ""]));
+  const remote = new Map(remoteRows.map((r) => [r.key, r.value ?? ""]));
   const uuidByKey = new Map(remoteRows.map((r) => [r.key, r.uuid]));
   const plan = buildPlan(desired, remote, { prune: opts.prune });
   // Annotate with the one storage decision this script actually makes.
-  const isBuildTime = (name: string) => target.buildTime?.test(name) ?? false;
+  const isBuildTime = (name) => target.buildTime?.test(name) ?? false;
   for (const line of formatPlan(plan, (e) =>
     (e.action === "ADD" || e.action === "UPDATE") && isBuildTime(e.name) ? "build-time" : undefined,
   )) console.log(line);
@@ -235,15 +228,15 @@ async function main(): Promise<number> {
       .filter((e) => e.action === "ADD" || e.action === "UPDATE")
       .map((e) => ({
         key: e.name,
-        value: desired.get(e.name)!,
+        value: desired.get(e.name),
         is_build_time: isBuildTime(e.name),
       }));
 
     if (upserts.length > 0) {
       try {
-        await client.bulkUpsert(appUuid!, upserts);
+        await client.bulkUpsert(appUuid, upserts);
       } catch (error) {
-        console.error(`✗ push failed: ${(error as Error).message}`);
+        console.error(`✗ push failed: ${/** @type {Error} */ (error).message}`);
         return 1;
       }
     }
@@ -258,8 +251,8 @@ async function main(): Promise<number> {
         for (const entry of deletions) {
           const envUuid = uuidByKey.get(entry.name);
           if (!envUuid) { console.error(`     ✗ no uuid for ${entry.name}, skipped`); continue; }
-          try { await client.deleteEnv(appUuid!, envUuid); deleted += 1; }
-          catch (error) { console.error(`     ✗ failed to delete ${entry.name}: ${(error as Error).message}`); }
+          try { await client.deleteEnv(appUuid, envUuid); deleted += 1; }
+          catch (error) { console.error(`     ✗ failed to delete ${entry.name}: ${/** @type {Error} */ (error).message}`); }
         }
       }
     }

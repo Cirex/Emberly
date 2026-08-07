@@ -31,22 +31,12 @@ import { $ } from "bun";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-interface Options {
-  app: string;
-  profile: string;
-  submit: boolean;
-  skipEnv: boolean;
-  allowDirty: boolean;
-  dryRun: boolean;
-  assumeYes: boolean;
-}
-
 const USAGE = "usage: bun scripts/eas-release.ts <app-dir> [--profile production] [--submit] [--dry-run]";
 
-function parseArgs(argv: string[]): Options {
+function parseArgs(argv) {
   const [app, ...rest] = argv;
   if (!app || app.startsWith("--")) { console.error(USAGE); process.exit(2); }
-  const opts: Options = {
+  const opts = {
     app: app.replace(/\/+$/, ""),
     profile: "production",
     submit: false, skipEnv: false, allowDirty: false, dryRun: false, assumeYes: false,
@@ -69,23 +59,23 @@ function parseArgs(argv: string[]): Options {
   return opts;
 }
 
-function fail(message: string): never {
+function fail(message) {
   console.error(`✗ ${message}`);
   process.exit(1);
 }
 
 /** `expo` key if present, else the object itself — app.json has both shapes. */
-async function readJson(file: string): Promise<Record<string, any> | null> {
+async function readJson(file) {
   if (!existsSync(file)) return null;
   try { return await Bun.file(file).json(); } catch { return null; }
 }
 
-async function resolveEas(): Promise<string[]> {
+async function resolveEas() {
   const found = await $`command -v eas`.nothrow().quiet();
   return found.exitCode === 0 ? ["eas"] : ["bunx", "eas-cli"];
 }
 
-async function main(): Promise<number> {
+async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const repoRoot = path.resolve(import.meta.dir, "..");
   const appDir = path.resolve(repoRoot, opts.app);

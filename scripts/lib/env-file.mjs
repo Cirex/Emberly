@@ -5,10 +5,13 @@
  * and the Coolify sync need byte-identical parsing, and the bash version's
  * rules lived in two places already (a `grep -E` guard, a `%%=`/`#*=` split and
  * two quote-strip passes). One parser, one set of rules, unit-testable.
+ *
+ * Plain ESM with JSDoc types rather than TypeScript: Bun runs it directly, and
+ * the annotations still give editors and `tsc --checkJs` something to work with
+ * without a compile step.
  */
 
-/** A parsed variable. `value` is never logged — see `formatPlan`. */
-export type EnvMap = Map<string, string>;
+/** @typedef {Map<string, string>} EnvMap A parsed variable map; values are never logged — see `formatPlan`. */
 
 /**
  * Parse `.env` text into a name → value map.
@@ -21,17 +24,45 @@ export type EnvMap = Map<string, string>;
  *  - ONE surrounding pair of matching quotes is stripped
  *  - last assignment wins, matching how a shell would source the file
  */
-export function parseEnvFile(text: string): EnvMap {
-  const out: EnvMap = new Map();
+/** @param {string} text @returns {EnvMap} */
+export function parseEnvFile(text) {
+  /** @type {EnvMap} */
+  const out = new Map();
   for (const rawLine of text.split("\n")) {
     const line = rawLine.trimEnd();
     if (line.length === 0 || line.startsWith("#")) continue;
     const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s.exec(line);
     if (!match) continue;
     const [, key, raw] = match;
-    out.set(key, stripOneQuotePair(raw));
+    out.set(key, stripInlineComment(raw));
   }
   return out;
+}
+
+/**
+ * Strip an unquoted trailing `# comment`, then one surrounding quote pair.
+ *
+ * Bun's `--env-file` and every dotenv implementation drop a trailing comment,
+ * so a value read at runtime is NOT what a naive split on the first `=` gives.
+ * Four lines in apps/web/.env.production carry one, including SUPABASE_URL —
+ * without this, `env:eas` / `env:coolify` would push
+ * "https://….supabase.co          # [RUNTIME] server-only…" as the value and
+ * the deployed app would get a URL that cannot resolve.
+ *
+ * A `#` INSIDE quotes is part of the value (passwords contain them), and a `#`
+ * with no leading whitespace is too — `a#b` is one token, not a comment.
+ */
+function stripInlineComment(raw) {
+  const value = raw.trimStart();
+  const quote = value[0];
+  if (quote === '"' || quote === "'") {
+    const close = value.indexOf(quote, 1);
+    if (close !== -1) return value.slice(1, close);
+    return stripOneQuotePair(raw);
+  }
+  const comment = /\s#/.exec(value);
+  const body = comment ? value.slice(0, comment.index) : value;
+  return stripOneQuotePair(body.trimEnd());
 }
 
 /**
@@ -42,7 +73,7 @@ export function parseEnvFile(text: string): EnvMap {
  * seeing) than a delimiter. This is the rule that would have caught the
  * `RESMAN_PROPERTY_ID="489f…"` class of bug had the value come from a file.
  */
-function stripOneQuotePair(value: string): string {
+function stripOneQuotePair(value) {
   if (value.length >= 2) {
     const first = value[0];
     const last = value[value.length - 1];
@@ -66,19 +97,19 @@ function stripOneQuotePair(value: string): string {
  * re-push those vars with different visibility on the next sync — so it is
  * deliberately left alone here and called out instead.
  */
-export function isSecretName(name: string): boolean {
+export function isSecretName(name) {
   if (name.startsWith("EXPO_PUBLIC_")) return false;
   return /TOKEN|SECRET|PASSWORD|PRIVATE/.test(name);
 }
 
-export type PlanAction = "ADD" | "UPDATE" | "UNCHANGED" | "ORPHAN" | "DELETE";
-
-export interface PlanEntry {
-  name: string;
-  action: PlanAction;
-  /** Present for ADD/UPDATE only; describes storage, never the value. */
-  visibility?: "secret" | "plaintext";
-}
+/** @typedef {"ADD"|"UPDATE"|"UNCHANGED"|"ORPHAN"|"DELETE"} PlanAction */
+/**
+ * @typedef {object} PlanEntry
+ * @property {string} name
+ * @property {PlanAction} action
+ * @property {"secret"|"plaintext"} [visibility] Present for ADD/UPDATE only;
+ *   describes storage, never the value.
+ */
 
 /**
  * Diff desired (the file) against remote (the platform).
@@ -88,22 +119,20 @@ export interface PlanEntry {
  * UPDATE. That is harmless because the push is idempotent, but it must not be
  * mistaken for a real change when reading the plan.
  */
+/**
+ * @param {EnvMap} desired
+ * @param {EnvMap} remote
+ * @param {{prune: boolean, remoteMasksSecrets?: (value: string) => boolean, visibility?: boolean}} opts
+ * @returns {PlanEntry[]}
+ */
 export function buildPlan(
-  desired: EnvMap,
-  remote: EnvMap,
-  opts: {
-    prune: boolean;
-    remoteMasksSecrets?: (value: string) => boolean;
-    /**
-     * Whether the destination stores a per-variable visibility. EAS does and the
-     * script picks it, so the plan must show it. Coolify does not take one on
-     * this endpoint — printing "(plaintext)" there would advertise a decision
-     * nothing is making. Off by default for that reason.
-     */
-    visibility?: boolean;
-  } = { prune: false },
-): PlanEntry[] {
-  const plan: PlanEntry[] = [];
+  desired,
+  remote,
+  opts
+ = { prune: false },
+) {
+  /** @type {PlanEntry[]} */
+  const plan = [];
   const masked = opts.remoteMasksSecrets ?? (() => false);
   const showVisibility = opts.visibility ?? false;
 
@@ -113,7 +142,7 @@ export function buildPlan(
       plan.push({ name, action: "ADD", visibility });
       continue;
     }
-    const have = remote.get(name)!;
+    const have = remote.get(name);
     if (masked(have) || have !== want) {
       plan.push({ name, action: "UPDATE", visibility });
     } else {
@@ -135,15 +164,19 @@ export function buildPlan(
  * it is safe to paste into a ticket or read over a shared screen, which is what
  * makes `--dry-run` a usable first step rather than a leak.
  */
-export function formatPlan(
-  plan: PlanEntry[],
-  /** Extra per-entry tag, e.g. Coolify's build-time flag. Names only, no values. */
-  annotate?: (entry: PlanEntry) => string | undefined,
-): string[] {
-  const glyph: Record<PlanAction, string> = {
+/**
+ * @param {PlanEntry[]} plan
+ * @param {(entry: PlanEntry) => string | undefined} [annotate] Extra per-entry
+ *   tag, e.g. Coolify's build-time flag. Names only, no values.
+ * @returns {string[]}
+ */
+export function formatPlan(plan, annotate) {
+  /** @type {Record<PlanAction, string>} */
+  const glyph = {
     ADD: "+", UPDATE: "+", UNCHANGED: "·", ORPHAN: "!", DELETE: "-",
   };
-  const note: Record<PlanAction, string> = {
+  /** @type {Record<PlanAction, string>} */
+  const note = {
     ADD: "", UPDATE: "", UNCHANGED: "",
     ORPHAN: "  (remote only, not in the file)",
     DELETE: "  (absent from the file)",
@@ -154,8 +187,10 @@ export function formatPlan(
   });
 }
 
-export function countBy(plan: PlanEntry[]): Record<PlanAction, number> {
-  const counts: Record<PlanAction, number> = {
+/** @param {PlanEntry[]} plan @returns {Record<PlanAction, number>} */
+export function countBy(plan) {
+  /** @type {Record<PlanAction, number>} */
+  const counts = {
     ADD: 0, UPDATE: 0, UNCHANGED: 0, ORPHAN: 0, DELETE: 0,
   };
   for (const e of plan) counts[e.action] += 1;

@@ -34,16 +34,7 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
-interface Device {
-  /** Output directory name, and the App Store slot it feeds. */
-  label: string;
-  /** `xcrun simctl` device name. */
-  simulator: string;
-  /** Exact pixel size Apple requires for this slot. */
-  expected: string;
-}
-
-const DEVICES: Device[] = [
+const DEVICES = [
   { label: "iphone-6.9", simulator: "iPhone 17 Pro Max", expected: "1320x2868" },
   { label: "ipad-13", simulator: "iPad Pro 13-inch (M5)", expected: "2064x2752" },
 ];
@@ -58,13 +49,13 @@ const SHOTS = ["01_launch"];
 /** No launch-complete signal exists; give the JS bundle time to render. */
 const RENDER_WAIT_MS = 8_000;
 
-async function plist(appPath: string, key: string): Promise<string> {
+async function plist(appPath, key) {
   const result = await $`/usr/libexec/PlistBuddy -c ${`Print :${key}`} ${path.join(appPath, "Info.plist")}`
     .nothrow().quiet();
   return result.exitCode === 0 ? result.stdout.toString().trim() : "";
 }
 
-async function udidFor(simulatorName: string): Promise<string | null> {
+async function udidFor(simulatorName) {
   const listed = await $`xcrun simctl list devices available`.nothrow().quiet();
   for (const line of listed.stdout.toString().split("\n")) {
     const trimmed = line.trim();
@@ -75,14 +66,14 @@ async function udidFor(simulatorName: string): Promise<string | null> {
   return null;
 }
 
-async function pixelSize(file: string): Promise<string> {
+async function pixelSize(file) {
   const out = (await $`sips -g pixelWidth -g pixelHeight ${file}`.nothrow().quiet()).stdout.toString();
   const w = /pixelWidth:\s*(\d+)/.exec(out)?.[1] ?? "?";
   const h = /pixelHeight:\s*(\d+)/.exec(out)?.[1] ?? "?";
   return `${w}x${h}`;
 }
 
-async function main(): Promise<number> {
+async function main() {
   const [appName, appPath] = process.argv.slice(2);
   if (!appName || !appPath) {
     console.error("usage: bun scripts/capture-store-screenshots.ts <maintenance|security|manager> <path-to-simulator-.app>");

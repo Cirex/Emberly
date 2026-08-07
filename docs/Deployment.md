@@ -400,7 +400,7 @@ The mobile apps build with **EAS Build** and are configured through `EXPO_PUBLIC
 
 Preferred — `bun run release <app>`, the front door for every app including web.
 It checks the version is unambiguous, then hands mobile apps to
-`scripts/eas-release.sh` and web to Vercel:
+`bun scripts/eas-release.ts` and web to Vercel:
 
 ```bash
 bun run release security --dry-run   # preflight only, ships nothing
@@ -413,13 +413,13 @@ It refuses to ship an app whose version disagrees with itself — see
 [Versioning](#versioning) for why that is a real failure mode rather than
 tidiness.
 
-`scripts/eas-release.sh` is still there and unchanged if you want the mobile
+`bun scripts/eas-release.ts` is still there and unchanged if you want the mobile
 path directly (run from the repo root, app dir as the argument):
 
 ```bash
-scripts/eas-release.sh apps/security --dry-run    # preflight only: version, git, env diff
-scripts/eas-release.sh apps/security              # sync env, then build
-scripts/eas-release.sh apps/security --submit     # …and submit to TestFlight
+bun scripts/eas-release.ts apps/security --dry-run    # preflight only: version, git, env diff
+bun scripts/eas-release.ts apps/security              # sync env, then build
+bun scripts/eas-release.ts apps/security --submit     # …and submit to TestFlight
 ```
 
 The preflight refuses to build when the app dir or `packages/` has uncommitted
@@ -436,15 +436,15 @@ eas submit --platform ios --profile production   # after the build succeeds
 
 ### Keeping EAS env vars in sync with the local file
 
-EAS never reads local `.env` files, so the two drift. `scripts/eas-env-sync.sh`
+EAS never reads local `.env` files, so the two drift. `bun scripts/eas-env-sync.ts`
 mirrors `<app>/.env.production` into the app's EAS environments — it adds new
 variables, updates changed ones, and with `--prune` **deletes variables that are
 no longer in the file**:
 
 ```bash
-scripts/eas-env-sync.sh apps/security --dry-run   # diff only — always safe
-scripts/eas-env-sync.sh apps/security             # push adds + updates
-scripts/eas-env-sync.sh apps/security --prune     # full mirror (confirms before deleting)
+bun scripts/eas-env-sync.ts apps/security --dry-run   # diff only — always safe
+bun scripts/eas-env-sync.ts apps/security             # push adds + updates
+bun scripts/eas-env-sync.ts apps/security --prune     # full mirror (confirms before deleting)
 ```
 
 Variable **names** and actions are printed; values never are. Names matching
@@ -457,8 +457,8 @@ does before deleting it: a variable absent from `.env.production` may still be
 one the app reads (`grep -r NAME apps/<app>`), or it may be a leftover from
 another project.
 
-> `scripts/eas-import-env.sh` is the deprecated predecessor — it pushed a
-> hardcoded list of five keys and never removed anything.
+> Its deprecated predecessor `eas-import-env.sh` — which pushed a hardcoded list
+> of five keys and never removed anything — has been deleted.
 
 ### API host
 

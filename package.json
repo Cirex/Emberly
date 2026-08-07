@@ -21,12 +21,14 @@
     "resident:start": "bun run --filter '@emberly/resident' start",
     "sync:build": "bun run --filter '@emberly/sync' build",
     "version": "bun scripts/version.mjs",
-    "release": "scripts/release.sh",
+    "release": "bun scripts/release.ts",
     "docs:api": "bun scripts/docs-api.mjs",
     "docs:schema": "bun apps/web/scripts/docs-schema.mjs",
-    "docs": "bun run docs:api && bun run docs:schema"
+    "docs": "bun run docs:api && bun run docs:schema",
+    "typecheck:scripts": "tsc -p scripts/tsconfig.json"
   },
   "devDependencies": {
+    "@types/bun": "1.3.14",
     "prettier": "^3.9.6",
     "turbo": "^2.10.6",
     "typescript": "^6.0.3"

@@ -18,7 +18,7 @@
     "test": "turbo run test",
     "web:dev": "bun run --filter '@emberly/web' dev",
     "web:build": "bun run --filter '@emberly/web' build",
-    "resident:start": "bun run --filter '@emberly/resident' start",
+    "start": "bun scripts/start.ts",
     "sync:build": "bun run --filter '@emberly/sync' build",
     "version": "bun scripts/version.mjs",
     "release": "bun scripts/release.ts",

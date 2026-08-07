@@ -15,6 +15,7 @@
  * do the dry run first and eyeball the parsed rows before writing anywhere.
  */
 import { ENV } from "./config/env";
+import { withLock } from "./shared/run-lock";
 import { createServiceClient } from "./db/client";
 import { syncMlgwPayments } from "./mlgw/jobs";
 
@@ -49,7 +50,11 @@ async function main(): Promise<void> {
   console.log("[run-mlgw-payments] complete:", JSON.stringify(result));
 }
 
-main().catch((error) => {
-  console.error("[run-mlgw-payments] failed:", error);
-  process.exit(1);
-});
+// One MLGW scraper at a time — the request ceiling is per process,
+// so a second concurrent run doubles it. See shared/run-lock.ts.
+withLock("mlgw", "run-mlgw-payments", main)
+  .then((code) => process.exit(code))
+  .catch((error) => {
+    console.error("[run-mlgw-payments] failed:", error);
+    process.exit(1);
+  });

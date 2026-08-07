@@ -8,6 +8,7 @@
  * (Coolify runs this on a schedule; run it by hand once to verify the port.)
  */
 import { ENV } from "./config/env";
+import { withLock } from "./shared/run-lock";
 import { createServiceClient } from "./db/client";
 import { ResManClient } from "./resman/client";
 import { resManConfigurationFromEnv, resManCredentialsFromEnv } from "./resman/config";
@@ -39,7 +40,11 @@ async function main(): Promise<void> {
   console.log("[run-units] complete:", JSON.stringify(result));
 }
 
-main().catch((error) => {
-  console.error("[run-units] failed:", error);
-  process.exit(1);
-});
+// One RESMAN scraper at a time — the request ceiling is per process,
+// so a second concurrent run doubles it. See shared/run-lock.ts.
+withLock("resman", "run-units", main)
+  .then((code) => process.exit(code))
+  .catch((error) => {
+    console.error("[run-units] failed:", error);
+    process.exit(1);
+  });

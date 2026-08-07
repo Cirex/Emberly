@@ -12,6 +12,7 @@
  * to be unimplemented until a PDF text library is wired in.
  */
 import { ENV } from "./config/env";
+import { withLock } from "./shared/run-lock";
 import { createServiceClient } from "./db/client";
 import { syncMlgwBills } from "./mlgw/jobs";
 
@@ -42,7 +43,11 @@ async function main(): Promise<void> {
   console.log("[run-mlgw-bills] complete:", JSON.stringify(result));
 }
 
-main().catch((error) => {
-  console.error("[run-mlgw-bills] failed:", error);
-  process.exit(1);
-});
+// One MLGW scraper at a time — the request ceiling is per process,
+// so a second concurrent run doubles it. See shared/run-lock.ts.
+withLock("mlgw", "run-mlgw-bills", main)
+  .then((code) => process.exit(code))
+  .catch((error) => {
+    console.error("[run-mlgw-bills] failed:", error);
+    process.exit(1);
+  });

@@ -35,6 +35,27 @@ export interface MlgwCredentials {
   password: string;
 }
 
+/**
+ * Stamp `synced_at` on rows whose mapper doesn't set it.
+ *
+ * Same insert-only trap the ResMan mirrors hit: `synced_at timestamptz default
+ * now()` fires on INSERT only, and an `ON CONFLICT DO UPDATE` never re-applies a
+ * column default. `toAccountRow` / `toBillRow` are faithful ports of Swift
+ * importers that had no such column, so neither wrote it — which froze
+ * mlgw_accounts and mlgw_bills at the moment they were first seeded (2026-07-22)
+ * while every row was in fact re-upserted on every pass, `updated_at` moving
+ * with it. Anything reading max(synced_at) — the admin pages, the MCP
+ * `data_freshness` tool — therefore reported MLGW as ~8 days stale on entirely
+ * current data.
+ *
+ * Only accounts and bills: `mlgw_payments` has no `synced_at` column at all
+ * (see schema.sql), so stamping payment rows would fail the upsert outright.
+ */
+export function stampSynced<T extends object>(rows: T[], syncedAt: string): T[] {
+  for (const row of rows) (row as Record<string, unknown>).synced_at = syncedAt;
+  return rows;
+}
+
 export interface SyncMlgwBillsParams {
   supabase: ServiceClient;
   /** Soft ref used as resman_property_id on the mirror rows. */
@@ -257,10 +278,18 @@ export async function syncMlgwBills(params: SyncMlgwBillsParams): Promise<SyncMl
   // row shapes are cast to the loose upsert row type at the DB boundary.
   const asRows = (rows: unknown[]): Array<Record<string, unknown>> =>
     rows as Array<Record<string, unknown>>;
-  const accountsOut = await upsertMirror(supabase, "mlgw_accounts", asRows([...accountsById.values()]), {
+  // One timestamp for the whole pass — this job "saw" every account and bill it
+  // re-upserted, whether or not anything about them moved. See `stampSynced`.
+  const syncedAt = new Date().toISOString();
+  const accountsOut = await upsertMirror(
+    supabase,
+    "mlgw_accounts",
+    asRows(stampSynced([...accountsById.values()], syncedAt)),
+    { conflictColumn: "id" },
+  );
+  const billsOut = await upsertMirror(supabase, "mlgw_bills", asRows(stampSynced(billRows, syncedAt)), {
     conflictColumn: "id",
   });
-  const billsOut = await upsertMirror(supabase, "mlgw_bills", asRows(billRows), { conflictColumn: "id" });
   const paymentsOut = await upsertMirror(supabase, "mlgw_payments", asRows(paymentRows), {
     conflictColumn: "id",
   });

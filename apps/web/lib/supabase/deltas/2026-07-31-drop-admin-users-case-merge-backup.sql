@@ -1,0 +1,28 @@
+-- ============================================================================
+-- Drop the admin_users case-merge backup
+-- ============================================================================
+--
+-- WHY. `public.admin_users_case_merge_backup_20260801` is a one-off artifact of
+-- the admin_users email-case merge. It is referenced by no application code, no
+-- foreign key and no view. It was created outside schema.sql and so never got
+-- the `enable row level security` line that every first-party table relies on —
+-- with Supabase's default anon/authenticated CRUD grants still in place (this
+-- project has never revoked them), that left an admin-role table readable AND
+-- writable by anyone with the project's anon key until
+-- 2026-07-31-enable-rls-on-unprotected-tables.sql closed it.
+--
+-- WHAT IT HELD, checked before dropping rather than assumed:
+--   * 5 rows, 5 distinct ids. NO secrets: `key_hash` was present as a column but
+--     EMPTY in all 5 rows, and `email` was null in all 5 — as it is in the live
+--     admin_users too, so that column is vestigial project-wide.
+--   * 4 of the 5 ids still exist in public.admin_users with identical role and
+--     email.
+--   * 1 id — 09385f6e-f958-4e29-ade0-6f847c16253d, role 'viewer', active,
+--     last_login_at 2026-07-23 — has no counterpart in admin_users. That is the
+--     duplicate the case-merge consolidated away, and dropping this table
+--     discards the only remaining record of it. Confirmed as intended: the
+--     merge is settled and the consolidated row is not wanted.
+--
+-- Not reversible. The table is gone and the consolidated row with it.
+
+drop table if exists public.admin_users_case_merge_backup_20260801;

@@ -88,6 +88,16 @@ try {
     );
   `);
 
+  // RLS on, no policies — the same "service-role only" posture as every table
+  // in schema.sql, and it is NOT optional here. Supabase grants anon and
+  // authenticated full CRUD on the exposed `public` schema by default and this
+  // project has never revoked those grants, so RLS is the only barrier: without
+  // this line the ledger was readable and WRITABLE with the project's anon key,
+  // and deleting a row silently re-runs a migration. The service role bypasses
+  // RLS, so this script (and everything else) is unaffected.
+  // Idempotent — enabling it twice is a no-op.
+  await client.query("alter table public.schema_migrations enable row level security;");
+
   const { rows } = await client.query("select name from public.schema_migrations");
   const applied = new Set(rows.map((r) => r.name));
 

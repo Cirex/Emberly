@@ -48,7 +48,7 @@ Writing it here would fight the service that already manages it.
 | Deployable | Package | Platform | Config source |
 | --- | --- | --- | --- |
 | Admin + resident web + API | `@emberly/web` | Coolify (Dockerfile, build context = **repo root**) | `apps/web/.env.production` |
-| ResMan/MLGW sync worker | `@emberly/sync` | Coolify (cron worker, base dir `supabase/sync`) | `supabase/sync/.env` (secret store) |
+| ResMan/MLGW sync worker | `@emberly/sync` | Coolify (idle container + scheduled tasks; base dir `/`, Dockerfile `supabase/sync/Dockerfile`) | `supabase/sync/.env` (secret store) |
 | Resident iOS app | `@emberly/resident` | EAS Build → App Store | `apps/resident/.env.production` |
 | Security/guard iOS app | `@emberly/security` | EAS Build → App Store | `apps/security/.env.production` |
 | Maintenance iOS app | `@emberly/maintenance` | EAS Build → App Store | `apps/maintenance/.env.production` |
@@ -275,10 +275,40 @@ live **only** in Coolify's secret store — never in the web env, never in the i
      bills job logs one clear line and falls back to the legacy text-transcript invoice PDFs —
      the sync still succeeds, but every PDF-less bill looks alike again.
    - **Sentry (optional):** its own DSN if you want worker error reporting.
-3. Configure the run schedule for the worker's sync runners (units, available units, unit
-   details/info, lease details, delinquency, work orders, MLGW bills/payments). The image's
-   default command, `bun run sync:all:once`, runs the whole sequence; a scheduled task can
-   instead invoke one runner, e.g. `bun run src/run-mlgw-bills.ts`.
+3. **Scheduled tasks.** The container idles (`CMD ["sleep", "infinity"]`) and the work is
+   driven by Coolify scheduled tasks that `exec` into it. That indirection is not
+   decoration — see the comment at the bottom of the Dockerfile: a container whose command
+   runs a pass and exits reads as a crash to Coolify and gets restart-looped until it hits
+   the 10/10 limit, and Coolify's custom-start-command field cannot override a Dockerfile
+   build's `CMD`.
+
+   **Commands must call `src/run-*.ts` directly.** Every `sync:*` package script except
+   `sync:all:once`, `sync:units` and `sync:dev` carries `--env-file=.env`, and there is no
+   `.env` in the image — Coolify supplies configuration through the process environment, so
+   those scripts exit immediately. `WORKDIR` is already `/app/supabase/sync`, so relative
+   paths work as written, and **Container name** stays blank.
+
+   Runners have a dependency order — units before the reports that enrich them, MLGW last
+   because `syncMlgwBills` reads `resman_units` for address→unit matching. Chain each group
+   with `&&` so a failure stops the group and the task's exit code turns the run red:
+
+   | Name | Command | Suggested frequency |
+   | --- | --- | --- |
+   | `sync-core` | `bun run src/run-units.ts && bun run src/run-unit-info.ts && bun run src/run-available-units.ts && bun run src/run-delinquency.ts` | `13 * * * *` |
+   | `sync-work-orders` | `bun run src/run-work-orders.ts && bun run src/run-translate-work-orders.ts` | `*/15 * * * *` |
+   | `sync-deep-scrape` | `bun run src/run-unit-details.ts && bun run src/run-lease-details.ts` | `41 6 * * *` |
+   | `sync-mlgw` | `bun run src/run-mlgw-bills.ts && bun run src/run-mlgw-payments.ts` | `7 11 * * *` |
+   | `sync-derived` | `bun run src/run-pm-generate.ts && bun run src/run-manager-alerts.ts && bun run src/run-snapshots.ts && bun run src/run-unit-snapshots.ts` | `31 14 * * *` |
+
+   Raise the per-task **timeout** well past the real runtime for the deep scrape (891 units)
+   and MLGW (3,542 bills) — the 300s default will cut both off mid-run. `run-owner-report.ts`
+   and `run-snapshots-backfill.ts` are on-demand and deliberately absent.
+
+   To confirm a task is landing in the right container before pasting a real command, run
+   `sh -c 'echo PWD=$PWD; command -v bun'` — expect `/app/supabase/sync` and
+   `/usr/local/bin/bun`. `PWD=/app` with no bun means the task is on the **web** resource.
+
+   A one-shot full pass on demand: `docker run --env-file .env emberly-sync bun run sync:all:once`.
 
 ### MLGW bill capture (what lands in the `mlgw-bills` bucket)
 

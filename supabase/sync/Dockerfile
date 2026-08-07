@@ -122,10 +122,31 @@ COPY --from=build --chown=emberly:emberly /app /app
 WORKDIR /app/supabase/sync
 USER emberly
 
-# One full pass over every sync runner. Coolify's scheduled tasks may instead
-# invoke a single runner in this container, e.g.
+# Idle by default. The work is driven by Coolify scheduled tasks that `exec`
+# into this container, e.g.
 #   bun run src/run-mlgw-bills.ts
-# `sync:all:once` is the container form of `sync:all`: identical runners, but it
-# reads configuration from the process environment (Coolify's secret store)
-# instead of a `.env` file that does not exist in the image.
-CMD ["bun", "run", "sync:all:once"]
+#
+# This used to be `CMD ["bun", "run", "sync:all:once"]`, which could not work as
+# a Coolify Application: that command runs one pass and EXITS, and an
+# Application that exits reads as a crash — so Coolify restarted it, on success
+# exactly as on failure, until it hit the 10/10 restart limit and gave up. A
+# missing env var made it fail in about a second and burn all ten restarts
+# immediately; a correct environment would instead have looped full ResMan
+# scrapes back to back. Either way the container was never up long enough to be
+# a target for the scheduled tasks that are supposed to drive it.
+#
+# Overriding the command in Coolify's UI does not fix this: its custom start
+# command applies to the Docker Compose build pack, not to Dockerfile builds,
+# where the image CMD wins (coollabsio/coolify#1689). So the keepalive has to
+# live here, where nothing in the UI can override it.
+#
+# A one-shot full pass is still available on demand — the image just needs to be
+# told to do it rather than defaulting to it:
+#   docker run --env-file .env emberly-sync bun run sync:all:once
+#
+# `sync:all:once` remains the container form of `sync:all`: identical runners,
+# but it reads configuration from the process environment (Coolify's secret
+# store) instead of a `.env` file that does not exist in the image. Every other
+# `sync:*` script carries `--env-file=.env` and CANNOT run in this image for
+# that reason — scheduled tasks must invoke `src/run-*.ts` directly.
+CMD ["sleep", "infinity"]

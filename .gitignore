@@ -63,3 +63,6 @@ Emberly.wiki/
 
 # ResMan login debug harness output (raw HTML — may contain session tokens)
 .resman-debug/
+
+# Coolify API credentials + resource uuids for scripts/coolify-env-sync.ts
+.env.coolify

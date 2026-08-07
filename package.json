@@ -24,6 +24,7 @@
     "release": "bun scripts/release.ts",
     "release:eas": "bun scripts/eas-release.ts",
     "env:eas": "bun scripts/eas-env-sync.ts",
+    "env:coolify": "bun scripts/coolify-env-sync.ts",
     "store:screenshots": "bun scripts/capture-store-screenshots.ts",
     "docs:api": "bun scripts/docs-api.mjs",
     "docs:schema": "bun apps/web/scripts/docs-schema.mjs",

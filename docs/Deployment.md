@@ -342,6 +342,34 @@ live **only** in Coolify's secret store — never in the web env, never in the i
 
    A one-shot full pass on demand: `docker run --env-file .env emberly-sync bun run sync:all:once`.
 
+### Syncing environment variables
+
+Both Coolify resources were configured by typing into a web form, with nothing to diff them
+against. `bun run env:coolify` mirrors the local file into the resource over the Coolify API
+and, crucially, tells you when they disagree:
+
+```bash
+bun run env:coolify sync --dry-run    # diff only — always safe, values never printed
+bun run env:coolify sync              # push adds + updates
+bun run env:coolify web --prune       # full mirror (confirms before deleting)
+```
+
+`sync` reads `supabase/sync/.env`; `web` reads `apps/web/.env.production`. On the web target
+every `NEXT_PUBLIC_*` is pushed with `is_build_time` set, so the "Build Variable" tick above
+is no longer a thing anyone has to remember — forgetting it is silent, and the variable is
+simply undefined in the browser bundle.
+
+Configure it once in a gitignored `.env.coolify` at the repo root:
+
+```
+COOLIFY_URL=https://coolify.example.com
+COOLIFY_API_TOKEN=...      # Keys & Tokens -> API tokens (needs write)
+COOLIFY_WEB_UUID=...       # each resource's uuid, from its Coolify URL
+COOLIFY_SYNC_UUID=...
+```
+
+Changes take effect on the next deploy of the resource, not immediately.
+
 ### MLGW bill capture (what lands in the `mlgw-bills` bucket)
 
 Every bill is stored under one stem, `<yyyyMMdd>-<account>[-<document>]`:

@@ -91,13 +91,24 @@ export interface PlanEntry {
 export function buildPlan(
   desired: EnvMap,
   remote: EnvMap,
-  opts: { prune: boolean; remoteMasksSecrets?: (value: string) => boolean } = { prune: false },
+  opts: {
+    prune: boolean;
+    remoteMasksSecrets?: (value: string) => boolean;
+    /**
+     * Whether the destination stores a per-variable visibility. EAS does and the
+     * script picks it, so the plan must show it. Coolify does not take one on
+     * this endpoint — printing "(plaintext)" there would advertise a decision
+     * nothing is making. Off by default for that reason.
+     */
+    visibility?: boolean;
+  } = { prune: false },
 ): PlanEntry[] {
   const plan: PlanEntry[] = [];
   const masked = opts.remoteMasksSecrets ?? (() => false);
+  const showVisibility = opts.visibility ?? false;
 
   for (const [name, want] of desired) {
-    const visibility = isSecretName(name) ? "secret" : "plaintext";
+    const visibility = !showVisibility ? undefined : isSecretName(name) ? "secret" : "plaintext";
     if (!remote.has(name)) {
       plan.push({ name, action: "ADD", visibility });
       continue;
@@ -124,7 +135,11 @@ export function buildPlan(
  * it is safe to paste into a ticket or read over a shared screen, which is what
  * makes `--dry-run` a usable first step rather than a leak.
  */
-export function formatPlan(plan: PlanEntry[]): string[] {
+export function formatPlan(
+  plan: PlanEntry[],
+  /** Extra per-entry tag, e.g. Coolify's build-time flag. Names only, no values. */
+  annotate?: (entry: PlanEntry) => string | undefined,
+): string[] {
   const glyph: Record<PlanAction, string> = {
     ADD: "+", UPDATE: "+", UNCHANGED: "·", ORPHAN: "!", DELETE: "-",
   };
@@ -134,8 +149,8 @@ export function formatPlan(plan: PlanEntry[]): string[] {
     DELETE: "  (absent from the file)",
   };
   return plan.map((e) => {
-    const vis = e.visibility ? ` (${e.visibility})` : "";
-    return `  ${glyph[e.action]}  ${e.name.padEnd(42)} ${e.action}${vis}${note[e.action]}`;
+    const tag = e.visibility ?? annotate?.(e);
+    return `  ${glyph[e.action]}  ${e.name.padEnd(42)} ${e.action}${tag ? ` (${tag})` : ""}${note[e.action]}`;
   });
 }
 

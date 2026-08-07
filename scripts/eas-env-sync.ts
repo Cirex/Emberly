@@ -129,7 +129,7 @@ async function main(): Promise<number> {
   for (const environment of opts.environments) {
     console.log(`── ${environment} ─────────────────────────────────`);
     const remote = await readRemote(eas, appDir, environment);
-    const plan = buildPlan(desired, remote, { prune: opts.prune, remoteMasksSecrets: isMaskedSecret });
+    const plan = buildPlan(desired, remote, { prune: opts.prune, remoteMasksSecrets: isMaskedSecret, visibility: true });
     for (const line of formatPlan(plan)) console.log(line);
 
     const counts = countBy(plan);

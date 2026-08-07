@@ -301,9 +301,23 @@ live **only** in Coolify's secret store — never in the web env, never in the i
    | --- | --- | --- | --- | --- |
    | `sync-core` | `bun run src/run-units.ts && bun run src/run-unit-info.ts && bun run src/run-available-units.ts && bun run src/run-delinquency.ts` | `13 * * * *` | hourly | 600 |
    | `sync-work-orders` | `bun run src/run-work-orders.ts && bun run src/run-translate-work-orders.ts` | `*/15 * * * *` | every 15 min | 300 |
-   | `sync-deep-scrape` | `sh -c 'set -o pipefail; { bun run src/run-unit-details.ts && bun run src/run-lease-details.ts; } 2>&1 \| tee /proc/1/fd/1'` | `41 16,23 * * *` | 11:41 AM, 6:41 PM | 14400 |
+   | `sync-unit-details` | `sh -c 'set -o pipefail; bun run src/run-unit-details.ts 2>&1 \| tee /proc/1/fd/1'` | `11 5,17 * * *` | 12:11 AM, 12:11 PM | — |
+   | `sync-lease-details` | `sh -c 'set -o pipefail; bun run src/run-lease-details.ts 2>&1 \| tee /proc/1/fd/1'` | `23 6,18 * * *` | 1:23 AM, 1:23 PM | — |
    | `sync-mlgw` | `sh -c 'set -o pipefail; { bun run src/run-mlgw-bills.ts && bun run src/run-mlgw-payments.ts; } 2>&1 \| tee /proc/1/fd/1'` | `23 7 * * *` | 2:23 AM | 14400 |
    | `sync-derived` | `bun run src/run-pm-generate.ts && bun run src/run-manager-alerts.ts && bun run src/run-snapshots.ts && bun run src/run-unit-snapshots.ts` | `31 14 * * *` | 9:31 AM | 900 |
+
+   **The deep scrape is TWO tasks, not one chain, and that is not cosmetic.** Coolify wraps
+   each scheduled task in `timeout 3600` on its SSH invocation — observed in `ps`, and NOT
+   the per-task timeout field, which was set to 36000 and had no effect. Chained, the pair
+   runs ~1h45m (measured: ~20 units/min over 891, ~13 leases/min over 750) and is killed at
+   the hour mark every time. Worse, `timeout` kills the SSH client while `docker exec` leaves
+   the container process running, so each killed run leaves an ORPHAN still scraping — one
+   was found at 45 minutes old, competing with a fresh chain for the same rate limit. Split,
+   each task finishes inside the hour.
+
+   Find orphans with `ps -eo pid,ppid,etime,args | grep "[r]un-"`. Kill the `bun` process,
+   not its shells — the shells are only waiting on it and exit by themselves, while killing
+   them leaves the scraper running.
 
    The **timeout** column is not advisory. The 300s default cuts the deep scrape (891 unit
    pages) and MLGW (3,542 bill downloads) off mid-run; both are set to 4h here. Check the

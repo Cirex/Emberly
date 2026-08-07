@@ -14,7 +14,7 @@
   "scripts": {
     "build": "turbo run build",
     "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck && bun run typecheck:scripts",
     "test": "turbo run test",
     "web:dev": "bun run --filter '@emberly/web' dev",
     "web:build": "bun run --filter '@emberly/web' build",
@@ -22,6 +22,9 @@
     "sync:build": "bun run --filter '@emberly/sync' build",
     "version": "bun scripts/version.mjs",
     "release": "bun scripts/release.ts",
+    "release:eas": "bun scripts/eas-release.ts",
+    "env:eas": "bun scripts/eas-env-sync.ts",
+    "store:screenshots": "bun scripts/capture-store-screenshots.ts",
     "docs:api": "bun scripts/docs-api.mjs",
     "docs:schema": "bun apps/web/scripts/docs-schema.mjs",
     "docs": "bun run docs:api && bun run docs:schema",

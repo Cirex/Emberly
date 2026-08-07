@@ -292,17 +292,49 @@ live **only** in Coolify's secret store — never in the web env, never in the i
    because `syncMlgwBills` reads `resman_units` for address→unit matching. Chain each group
    with `&&` so a failure stops the group and the task's exit code turns the run red:
 
-   | Name | Command | Suggested frequency |
-   | --- | --- | --- |
-   | `sync-core` | `bun run src/run-units.ts && bun run src/run-unit-info.ts && bun run src/run-available-units.ts && bun run src/run-delinquency.ts` | `13 * * * *` |
-   | `sync-work-orders` | `bun run src/run-work-orders.ts && bun run src/run-translate-work-orders.ts` | `*/15 * * * *` |
-   | `sync-deep-scrape` | `bun run src/run-unit-details.ts && bun run src/run-lease-details.ts` | `41 6 * * *` |
-   | `sync-mlgw` | `bun run src/run-mlgw-bills.ts && bun run src/run-mlgw-payments.ts` | `7 11 * * *` |
-   | `sync-derived` | `bun run src/run-pm-generate.ts && bun run src/run-manager-alerts.ts && bun run src/run-snapshots.ts && bun run src/run-unit-snapshots.ts` | `31 14 * * *` |
+   Cron has no timezone — it fires on the **server** clock. The times below are UTC, with
+   the property-local equivalent noted, because the container runs UTC while the property is
+   Central. They shift by an hour when DST ends unless Coolify's timezone field is set.
 
-   Raise the per-task **timeout** well past the real runtime for the deep scrape (891 units)
-   and MLGW (3,542 bills) — the 300s default will cut both off mid-run. `run-owner-report.ts`
-   and `run-snapshots-backfill.ts` are on-demand and deliberately absent.
+   | Name | Command | Frequency (UTC) | Local | Timeout |
+   | --- | --- | --- | --- | --- |
+   | `sync-core` | `bun run src/run-units.ts && bun run src/run-unit-info.ts && bun run src/run-available-units.ts && bun run src/run-delinquency.ts` | `13 * * * *` | hourly | 600 |
+   | `sync-work-orders` | `bun run src/run-work-orders.ts && bun run src/run-translate-work-orders.ts` | `*/15 * * * *` | every 15 min | 300 |
+   | `sync-deep-scrape` | `sh -c 'set -o pipefail; { bun run src/run-unit-details.ts && bun run src/run-lease-details.ts; } 2>&1 \| tee /proc/1/fd/1'` | `41 16,23 * * *` | 11:41 AM, 6:41 PM | 14400 |
+   | `sync-mlgw` | `sh -c 'set -o pipefail; { bun run src/run-mlgw-bills.ts && bun run src/run-mlgw-payments.ts; } 2>&1 \| tee /proc/1/fd/1'` | `23 7 * * *` | 2:23 AM | 14400 |
+   | `sync-derived` | `bun run src/run-pm-generate.ts && bun run src/run-manager-alerts.ts && bun run src/run-snapshots.ts && bun run src/run-unit-snapshots.ts` | `31 14 * * *` | 9:31 AM | 900 |
+
+   The **timeout** column is not advisory. The 300s default cuts the deep scrape (891 unit
+   pages) and MLGW (3,542 bill downloads) off mid-run; both are set to 4h here. Check the
+   first run's real duration and adjust. `run-owner-report.ts` and `run-snapshots-backfill.ts`
+   are on-demand and deliberately absent.
+
+   #### Watching a long run while it happens
+
+   Coolify buffers a scheduled task's output and shows it only once the task ends, which is
+   no use on a job that runs for hours. The two long groups above therefore pipe through
+   `tee /proc/1/fd/1`: PID 1 is the container's `sleep infinity`, and its stdout **is** the
+   container log stream, so their output appears live in the resource's **Logs** tab while
+   still being captured in the task's own execution record.
+
+   Three things make that work, all verified against the image:
+
+   - `run-unit-details` logs per unit (`→ [37/891] 1710 CW-4`, then `✓ …`) and the MLGW job
+     logs per collection and per bill, so there is real progress to watch. `sync-core` is not
+     piped because it has none — its runners are one CSV fetch and a summary line.
+   - Bun line-buffers even through a pipe, so lines appear as they are printed rather than in
+     a block at the end.
+   - **`set -o pipefail` is required.** `tee` is the last command in the pipeline, so without
+     it the task's exit code is `tee`'s — always 0 — and a failed sync reports green. That
+     would silently undo the `&&` chaining this whole table depends on.
+
+   Only the long groups are piped on purpose: sending all five to the container log would
+   interleave five schedules into one stream, and `sync-work-orders` alone would post every
+   15 minutes.
+
+   For a run you are actively babysitting, skip all of this and run the command from the
+   resource's **Terminal** tab — output streams to your screen and you can interrupt it,
+   which a scheduled task cannot.
 
    To confirm a task is landing in the right container before pasting a real command, run
    `sh -c 'echo PWD=$PWD; command -v bun'` — expect `/app/supabase/sync` and

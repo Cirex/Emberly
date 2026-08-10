@@ -197,6 +197,46 @@ export function isMakeReadyCategory(category: string | null | undefined): boolea
 }
 
 /**
+ * The turn checklist filed under ORDINARY categories.
+ *
+ * The property files four standard turn tasks under the trade that performs
+ * them — "Trash and Debris", "Flooring", "Locks and Keys", "Painting" — with
+ * ResMan's MakeReady flag unset. 76 rows in prod, all Canceled/Closed/Completed,
+ * so they landed on the Closed board despite being turn work with its own tab.
+ *
+ * EXACT MATCH, NOT SUBSTRING — this is the whole design of this rule. The same
+ * words appear in genuine resident work orders that must stay on the boards:
+ *
+ *   "flooring is pealing off in the kitchen and bathroom"
+ *   "the HVAC needs cleaning and it needs a filter"
+ *   "stove caught fire i tried cleaning it but need a new one"
+ *   "NO HOT WATER IN UNIT, needs touch up cleaning, and exhaust fan"
+ *
+ * A regex on `flooring|cleaning|touch up paint` would hide all four. Of the 103
+ * rows whose title contains a stage word, only these 76 are turn work; the
+ * other 27 are one-off resident descriptions. Matching the exact template
+ * strings separates them cleanly with no judgement call.
+ *
+ * This does NOT contradict the "titles are not deliberate" note above. These
+ * particular titles ARE deliberate — they are template text repeated verbatim
+ * 14-34 times, not prose someone typed. Free-text titles remain unmatched.
+ */
+const MAKE_READY_TEMPLATE_TITLES = new Set([
+  "trash out",
+  "clean, replace, repair flooring",
+  "rekey and reassign traka",
+  "touch up painting",
+]);
+
+export function isMakeReadyTemplateTitle(title: string | null | undefined): boolean {
+  if (!title) return false;
+  // Normalise only whitespace and case — NOT punctuation, since the comma in
+  // "clean, replace, repair flooring" is part of the template.
+  const normalized = title.trim().toLowerCase().replace(/\s+/g, " ");
+  return MAKE_READY_TEMPLATE_TITLES.has(normalized);
+}
+
+/**
  * Technician display normalization — port of WorkOrderTechnicianNames
  * (WorkOrderSupport.swift:4-30): blank → "Unassigned"; grounds… → "Grounds
  * Keepers"; maintenance… or generalmaintenance… → "General Maintenance".
@@ -318,7 +358,8 @@ function deriveParts(raw: WorkOrderInput): DerivedRowParts {
     scheduledAt: parseDate(raw.date_scheduled),
     completedAt: parseDate(raw.date_completed),
     technicianDisplay,
-    isMakeReady: raw.is_make_ready || isMakeReadyCategory(raw.category),
+    isMakeReady:
+      raw.is_make_ready || isMakeReadyCategory(raw.category) || isMakeReadyTemplateTitle(raw.title),
     searchKey: [raw.number, raw.unit_number, raw.title, raw.notes, technicianDisplay, tags.join(" ")]
       .join(" ")
       .toLowerCase(),

@@ -9,6 +9,7 @@
  * and priorities are coerced to the allowed set (default 'Normal').
  */
 import type { ResManConfiguration } from "../config";
+import { isMakeReadyCategory, isMakeReadyTemplateTitle } from "@emberly/core";
 import { CsvHeaderLookup, normalizeCsvDate, parseBool } from "../csv";
 import {
   ResManReportFormBuilder,

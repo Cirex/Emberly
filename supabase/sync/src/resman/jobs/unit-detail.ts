@@ -18,7 +18,13 @@ import { isAuthenticationRequired } from "../errors";
 import { ResManScrapeHttp, mapWithConcurrency } from "../scrapers/http";
 import { numOrNull, parseLedgerDate, str } from "../scrapers/parse";
 import { mapLedgerRows } from "../scrapers/ledger";
-import { isDeniedLease, isPendingLease, mapLease } from "../scrapers/leases";
+import {
+  isDeniedLease,
+  isPendingLease,
+  mapLease,
+  withoutTermDates,
+  type LeaseRowWithoutTermDates,
+} from "../scrapers/leases";
 import { mapResidents } from "../scrapers/residents";
 import {
   fetchBuildingFloorplans,
@@ -503,7 +509,11 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
   });
   log(`[lease-details] scrape complete: ${scraped} ok, ${failed} failed — upserting…`);
 
-  const leaseRows: ResmanLeaseRow[] = [];
+  // Not ResmanLeaseRow: the lease term is stripped before write. This job reads
+  // the lease DETAIL page, which does not carry start/end dates — see
+  // withoutTermDates(). Every row here goes through it, which is what keeps the
+  // upsert batch uniform.
+  const leaseRows: LeaseRowWithoutTermDates[] = [];
   const txRows: ResmanTransactionRow[] = [];
   const residentRows: ResmanResidentRow[] = [];
   const vehicleRows: ResmanLeaseVehicleRow[] = [];
@@ -524,9 +534,7 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
       isMostRecent: lease.is_most_recent_lease,
     });
     leaseRow.deep_synced_at = new Date().toISOString();
-    leaseRows.push(
-      leaseRow,
-    );
+    leaseRows.push(withoutTermDates(leaseRow));
     const leaseId = lease.resman_lease_id;
     txRows.push(...mapLedgerRows(dictArray(data["ledger"]), { leaseId, unitId, propertyId }));
     const mapped = mapResidents(dictArray(data["residents"]), { leaseId });

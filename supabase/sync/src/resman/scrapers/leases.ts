@@ -107,6 +107,39 @@ function isCurrentStatus(statusStr: string): boolean {
  * the first non-denied, non-pending lease); it is AND-ed with `!denied` exactly
  * as `lease.isMostRecentLease = isMostRecent && !denied`.
  */
+/** A lease row with the two fields only the lease-history table can supply removed. */
+export type LeaseRowWithoutTermDates = Omit<ResmanLeaseRow, "start_date" | "end_date">;
+
+/**
+ * Drop `start_date` / `end_date` so an upsert leaves those columns untouched.
+ *
+ * The lease TERM lives in the unit's lease-history table, not on the lease
+ * detail page. `scrapeLeaseByPersonLeaseId` therefore feeds `mapLease` a
+ * synthetic history row with `leaseStartDate: null, leaseEndDate: null` — it is
+ * saying "I did not look", but `mapLease` cannot tell that from "there is no
+ * term", so it emitted nulls and the upsert wrote them over real dates.
+ *
+ * That alone would self-heal on the next `unit-details` pass, which reads the
+ * history table. It did not, because of what happens next: the nulled lease
+ * still has a terminal status and now has `deep_synced_at` set, which is exactly
+ * the archived-lease skip in `loadArchivedLeaseIds`. `unit-details` skips it
+ * from then on and the nulls become permanent. 192 of 1,242 leases were stuck
+ * that way on 2026-08-11 — every one terminal, every one deep-synced.
+ *
+ * Only these two fields are affected. `move_out_date`, `move_in_date`,
+ * `application_date` and `signed_date` all come off the detail page for real:
+ * measured against the damaged rows, move_out_date was present on 189 of 192 and
+ * move_in_date on 192 of 192.
+ *
+ * Callers must apply this uniformly across an upsert batch. PostgREST builds one
+ * statement from the union of keys in the batch, so a mix of stripped and
+ * unstripped rows would put the nulls straight back.
+ */
+export function withoutTermDates(row: ResmanLeaseRow): LeaseRowWithoutTermDates {
+  const { start_date: _startDate, end_date: _endDate, ...rest } = row;
+  return rest;
+}
+
 export function mapLease(
   leaseData: Record<string, unknown>,
   ctx: { unitId: string; unitNumber: string; propertyId: string; isMostRecent: boolean },

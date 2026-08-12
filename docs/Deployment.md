@@ -357,6 +357,72 @@ live **only** in Coolify's secret store — never in the web env, never in the i
 
    A one-shot full pass on demand: `docker run --env-file .env emberly-sync bun run sync:all:once`.
 
+### The ResMan property layout (read before touching `RESMAN_PROPERTY_ID`)
+
+The report picker exposes four properties and one group:
+
+| Id | Name | |
+|---|---|---|
+| `489f05ba-6bd4-4888-9460-88923577a6eb` | Emberly Apartments | **`RESMAN_PROPERTY_ID` — the live one** |
+| `504dbdf1-16bc-47cb-8b12-386f5bc6ede7` | X - Emberly Apartments | archived |
+| `6ae7e160-d406-4021-afc7-810735995662` | X - Emberly East | archived |
+| `34426c6e-4883-4b85-8d3b-37ee5c5fbc99` | X - Emberly West | archived |
+| `68e15ace-f4db-4552-a1bb-4b746bed43c1` | Emberly Portfolio (formerly New Horizon) | a **group**, not a property |
+
+`489f05ba` is a property — ResMan lists it under `<optgroup label="Properties">`. The only
+group is `68e15ace`, and it is what the report UI pre-selects, which is an easy way to
+mistake one for the other. The `X -` prefix is ResMan's archive convention.
+
+The three archived properties hold **891 units between them — exactly the live count — and
+not one unit id overlaps with a live one.** ResMan minted fresh unit records when the
+properties were combined, so the archived inventory is the same doors under different
+GUIDs.
+
+### One-off: merging the three archived properties
+
+`sync:merge-archived` pulls the archived properties' **work orders** in and files them
+under `RESMAN_PROPERTY_ID`, linking each to a live unit by unit number — the one identifier
+that survived the merge. A one-time job: deliberately not in `sync:all:once`, and not a
+scheduled task.
+
+```bash
+RESMAN_ARCHIVED_PROPERTY_IDS=504dbdf1-16bc-47cb-8b12-386f5bc6ede7,6ae7e160-d406-4021-afc7-810735995662,34426c6e-4883-4b85-8d3b-37ee5c5fbc99 bun run sync:merge-archived
+```
+
+That is a **dry run** — it fetches, maps, prints, and exits having changed nothing. Add
+`--apply` to commit. Measured 2026-08-11: **7,666 work orders, 7,624 of them (99.5%)
+resolving to a live unit.**
+
+**Units are skipped by default.** Importing them would not add units, it would duplicate
+all 891 — every address twice on the map, in the tenants list, and in occupancy. The
+`--with-units` flag still exists for the day that stops being true; it reports the
+collision count before it writes.
+
+**753 of the 7,666 are `Not Started` or `In Progress`** and will land on the maintenance
+**Open** board rather than in history — years-old tickets for properties that no longer
+exist. The dry run prints this count. Decide what to do with them before applying.
+
+Two more things it will not do, on purpose:
+
+- **No delete-missing.** It writes a fraction of the write scope, so a delete pass would
+  target every live row absent from the archived report. `upsertMirror`'s 0.35 floor guard
+  would refuse it, but the run never asks in the first place.
+- **It never writes `resman_properties`.** The archived property rows are not created,
+  because nothing is filed under their ids. Worth knowing if you add them by hand later:
+  that table cascades on delete, and removing a property row takes its units, leases, work
+  orders, buildings and floorplans with it.
+
+Work orders come from `01/01/2015` rather than the scheduled job's `01/01/2024` — the point
+is the history that predates the merge.
+
+Leases, residents and ledgers are **not** covered. Those come from the per-unit deep
+scrape, which walks each unit's own history page, so the live units already carry theirs
+back to `2020-07-01`.
+
+Run it from the resource's **Terminal** tab, not as a scheduled task — the hard-coded
+`timeout 3600` on scheduled tasks would cut it and leave an orphan. It takes the `resman`
+portal lock, so a scheduled scrape cannot overlap it.
+
 ### Syncing environment variables
 
 Both Coolify resources were configured by typing into a web form, with nothing to diff them

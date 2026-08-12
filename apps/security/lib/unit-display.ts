@@ -1,10 +1,29 @@
 import type { ResmanUnit } from "@/lib/api/units";
 import { STATUS_TINT } from "@/theme/tokens";
 
-/** Display name for a unit row — occupant name(s), or the vacancy state. */
+const NO_OCCUPANT = "No Occupant";
+
+/**
+ * The names of people actually living in the unit — empty for a vacant one.
+ *
+ * ResMan puts a name on a vacant unit as soon as an application is approved: as
+ * of the current mirror, 45 of the 322 vacant units carry one, and every single
+ * one is a `Pending` lease whose move-in date has not arrived. That person is an
+ * APPLICANT, not a resident — nobody is behind that door yet. Showing the name
+ * beside a "Vacant" badge read as a contradiction to everyone who saw it, on the
+ * tenants list and in the map tooltip alike, so occupancy wins over the name.
+ *
+ * Occupied and Notice units (including Under Eviction) are untouched: those
+ * names are real residents a guard can expect to meet.
+ */
+function occupantNames(u: ResmanUnit): string[] {
+  return u.occupancy_status === "Vacant" ? [] : u.tenant_names;
+}
+
+/** Display name for a unit row — occupant name(s), else "No Occupant". */
 export function unitPrimaryName(u: ResmanUnit): string {
-  if (u.tenant_names.length > 0) return u.tenant_names.join(" & ");
-  return u.occupancy_status === "Vacant" ? "Vacant" : "Unoccupied";
+  const names = occupantNames(u);
+  return names.length > 0 ? names.join(" & ") : NO_OCCUPANT;
 }
 
 /**
@@ -73,9 +92,15 @@ export function lastSyncedLabel(units: ResmanUnit[]): string {
   return `Last synced ${when}`;
 }
 
-/** Two-letter initials from the first occupant, else the unit number. */
+/**
+ * Two-letter initials from the first occupant, else the unit number.
+ *
+ * Reads through `occupantNames`, so a vacant unit falls back to its number
+ * rather than showing an applicant's initials in the avatar disc — the label
+ * beside it says "No Occupant", and the two must not disagree.
+ */
 export function unitInitials(u: ResmanUnit): string {
-  const name = u.tenant_names[0];
+  const name = occupantNames(u)[0];
   if (name) {
     const parts = name.trim().split(/\s+/);
     const initials = (parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "");

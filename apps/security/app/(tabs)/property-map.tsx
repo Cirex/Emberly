@@ -28,6 +28,7 @@ import { useMapJump } from "@emberly/ui";
 import { useSettings } from "@/lib/stores/settings";
 import { tagExpiryBadge, useTags, type UnitTag } from "@/lib/stores/tags";
 import { useUnits } from "@/lib/stores/units";
+import { unitPrimaryName } from "@/lib/unit-display";
 import { CLASSIFICATION_TINT, STATUS_TINT } from "@/theme/tokens";
 
 const OCC_TINT: Record<string, string> = {
@@ -459,7 +460,10 @@ function UnitTooltipCard({
     CLASSIFICATION_TINT[classification.toLowerCase() as keyof typeof CLASSIFICATION_TINT];
   const group = data ? occupancyGroup(data) : undefined;
   const statusLabel = group ?? (data ? "Unknown" : "No data");
-  const occupant = data ? (data.tenant_names.length ? data.tenant_names.join(", ") : "Unoccupied") : "—";
+  // Shared with the tenants list rather than reimplemented, so a vacant unit's
+  // pending applicant is suppressed in exactly one place. "—" stays distinct: it
+  // means the mirror has no row for this unit at all, not that it is empty.
+  const occupant = data ? unitPrimaryName(data) : "—";
   const subline = [unit.number, locality].filter(Boolean).join(" · ");
 
   return (

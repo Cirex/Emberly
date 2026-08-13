@@ -415,9 +415,66 @@ Two more things it will not do, on purpose:
 Work orders come from `01/01/2015` rather than the scheduled job's `01/01/2024` — the point
 is the history that predates the merge.
 
-Leases, residents and ledgers are **not** covered. Those come from the per-unit deep
-scrape, which walks each unit's own history page, so the live units already carry theirs
-back to `2020-07-01`.
+Leases, residents and ledgers are covered by a **separate** runner — see below.
+
+### One-off: merging the archived properties' leases
+
+```bash
+RESMAN_ARCHIVED_PROPERTY_IDS=504dbdf1-16bc-47cb-8b12-386f5bc6ede7,6ae7e160-d406-4021-afc7-810735995662,34426c6e-4883-4b85-8d3b-37ee5c5fbc99 bun run sync:merge-archived-leases
+```
+
+Dry run by default; `--apply` writes; `--limit=N` bounds the units scraped per property.
+
+**The live property is authoritative.** Its record is the current state of the door in
+ResMan, whatever status the lease carries, so a lease that exists on both sides is
+DROPPED — the live row stands. Only archived leases with no live counterpart come over,
+along with their ledgers, residents, vehicles, employment, insurance, addresses and
+alternate contacts.
+
+The cost of that rule, stated because it is real: a tenancy straddling the merge keeps
+only its live ledger. Unit 1709 CW-1 is the worked example — 162 archived ledger entries
+(2025-02-20 → 2026-02-05) and 41 live ones (2026-02-16 → 2026-02-25), zero overlap. The
+archived 162 are discarded.
+
+**Matching, since no id survived the merge.** ResMan re-minted properties, units, leases
+*and persons* — Mario Shannon is `90ed6fde…` archived and `fb1c4254…` live. Only unit
+numbers, dates and human names carried across, so a lease matches on
+`unit + start + end + residents`, with `unit + start + end` as a second tier. That
+fallback is not optional: past and pending leases come back from the lease-history table
+as skeletons with no resident identity, and without it every one would import as a
+duplicate of a live lease it plainly is. Both tiers are counted separately in the report.
+
+**Imported leases are flagged neither current nor most-recent.** `syncLeaseDetails`
+selects its work with `is_current_lease OR is_most_recent_lease` scoped to the live
+property; either flag left set would hand an archived lease id to the nightly job, which
+would scrape it against a property it does not exist in.
+
+Measured on a 36-unit sample (12 per property): 112 leases seen, 17 skipped on
+term+household, 5 on term alone, 90 imported carrying 1,896 ledger rows. Extrapolated to
+all 891 units that is roughly 2,800 leases and ~47,000 ledger rows — about double the
+current `resman_transactions`. Run the full dry run before applying.
+
+### A gap worth knowing about: pre-merge balances
+
+No live ledger carries an opening balance. Across all 920 live ledgers exactly one row
+looks like a brought-forward entry, and it is zero-valued; every ledger starts at the
+merge (531 of them in 2026-02). Whatever each tenancy owed beforehand was never journaled
+across.
+
+ResMan's own delinquency report, run per property for the current period:
+
+| Property | Units owing | Total balance |
+|---|---:|---:|
+| X - Emberly Apartments | 231 | $1,594,527.10 |
+| X - Emberly East | 134 | $593,127.45 |
+| X - Emberly West | 202 | $1,083,793.47 |
+| **Archived total** | **567** | **$3,271,448.02** |
+| Emberly Apartments (live) | 267 | $375,105.44 |
+
+Importing archived leases makes that history *visible*; it does not correct any balance.
+Each archived entry's `balance` column was computed inside the old ledger's running total,
+and there is no bridging entry for a merged sequence to run through. Correcting a unit's
+balance is an accounting action in ResMan, not a mirror action.
 
 Run it from the resource's **Terminal** tab, not as a scheduled task — the hard-coded
 `timeout 3600` on scheduled tasks would cut it and leave an orphan. It takes the `resman`

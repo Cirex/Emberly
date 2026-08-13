@@ -68,12 +68,30 @@ export type WorkOrderList = z.infer<typeof WorkOrderListSchema>;
 export const WORK_ORDER_PAGE = 200;
 
 /** One page of the mirror. Throws ApiError / ZodError; callers contain. */
+
+/**
+ * Exactly the columns this module parses, derived from the schema so a field
+ * added to one cannot go missing from the other.
+ *
+ * Without a `columns` param the server answers with the resource's
+ * `defaultColumns` — a curated subset that withholds `notes`, `completion_notes`, `is_make_ready`, `tags` and every callback
+ * column — 19 of the 30 fields below.
+ * The withheld fields then arrive undefined and this schema's
+ * optional/default declarations absorb them without complaint: no parse error,
+ * no warning, just empty values reaching the UI.
+ *
+ * The server intersects this list against its own public columns, so naming a
+ * field it does not expose is ignored rather than an error.
+ */
+const COLUMNS = Object.keys(WorkOrderSchema.shape).join(",");
+
 export async function listWorkOrders(
   params: { limit?: number; offset?: number },
   config: StaffConfig,
 ): Promise<WorkOrderList> {
   const q = new URLSearchParams();
   q.set("limit", String(params.limit ?? WORK_ORDER_PAGE));
+  q.set("columns", COLUMNS);
   if (params.offset) q.set("offset", String(params.offset));
   const json = await apiJson(`/api/resman/work-orders?${q.toString()}`, config);
   return WorkOrderListSchema.parse(json);

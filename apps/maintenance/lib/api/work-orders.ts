@@ -57,6 +57,25 @@ export const WorkOrderListSchema = z.object({
 });
 export type WorkOrderList = z.infer<typeof WorkOrderListSchema>;
 
+
+/**
+ * Exactly the columns this module parses, derived from the schema so a field
+ * added to one cannot go missing from the other.
+ *
+ * Without a `columns` param the server answers with the resource's
+ * `defaultColumns` — a curated dozen that does NOT include `notes` or
+ * `completion_notes`, which back the work order's description and the
+ * technician notes on the detail screen. The failure was silent rather than
+ * loud: both are declared below with `.default("")`, so a response missing them
+ * parsed clean and every work order arrived with both fields blank. There is no
+ * by-id detail fetch — the detail screen reads `wo.raw` out of this list's
+ * snapshot — so this request is the only place it could be fixed.
+ *
+ * The server intersects this list against its own public columns, so naming a
+ * field it does not expose is ignored rather than an error.
+ */
+const COLUMNS = Object.keys(WorkOrderSchema.shape).join(",");
+
 export async function listWorkOrders(
   params: {
     limit?: number;
@@ -76,6 +95,7 @@ export async function listWorkOrders(
 ): Promise<WorkOrderList> {
   const q = new URLSearchParams();
   q.set("limit", String(params.limit ?? 200));
+  q.set("columns", COLUMNS);
   if (params.offset) q.set("offset", String(params.offset));
   if (params.status) q.set("status", params.status);
   if (params.priority) q.set("priority", params.priority);

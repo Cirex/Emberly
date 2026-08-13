@@ -66,6 +66,23 @@ export type OccupancyFilter = "Occupied" | "Vacant" | "Notice";
  */
 export type LeaseStatusFilter = "Notice to Vacate" | "Under Eviction";
 
+
+/**
+ * Exactly the columns this module parses, derived from the schema so a field
+ * added to one cannot go missing from the other.
+ *
+ * Without a `columns` param the server answers with the resource's
+ * `defaultColumns` — a curated subset that withholds street/city/state, classification, bedroom and bathroom counts and
+ * `synced_at` — 17 of the 29 fields below.
+ * The withheld fields then arrive undefined and this schema's
+ * optional/default declarations absorb them without complaint: no parse error,
+ * no warning, just empty values reaching the UI.
+ *
+ * The server intersects this list against its own public columns, so naming a
+ * field it does not expose is ignored rather than an error.
+ */
+const COLUMNS = Object.keys(ResmanUnitSchema.shape).join(",");
+
 export async function listUnits(
   params: {
     limit?: number;
@@ -77,6 +94,7 @@ export async function listUnits(
 ): Promise<ResmanList> {
   const q = new URLSearchParams();
   q.set("limit", String(params.limit ?? 200));
+  q.set("columns", COLUMNS);
   if (params.offset) q.set("offset", String(params.offset));
   if (params.occupancy_status) q.set("occupancy_status", params.occupancy_status);
   if (params.lease_status) q.set("lease_status", params.lease_status);

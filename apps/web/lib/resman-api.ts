@@ -238,9 +238,27 @@ export function resolveSort(
  * Resolves `?columns=a,b,c` to a projection of the resource's PUBLIC columns.
  *
  * Intersected with `publicColumns`, never unioned: naming a withheld column
- * gets you nothing, not the column. Returns null (= all public columns) when
- * absent or when nothing valid survives, so a typo degrades to the full row
- * rather than an empty one.
+ * gets you nothing, not the column.
+ *
+ * ABSENT DOES NOT MEAN "EVERYTHING". With no `columns` param a resource that
+ * declares `defaultColumns` returns those and nothing else; only a resource
+ * WITHOUT a curated default falls through to the full public row (null). Ask
+ * for `columns=*` — or name the fields — to get the rest.
+ *
+ * This comment used to say the opposite, and it cost real bugs. Five clients
+ * fetched `units` and `work-orders` with no projection while their Zod schemas
+ * declared the wide row; every withheld column arrived undefined and the
+ * schemas' `.default()` / `.optional()` declarations swallowed it. No parse
+ * error, no warning — just empty descriptions, empty technician notes, missing
+ * street addresses and a delinquency heat map with no balances. A response
+ * shaped like the contract but missing half its data is the worst failure mode
+ * this layer has, so it is worth saying twice: absent means DEFAULT.
+ *
+ * The response's `columns` field always names what came back, which is the
+ * cheapest way for a client to catch this.
+ *
+ * A typo degrades to the default too, not to the full row: a mistyped
+ * projection should not quietly become the widest possible response.
  */
 export function resolveProjection(
   resource: ResmanResource,

@@ -70,12 +70,31 @@ export const ResmanListSchema = z.object({
 });
 export type ResmanList = z.infer<typeof ResmanListSchema>;
 
+
+/**
+ * Exactly the columns this module parses, derived from the schema so a field
+ * added to one cannot go missing from the other.
+ *
+ * Without a `columns` param the server answers with the resource's
+ * `defaultColumns` — a curated subset that withholds every delinquency-with-aging column the heat map and callouts read
+ * (`current_month_balance`, `times_late`, `delinquency_reason` and the rest),
+ * plus street/city/state — 24 of the 36 fields below.
+ * The withheld fields then arrive undefined and this schema's
+ * optional/default declarations absorb them without complaint: no parse error,
+ * no warning, just empty values reaching the UI.
+ *
+ * The server intersects this list against its own public columns, so naming a
+ * field it does not expose is ignored rather than an error.
+ */
+const COLUMNS = Object.keys(ResmanUnitSchema.shape).join(",");
+
 export async function listUnits(
   params: { limit?: number; offset?: number },
   config: ResmanConfig,
 ): Promise<ResmanList> {
   const q = new URLSearchParams();
   q.set("limit", String(params.limit ?? 200));
+  q.set("columns", COLUMNS);
   if (params.offset) q.set("offset", String(params.offset));
 
   const json = await apiJson(`/api/resman/units?${q.toString()}`, config);

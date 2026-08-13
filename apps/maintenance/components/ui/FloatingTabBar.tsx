@@ -128,6 +128,34 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
       : "rgba(255,255,255,0.30)";
   const glassBlur = field ? 12 : glassDark ? 30 : 40;
 
+  /**
+   * The glass, in GlassSurface's layer order: BlurView directly over the app
+   * content, tint painted ON TOP of it.
+   *
+   * This used to be inverted — the tint sat on the clipping container as a
+   * `backgroundColor` and the BlurView was an absoluteFill ON TOP of it. A
+   * BlurView samples whatever is behind it in the hierarchy, so the tint became
+   * part of its input: it was blurring a flat 40%-white wash instead of the
+   * screen, and with no tint layer above it there was nothing left to read as
+   * frost. The bar came out a weak translucent smear that vanished over busy
+   * content. The comment above claimed this recipe mirrored GlassSurface; it
+   * did not, and that is exactly how the two drifted.
+   *
+   * A function, not a shared element, so each surface gets its own instances —
+   * two BlurViews backing two independently width-animated capsules.
+   */
+  const glassLayers = () =>
+    field ? null : (
+      <>
+        <BlurView
+          intensity={glassBlur}
+          tint={glassDark ? "dark" : "light"}
+          style={StyleSheet.absoluteFill}
+        />
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: glassFill }]} />
+      </>
+    );
+
   // The field binds the map's unit search on the map route, the work-order
   // text search everywhere else.
   const woSearch = useWorkOrdersView((s) => s.search);
@@ -295,16 +323,13 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
               overflow: "hidden",
               borderWidth: field ? 1.4 : 1,
               borderColor: glassBorder,
-              backgroundColor: glassFill,
+              // Field mode has no blur to layer over, so it keeps the solid fill
+              // here. Everything else gets its tint from glassLayers(), above
+              // the blur rather than beneath it.
+              backgroundColor: field ? glassFill : "transparent",
             }}
           >
-            {!field ? (
-              <BlurView
-                intensity={glassBlur}
-                tint={glassDark ? "dark" : "light"}
-                style={StyleSheet.absoluteFill}
-              />
-            ) : null}
+            {glassLayers()}
             {/* The tabs — fade out as the capsule condenses. */}
             <Animated.View
               pointerEvents={searchOpen ? "none" : "auto"}
@@ -415,16 +440,13 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
               overflow: "hidden",
               borderWidth: field ? 1.4 : 1,
               borderColor: glassBorder,
-              backgroundColor: glassFill,
+              // Field mode has no blur to layer over, so it keeps the solid fill
+              // here. Everything else gets its tint from glassLayers(), above
+              // the blur rather than beneath it.
+              backgroundColor: field ? glassFill : "transparent",
             }}
           >
-            {!field ? (
-              <BlurView
-                intensity={glassBlur}
-                tint={glassDark ? "dark" : "light"}
-                style={StyleSheet.absoluteFill}
-              />
-            ) : null}
+            {glassLayers()}
             <Pressable
               disabled={searchOpen || !searchable}
               onPress={() => toggleSearch(true)}

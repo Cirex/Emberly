@@ -16,6 +16,8 @@
         "aps-environment": "development"
       },
       "infoPlist": {
+        "CFBundleDisplayName": "Emberly Manager",
+        "NSFaceIDUsageDescription": "Emberly Manager uses Face ID to protect the sign-in credentials stored on this device.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },

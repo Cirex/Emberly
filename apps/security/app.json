@@ -13,10 +13,16 @@
       "bundleIdentifier": "com.emberly.security",
       "appleTeamId": "T49DUB6KRJ",
       "infoPlist": {
+        "CFBundleDisplayName": "Emberly Security",
         "NSCameraUsageDescription": "Emberly Security uses the camera to scan resident and guest passes and to capture entry-log photos.",
         "NSPhotoLibraryUsageDescription": "Emberly Security attaches photos from your library to property-map annotations.",
         "NSLocationWhenInUseUsageDescription": "Emberly Security uses your location to show accurate day/night security-camera coverage on the property map.",
         "NSLocalNetworkUsageDescription": "Emberly Security connects to on-site UniFi Protect cameras over the local network.",
+        "NSFaceIDUsageDescription": "Emberly Security uses Face ID to protect the sign-in credentials stored on this device.",
+        "NSMicrophoneUsageDescription": "Allow Emberly Security to access your microphone",
+        "NSMotionUsageDescription": "Allow Emberly Security to detect your current motion activity",
+        "NSLocationAlwaysUsageDescription": "Allow Emberly Security to access your location",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow Emberly Security to access your location",
         "ITSAppUsesNonExemptEncryption": false
       }
     },

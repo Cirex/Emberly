@@ -13,9 +13,12 @@
       "bundleIdentifier": "com.emberly.maintenance",
       "appleTeamId": "T49DUB6KRJ",
       "infoPlist": {
+        "CFBundleDisplayName": "Emberly Maintenance",
+        "NSCameraUsageDescription": "Emberly Maintenance uses the camera to photograph work orders and property-map annotations.",
         "NSPhotoLibraryUsageDescription": "Emberly Maintenance attaches photos from your library to property-map annotations.",
         "NSMicrophoneUsageDescription": "Emberly Maintenance uses the microphone so you can dictate work-order notes instead of typing them.",
         "NSSpeechRecognitionUsageDescription": "Emberly Maintenance transcribes your dictated notes on this device. The audio is not sent to Apple or to Emberly.",
+        "NSFaceIDUsageDescription": "Emberly Maintenance uses Face ID to protect the sign-in credentials stored on this device.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {

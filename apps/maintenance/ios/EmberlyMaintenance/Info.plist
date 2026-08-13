@@ -55,15 +55,13 @@
 		<string>_expo._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Allow $(PRODUCT_NAME) to access your camera</string>
+	<string>Emberly Maintenance uses the camera to photograph work orders and property-map annotations.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Allow $(PRODUCT_NAME) to access your Face ID biometric data.</string>
+	<string>Emberly Maintenance uses Face ID to protect the sign-in credentials stored on this device.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Emberly Maintenance connects to on-site UniFi Protect cameras over the local network.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Emberly Maintenance uses the microphone so you can dictate work-order notes instead of typing them.</string>
-	<key>NSMotionUsageDescription</key>
-	<string>Allow $(PRODUCT_NAME) to detect your current motion activity</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Emberly Maintenance transcribes your dictated notes on this device. The audio is not sent to Apple or to Emberly.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

@@ -700,7 +700,7 @@ create table if not exists public.resman_units (
   resman_unit_id text primary key,
   resman_property_id text not null references public.resman_properties(resman_property_id) on delete cascade,
   resman_building_id text references public.resman_buildings(resman_building_id) on delete set null,
-  resman_floorplan_id text references public.resman_floorplans(resman_floorplan_id) on delete set null,
+  resman_floorplan_id text references public.resman_floorplans(resman_floorplan_id) on delete set null,  -- from the unit PAGE (sync:unit-details), not the roster report
   number text not null default '',
   current_lease_id text,               -- denormalized, nullable (no FK)
   pending_lease_id text,               -- denormalized, nullable
@@ -717,8 +717,8 @@ create table if not exists public.resman_units (
   balance numeric(12,2),
   bedrooms integer,
   bathrooms numeric(3,1),
-  pets_permitted boolean,
-  affordable_unit boolean,
+  pets_permitted boolean,                -- from the unit PAGE (sync:unit-details)
+  affordable_unit boolean,               -- from the unit PAGE (sync:unit-details)
   holding_unit boolean,
   excluded_from_occupancy boolean,
   available_for_online_marketing boolean,
@@ -726,7 +726,7 @@ create table if not exists public.resman_units (
   city text not null default '',
   state text not null default '',
   postal_code text not null default '',
-  country text not null default '',
+  country text not null default '',      -- from the unit PAGE (sync:unit-details); the unit-info report has no country
   lease_start_date date,
   lease_end_date date,
   move_in_date date,
@@ -870,7 +870,9 @@ create table if not exists public.resman_lease_vehicles (
   color text not null default '',
   license_plate text not null default '',
   license_plate_state text not null default '',
-  parking_spot text not null default '',
+  parking_spot text not null default '',          -- always empty: ResMan has no parking-space field; see permit_number
+  permit_number text not null default '',         -- parking decal number ("Permit number" on the Vehicles tab)
+  notes text not null default '',                 -- free text on the Vehicles tab, usually decal history
   synced_at timestamptz default now(),
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -894,9 +896,9 @@ create table if not exists public.resman_lease_employment (
   employer_name text not null default '',
   position text not null default '',
   phone text not null default '',
-  other_income_source text not null default '',
-  monthly_income numeric(12,2),
-  other_income numeric(12,2),
+  other_income_source text not null default '',   -- other-income records only (Industry cell reads "Other Income"); empty on a job
+  monthly_income numeric(12,2),                   -- MONTHLY, normalized from the tab's pay period
+  other_income numeric(12,2),                     -- MONTHLY, normalized from the tab's pay period
   start_date date,
   synced_at timestamptz default now(),
   created_at timestamptz default now(),
@@ -922,7 +924,7 @@ create table if not exists public.resman_lease_insurance (
   policy_number text not null default '',
   policy_type text not null default '',
   status text not null default '',
-  start_date date,
+  start_date date,                                -- always empty: the Insurance tab records only an expiration date
   end_date date,
   coverage_amount numeric(12,2),
   synced_at timestamptz default now(),
@@ -951,8 +953,8 @@ create table if not exists public.resman_lease_addresses (
   state text not null default '',
   postal_code text not null default '',
   country text not null default '',
-  start_date date,
-  end_date date,
+  start_date date,                                -- always empty: the Addresses tab records no dates
+  end_date date,                                  -- always empty: the Addresses tab records no dates
   synced_at timestamptz default now(),
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -1038,8 +1040,8 @@ create table if not exists public.resman_work_orders (
   resman_work_order_id text primary key,
   number text not null default '',
   resman_unit_id text references public.resman_units(resman_unit_id) on delete set null,
-  unit_lease_group_id text not null default '',
-  resman_lease_id text not null default '',
+  unit_lease_group_id text not null default '',   -- always empty: the work-order report carries no lease link
+  resman_lease_id text not null default '',       -- always empty: the work-order report carries no lease link
   unit_number text not null default '',
   resman_property_id text references public.resman_properties(resman_property_id) on delete cascade,
   status text not null default 'Not Started' check (status in ('Not Started','Scheduled','In Progress','Completed','Closed','Canceled')),

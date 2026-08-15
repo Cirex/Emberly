@@ -1115,6 +1115,10 @@ export function parseVehiclesTab(html: string): Record<string, unknown>[] {
       // Plates stay verbatim but upper — they're identifiers, not prose.
       assignText(row, "License Plate", plate.toUpperCase());
       assignText(row, "State", state.toUpperCase());
+      // The parking DECAL number ("Permit number" on the tab). There is no
+      // parking-space field anywhere on this tab — `parking_spot` was mapped
+      // from keys ResMan never sends and stayed empty on all 721 vehicles.
+      assignText(row, "Permit Number", fvText(tabCellInner("a-permit-col", rowHTML)));
       out.push(row);
       continue;
     }
@@ -1158,16 +1162,32 @@ export function parseEmploymentTab(html: string): Record<string, unknown>[] {
     if (cells.length === 0) continue;
 
     // Positional main-row cells: [Industry, Employer/Type, Title, Salary/Amount].
+    const industry = cells[0] ?? "";
     const employer = cells.length > 1 ? cells[1] : "";
     const title = cells.length > 2 ? cells[2] : "";
     const salary = cells.length > 3 ? cells[3] : (cells.length > 0 ? cells[cells.length - 1] : "");
     const amount = numOrNull(rmsFirstMatch("([\\d,]+(?:\\.\\d+)?)", salary) ?? "");
-    const isMonthly = /monthly/i.test(salary);
+    // The Industry cell is what separates the two record kinds this one tab
+    // holds: it reads literally "Other Income" on a non-employment record and
+    // carries an industry (or nothing) on a job. The Employer/Type cell then
+    // names the source — "Business", "General Assistance" — which is where
+    // `other_income_source` comes from; it was mapped from a "Source" key
+    // ResMan never sends and stayed empty on all 1,113 rows.
+    const isOtherIncome = /other income/i.test(industry);
 
     const row: Record<string, unknown> = {};
     assignText(row, "Employer", employer);
     assignText(row, "Title", title);
-    if (amount !== null) row[isMonthly ? "Income" : "Other Income"] = amount;
+    if (isOtherIncome) assignText(row, "Other Income Source", employer);
+    if (amount !== null) {
+      // Both figures are stored MONTHLY. Reading the amount straight off the
+      // cell and calling anything not marked "(Monthly)" other income put
+      // annual salaries in `other_income` — a $51,474/yr job recorded as
+      // $51,474 of other income — and left `monthly_income` null for every
+      // resident paid weekly, biweekly or annually.
+      const monthly = monthlyFromPeriod(amount, salary);
+      if (monthly !== null) row[isOtherIncome ? "Other Income" : "Income"] = monthly;
+    }
     if (detailPart.length > 0) {
       assignText(row, "Phone", fvText(tabCellInner("e-phone-col", detailPart)));
       assignText(row, "Start Date", fvText(tabCellInner("e-start-date-col", detailPart)));
@@ -1344,6 +1364,30 @@ function daysVacant(text: string | undefined): { current: number | null; lifetim
     current: parts.length > 0 ? intOrNull(parts[0]) : null,
     lifetime: parts.length > 1 ? intOrNull(parts[1]) : null,
   };
+}
+
+/**
+ * Convert a "Salary / Amount" cell to a MONTHLY figure.
+ *
+ * The cell reads "$1,500.00 (Biweekly)" — the amount is per pay period, and the
+ * period is the only thing that makes two residents' incomes comparable. The
+ * mirror stores monthly throughout, so everything is normalized here.
+ *
+ *   - a recognised period converts;
+ *   - no parenthetical at all is taken as monthly (ResMan's own default);
+ *   - an unrecognised period — "Hourly", with no hours anywhere on the page —
+ *     yields null. A guessed 40-hour week would read as a measured figure in
+ *     the affordability math, and null is the honest answer.
+ */
+export function monthlyFromPeriod(amount: number, salaryCell: string): number | null {
+  const period = (/\(([^)]*)\)/.exec(salaryCell)?.[1] ?? "").trim().toLowerCase();
+  if (period.length === 0) return amount;
+  if (/^month/.test(period)) return amount;
+  if (/^(annual|year)/.test(period)) return amount / 12;
+  if (/^(semi.?month|twice.?a.?month)/.test(period)) return amount * 2;
+  if (/^(bi.?week|every.?(other|two).?week|fortnight)/.test(period)) return (amount * 26) / 12;
+  if (/^week/.test(period)) return (amount * 52) / 12;
+  return null;
 }
 
 /**

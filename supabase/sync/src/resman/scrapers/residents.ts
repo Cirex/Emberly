@@ -113,7 +113,12 @@ export function mapVehicleRows(
     color: pick(row, "Color"),
     license_plate: pick(row, "License Plate", "Plate #"),
     license_plate_state: normalizeState(pick(row, "State", "Plate State")),
-    parking_spot: pick(row, "Parking Spot", "Parking"),
+    // The Vehicles tab carries a permit (decal) number and a free-text note,
+    // both of which were parsed and then dropped. It carries no parking-space
+    // field at all, which is why `parking_spot` is not read here — see the
+    // column note in docs/Database.md.
+    permit_number: pick(row, "Permit Number"),
+    notes: pick(row, "Notes"),
   }));
 }
 
@@ -132,7 +137,9 @@ export function mapEmploymentRows(
     employer_name: pick(row, "Employer", "Source"),
     position: pick(row, "Position", "Title"),
     phone: pick(row, "Phone"),
-    other_income_source: pick(row, "Source", "Description"),
+    // Set only on the tab's other-income records (see `parseEmploymentTab`);
+    // on a job it stays empty, because the Employer cell already holds it.
+    other_income_source: pick(row, "Other Income Source"),
     monthly_income: numOrNull(pickAny(row, "Monthly Income", "Income")),
     other_income: numOrNull(pickAny(row, "Other Income", "Amount")),
     start_date: parseLedgerDate(pick(row, "Start Date")),

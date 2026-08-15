@@ -152,7 +152,9 @@ export interface ResmanLeaseVehicleRow {
   color: string;
   license_plate: string;
   license_plate_state: string;
-  parking_spot: string;
+  /** Parking decal number ("Permit number" on the Vehicles tab). */
+  permit_number: string;
+  notes: string;
 }
 
 /** resman_lease_employment — PK `resman_employment_id`. Port of LeaseEmployment.swift. */

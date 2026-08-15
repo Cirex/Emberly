@@ -5,13 +5,13 @@
 > above each `create table` in that same file. To change this document, change the
 > schema or its comments.
 
-52 tables · 738 columns · **32 declared foreign keys** · 17 inferred references
+53 tables · 749 columns · **32 declared foreign keys** · 18 inferred references
 
 ## How to read the relationships
 
 This is the part that will bite you, so it comes first.
 
-Only **32** relationships across 52 tables are declared foreign keys. The rest are
+Only **32** relationships across 53 tables are declared foreign keys. The rest are
 **convention**: a column holding another table's id, with nothing in the database
 enforcing it. Both join identically in a query. They differ in every other way:
 
@@ -62,7 +62,7 @@ column, so no constraint and no inference can cover them.
 
 **Residents** — [`resident_devices`](#residentdevices), [`resident_entry_token_uses`](#residententrytokenuses), [`residents`](#residents)
 
-**Everything else** — [`delinquency_actions`](#delinquencyactions), [`insurance_actions`](#insuranceactions), [`manager_alert_notifications`](#manageralertnotifications), [`monitor_findings`](#monitorfindings), [`property_snapshots`](#propertysnapshots), [`push_tokens`](#pushtokens), [`rate_limits`](#ratelimits), [`renewal_offers`](#renewaloffers), [`scanner_devices`](#scannerdevices), [`unit_snapshots`](#unitsnapshots), [`unit_tags`](#unittags), [`work_order_photos`](#workorderphotos), [`work_order_translations`](#workordertranslations)
+**Everything else** — [`delinquency_actions`](#delinquencyactions), [`insurance_actions`](#insuranceactions), [`lease_notes`](#leasenotes), [`manager_alert_notifications`](#manageralertnotifications), [`monitor_findings`](#monitorfindings), [`property_snapshots`](#propertysnapshots), [`push_tokens`](#pushtokens), [`rate_limits`](#ratelimits), [`renewal_offers`](#renewaloffers), [`scanner_devices`](#scannerdevices), [`unit_snapshots`](#unitsnapshots), [`unit_tags`](#unittags), [`work_order_photos`](#workorderphotos), [`work_order_translations`](#workordertranslations)
 
 ## ResMan mirror
 
@@ -115,8 +115,8 @@ resman_lease_addresses (from LeaseAddress)
 | `state` | text | no |  |  | default `''` |
 | `postal_code` | text | no |  |  | default `''` |
 | `country` | text | no |  |  | default `''` |
-| `start_date` | date | yes |  |  |  |
-| `end_date` | date | yes |  |  |  |
+| `start_date` | date | yes |  |  | always empty: the Addresses tab records no dates |
+| `end_date` | date | yes |  |  | always empty: the Addresses tab records no dates |
 | `synced_at` | timestamptz | yes |  |  | default `now()` |
 | `created_at` | timestamptz | yes |  |  | default `now()` |
 | `updated_at` | timestamptz | yes |  |  | default `now()` |
@@ -149,9 +149,9 @@ resman_lease_employment (from LeaseEmployment)
 | `employer_name` | text | no |  |  | default `''` |
 | `position` | text | no |  |  | default `''` |
 | `phone` | text | no |  |  | default `''` |
-| `other_income_source` | text | no |  |  | default `''` |
-| `monthly_income` | numeric | yes |  |  |  |
-| `other_income` | numeric | yes |  |  |  |
+| `other_income_source` | text | no |  |  | other-income records only (Industry cell reads "Other Income"); empty on a job · default `''` |
+| `monthly_income` | numeric | yes |  |  | MONTHLY, normalized from the tab's pay period |
+| `other_income` | numeric | yes |  |  | MONTHLY, normalized from the tab's pay period |
 | `start_date` | date | yes |  |  |  |
 | `synced_at` | timestamptz | yes |  |  | default `now()` |
 | `created_at` | timestamptz | yes |  |  | default `now()` |
@@ -169,7 +169,7 @@ resman_lease_insurance (from LeaseInsurance)
 | `policy_number` | text | no |  |  | default `''` |
 | `policy_type` | text | no |  |  | default `''` |
 | `status` | text | no |  |  | default `''` |
-| `start_date` | date | yes |  |  |  |
+| `start_date` | date | yes |  |  | always empty: the Insurance tab records only an expiration date |
 | `end_date` | date | yes |  |  |  |
 | `coverage_amount` | numeric | yes |  |  |  |
 | `synced_at` | timestamptz | yes |  |  | default `now()` |
@@ -190,7 +190,9 @@ resman_lease_vehicles (from LeaseVehicle)
 | `color` | text | no |  |  | default `''` |
 | `license_plate` | text | no |  |  | default `''` |
 | `license_plate_state` | text | no |  |  | default `''` |
-| `parking_spot` | text | no |  |  | default `''` |
+| `parking_spot` | text | no |  |  | always empty: ResMan has no parking-space field; see permit_number · default `''` |
+| `permit_number` | text | no |  |  | parking decal number ("Permit number" on the Vehicles tab) · default `''` |
+| `notes` | text | no |  |  | free text on the Vehicles tab, usually decal history · default `''` |
 | `synced_at` | timestamptz | yes |  |  | default `now()` |
 | `created_at` | timestamptz | yes |  |  | default `now()` |
 | `updated_at` | timestamptz | yes |  |  | default `now()` |
@@ -232,7 +234,7 @@ resman_leases (from Lease)
 | `updated_at` | timestamptz | yes |  |  | default `now()` |
 | `deep_synced_at` | timestamptz | yes |  |  |  |
 
-**Referenced by** — [`resman_residents.resman_lease_id`](#resmanresidents) (FK), [`resman_transactions.resman_lease_id`](#resmantransactions) (FK), [`delinquency_actions.resman_lease_id`](#delinquencyactions), [`insurance_actions.resman_lease_id`](#insuranceactions), [`renewal_offers.resman_lease_id`](#renewaloffers), [`resman_work_orders.resman_lease_id`](#resmanworkorders)
+**Referenced by** — [`resman_residents.resman_lease_id`](#resmanresidents) (FK), [`resman_transactions.resman_lease_id`](#resmantransactions) (FK), [`delinquency_actions.resman_lease_id`](#delinquencyactions), [`insurance_actions.resman_lease_id`](#insuranceactions), [`lease_notes.resman_lease_id`](#leasenotes), [`renewal_offers.resman_lease_id`](#renewaloffers), [`resman_work_orders.resman_lease_id`](#resmanworkorders)
 
 ### `resman_properties`
 
@@ -384,7 +386,7 @@ resman_units (from PropertyUnit)
 | `resman_unit_id` | text | no | **PK** |  |  |
 | `resman_property_id` | text | no |  | → FK [`resman_properties.resman_property_id`](#resmanproperties) |  |
 | `resman_building_id` | text | yes |  | → FK [`resman_buildings.resman_building_id`](#resmanbuildings) |  |
-| `resman_floorplan_id` | text | yes |  | → FK [`resman_floorplans.resman_floorplan_id`](#resmanfloorplans) |  |
+| `resman_floorplan_id` | text | yes |  | → FK [`resman_floorplans.resman_floorplan_id`](#resmanfloorplans) | from the unit PAGE (sync:unit-details), not the roster report |
 | `number` | text | no |  |  | default `''` |
 | `current_lease_id` | text | yes |  |  | denormalized, nullable (no FK) |
 | `pending_lease_id` | text | yes |  |  | denormalized, nullable |
@@ -401,8 +403,8 @@ resman_units (from PropertyUnit)
 | `balance` | numeric | yes |  |  |  |
 | `bedrooms` | integer | yes |  |  |  |
 | `bathrooms` | numeric | yes |  |  |  |
-| `pets_permitted` | boolean | yes |  |  |  |
-| `affordable_unit` | boolean | yes |  |  |  |
+| `pets_permitted` | boolean | yes |  |  | from the unit PAGE (sync:unit-details) |
+| `affordable_unit` | boolean | yes |  |  | from the unit PAGE (sync:unit-details) |
 | `holding_unit` | boolean | yes |  |  |  |
 | `excluded_from_occupancy` | boolean | yes |  |  |  |
 | `available_for_online_marketing` | boolean | yes |  |  |  |
@@ -410,7 +412,7 @@ resman_units (from PropertyUnit)
 | `city` | text | no |  |  | default `''` |
 | `state` | text | no |  |  | default `''` |
 | `postal_code` | text | no |  |  | default `''` |
-| `country` | text | no |  |  | default `''` |
+| `country` | text | no |  |  | from the unit PAGE (sync:unit-details); the unit-info report has no country · default `''` |
 | `lease_start_date` | date | yes |  |  |  |
 | `lease_end_date` | date | yes |  |  |  |
 | `move_in_date` | date | yes |  |  |  |
@@ -457,8 +459,8 @@ resman_work_orders (from WorkOrder)
 | `resman_work_order_id` | text | no | **PK** |  |  |
 | `number` | text | no |  |  | default `''` |
 | `resman_unit_id` | text | yes |  | → FK [`resman_units.resman_unit_id`](#resmanunits) |  |
-| `unit_lease_group_id` | text | no |  |  | default `''` |
-| `resman_lease_id` | text | no |  | → ref [`resman_leases.resman_lease_id`](#resmanleases) | default `''` |
+| `unit_lease_group_id` | text | no |  |  | always empty: the work-order report carries no lease link · default `''` |
+| `resman_lease_id` | text | no |  | → ref [`resman_leases.resman_lease_id`](#resmanleases) | always empty: the work-order report carries no lease link · default `''` |
 | `unit_number` | text | no |  |  | default `''` |
 | `resman_property_id` | text | yes |  | → FK [`resman_properties.resman_property_id`](#resmanproperties) |  |
 | `status` | text | no |  |  | default `'Not Started'` |
@@ -1161,6 +1163,28 @@ survive it.
 **Allowed values**
 
 - `kind` — `proof_requested`, `second_notice`, `verified`, `note`
+
+### `lease_notes`
+
+lease_notes — shared staff notes thread on a lease
+
+Emberly-owned write surface, the delinquency_actions pattern again: any
+staff role posts free-text notes against a lease from the manager app's
+pipeline detail sheet; ResMan is never touched. The lease reference is soft
+— the sync's delete-missing pass may remove a lease, but the conversation
+must survive it — so rows are soft deleted (deleted_at) and never cascade.
+
+| column | type | null | key | references | notes |
+| --- | --- | --- | --- | --- | --- |
+| `id` | uuid | no | **PK** |  | default `gen_random_uuid()` |
+| `resman_lease_id` | text | no |  | → ref [`resman_leases.resman_lease_id`](#resmanleases) | soft ref (lease may be deleted by sync) |
+| `unit_number` | text | no |  |  | default `''` |
+| `body` | text | no |  |  |  |
+| `created_by` | text | no |  |  | staff display name from token label · default `''` |
+| `created_by_role` | text | no |  |  | token role, shown next to the name · default `''` |
+| `created_by_admin_id` | text | no |  |  | default `''` |
+| `created_at` | timestamptz | yes |  |  | default `now()` |
+| `deleted_at` | timestamptz | yes |  |  |  |
 
 ### `manager_alert_notifications`
 

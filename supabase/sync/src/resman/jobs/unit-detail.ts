@@ -86,6 +86,8 @@ export interface SyncUnitDetailsResult {
   units: number;
   scraped: number;
   failed: number;
+  /** Units whose page-only columns (floorplan, pets, affordable, country) were written. */
+  unitsEnriched: number;
   leases: number;
   transactions: number;
   residents: number;
@@ -107,6 +109,22 @@ function dict(value: unknown): Dict | null {
 function dictArray(value: unknown): Dict[] {
   if (!Array.isArray(value)) return [];
   return value.filter((v): v is Dict => v !== null && typeof v === "object");
+}
+
+/** A scraped tri-state flag: true/false as read, null when the page omitted it. */
+function boolOrNull(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+/**
+ * The country line of the unit's parsed address ("United States"), or null when
+ * the address block had only street and city/state/zip.
+ */
+function unitCountry(value: unknown): string | null {
+  const address = dict(value);
+  if (address === null) return null;
+  const country = address["country"];
+  return typeof country === "string" && country.trim().length > 0 ? country.trim() : null;
 }
 
 /**
@@ -262,8 +280,10 @@ export async function syncUnitDetails(params: SyncUnitDetailsParams): Promise<Sy
     throw new Error(`[unit-detail] all ${total} unit scrapes failed — aborting run (non-zero exit)`);
   }
 
-  // Accumulators. (Unit-row fields are owned by the all-units / unit-info jobs;
-  // this pass only seeds buildings/floorplans and the lease/resident/ledger tables.)
+  // Accumulators. (Almost every unit-row field is owned by the all-units /
+  // unit-info jobs; this pass seeds buildings/floorplans, the lease/resident/
+  // ledger tables, and the four unit columns only the unit PAGE carries.)
+  const unitRows: Array<Record<string, unknown>> = [];
   const leaseRows: LeaseRowWithoutBalance[] = [];
   const txRows: ResmanTransactionRow[] = [];
   const residentRows: ResmanResidentRow[] = [];
@@ -308,9 +328,11 @@ export async function syncUnitDetails(params: SyncUnitDetailsParams): Promise<Sy
     const building = dict(data["building"]);
     if (building) seedBuilding(str(building, "id"), str(building, "name"));
     const floorplan = dict(data["floorplan"]);
+    let floorplanId = "";
     if (floorplan) {
       const fid = str(floorplan, "id");
       if (fid.length > 0) {
+        floorplanId = fid;
         seedFloorplan({
           resman_floorplan_id: fid,
           resman_property_id: propertyId,
@@ -320,6 +342,23 @@ export async function syncUnitDetails(params: SyncUnitDetailsParams): Promise<Sy
         });
       }
     }
+
+    // Four unit columns nothing else writes. The All-Units CSV and the
+    // unit-info report — which own every other unit field — carry none of
+    // them, so they sat empty on all 891 units while this scrape read them off
+    // the unit page every run and dropped them on the floor.
+    //
+    // Every key is always present, even as null: PostgREST builds one
+    // statement from the union of keys in a batch, so a key that appears on
+    // only some rows resets the column to its default on the rest. Writing
+    // null here is safe precisely because this pass is the sole writer.
+    unitRows.push({
+      resman_unit_id: unitId,
+      resman_floorplan_id: floorplanId.length > 0 ? floorplanId : null,
+      pets_permitted: boolOrNull(data["petsPermitted"]),
+      affordable_unit: boolOrNull(data["affordableUnit"]),
+      country: unitCountry(data["address"]),
+    });
 
     const unitNumber = str(data, "unitNumber");
     const leaseDicts = dictArray(data["leases"]);
@@ -370,9 +409,15 @@ export async function syncUnitDetails(params: SyncUnitDetailsParams): Promise<Sy
     upsertMirror(supabase, "resman_floorplans", stampSynced([...floorplansById.values()]), { conflictColumn: "resman_floorplan_id" }),
     upsertMirror(supabase, "resman_leases", asRows(leaseRows), { conflictColumn: "resman_lease_id" }),
   ]);
-  const rOut = await upsertMirror(supabase, "resman_residents", asRows(residentRows), {
-    conflictColumn: "resman_person_lease_id",
-  });
+  // Units join wave 2: `resman_floorplan_id` points at resman_floorplans, so
+  // those rows have to land first. No delete-missing — this pass only enriches
+  // units the roster job owns and must never remove one.
+  const [uOut, rOut] = await Promise.all([
+    upsertMirror(supabase, "resman_units", unitRows, { conflictColumn: "resman_unit_id" }),
+    upsertMirror(supabase, "resman_residents", asRows(residentRows), {
+      conflictColumn: "resman_person_lease_id",
+    }),
+  ]);
   const [tOut, vOut, eOut, iOut, aOut, cOut] = await Promise.all([
     upsertMirror(supabase, "resman_transactions", asRows(txRows), { conflictColumn: "resman_ledger_entry_id" }),
     upsertMirror(supabase, "resman_lease_vehicles", asRows(vehicleRows), { conflictColumn: "resman_vehicle_id" }),
@@ -386,6 +431,7 @@ export async function syncUnitDetails(params: SyncUnitDetailsParams): Promise<Sy
     units: units.length,
     scraped,
     failed,
+    unitsEnriched: uOut.upserted,
     leases: lOut.upserted,
     transactions: tOut.upserted,
     residents: rOut.upserted,
@@ -771,7 +817,7 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
 
 function emptyResult(): SyncUnitDetailsResult {
   return {
-    units: 0, scraped: 0, failed: 0, leases: 0, transactions: 0, residents: 0,
+    units: 0, scraped: 0, failed: 0, unitsEnriched: 0, leases: 0, transactions: 0, residents: 0,
     vehicles: 0, employment: 0, insurance: 0, addresses: 0, alternateContacts: 0,
     buildings: 0, floorplans: 0,
   };

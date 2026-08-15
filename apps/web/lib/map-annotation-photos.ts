@@ -1,3 +1,4 @@
+import { base64ByteLength } from "@/lib/http";
 import { createAdminClient, createUntypedAdminClient } from "@/lib/supabase/admin";
 import type { UntypedSupabase } from "@/lib/supabase/types";
 import {
@@ -107,12 +108,20 @@ export async function createAnnotationPhoto(
   if (!ALLOWED_TYPES.has(contentType)) {
     return { ok: false, status: 400, error: "Unsupported image type" };
   }
+  // Size FIRST, from the base64 length — decoding to find out how big it is
+  // means an oversized payload is fully allocated before being rejected.
+  const declaredBytes = base64ByteLength(input.dataBase64);
+  if (declaredBytes === 0 || declaredBytes > MAX_BYTES) {
+    return { ok: false, status: 400, error: "Image is empty or too large" };
+  }
   let bytes: Buffer;
   try {
     bytes = Buffer.from(input.dataBase64, "base64");
   } catch {
     return { ok: false, status: 400, error: "Invalid base64 payload" };
   }
+  // Buffer.from ignores non-base64 characters rather than throwing, so the
+  // real length can undershoot the estimate. Re-check the decoded truth.
   if (bytes.length === 0 || bytes.length > MAX_BYTES) {
     return { ok: false, status: 400, error: "Image is empty or too large" };
   }

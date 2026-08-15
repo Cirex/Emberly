@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminOrScanner } from "@/lib/admin-request";
+import { readJsonWithinLimit } from "@/lib/http";
 import { actorFor, layersFor } from "@/lib/map-annotation-service";
 import { createAnnotationPhoto, listAnnotationPhotos } from "@/lib/map-annotation-photos";
 import { z } from "zod";
@@ -21,12 +22,27 @@ const CreateSchema = z.object({
   contentType: z.string().min(1).max(64),
 });
 
+/**
+ * Ceiling on the whole JSON envelope: the 12M-character base64 field the
+ * schema allows, plus room for the content type and JSON punctuation. The zod
+ * cap alone runs after the body is already buffered, which is the allocation
+ * worth avoiding.
+ */
+const MAX_BODY_BYTES = 13 * 1024 * 1024;
+
 export async function POST(request: Request, { params }: RouteParams) {
   const auth = await requireAdminOrScanner(request, { roles: ["property_manager", "security_manager"] });
   if (!auth.ok) return auth.response;
   const { annotationId } = await params;
 
-  const parsed = CreateSchema.safeParse(await request.json().catch(() => null));
+  const body = await readJsonWithinLimit(request, MAX_BODY_BYTES);
+  if (!body.ok) {
+    return body.reason === "too_large"
+      ? NextResponse.json({ error: "Photo payload too large" }, { status: 413 })
+      : NextResponse.json({ error: "Invalid photo payload" }, { status: 400 });
+  }
+
+  const parsed = CreateSchema.safeParse(body.body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid photo payload" }, { status: 400 });
   }

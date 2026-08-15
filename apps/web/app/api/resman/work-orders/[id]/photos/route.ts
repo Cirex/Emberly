@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { readJsonWithinLimit } from "@/lib/http";
 import { getResource } from "@/lib/resman-api";
 import { requireStaffToken } from "@/lib/resman-api-auth";
 import { workOrdersResource } from "@/lib/resman-resources";
@@ -57,11 +58,25 @@ const CreateSchema = z.object({
   phase: z.enum(WORK_ORDER_PHOTO_PHASES).optional(),
 });
 
+/**
+ * Ceiling on the whole JSON envelope, matching the schema's 14M-character
+ * base64 field plus the other fields. The zod cap only runs once the body has
+ * already been buffered; this stops an oversized upload before that.
+ */
+const MAX_BODY_BYTES = 15 * 1024 * 1024;
+
 export async function POST(request: Request, { params }: RouteParams): Promise<NextResponse> {
   const auth = await requireStaffToken(request, "work-orders");
   if (!auth.ok) return auth.response;
 
-  const parsed = CreateSchema.safeParse(await request.json().catch(() => null));
+  const body = await readJsonWithinLimit(request, MAX_BODY_BYTES);
+  if (!body.ok) {
+    return body.reason === "too_large"
+      ? NextResponse.json({ error: "Photo payload too large" }, { status: 413 })
+      : NextResponse.json({ error: "Invalid photo payload" }, { status: 400 });
+  }
+
+  const parsed = CreateSchema.safeParse(body.body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid photo payload" }, { status: 400 });
   }

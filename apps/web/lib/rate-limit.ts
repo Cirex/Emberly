@@ -1,6 +1,6 @@
+import { MemoryRateLimiter } from "./memory-rate-limit";
 import { createAdminClient, getMissingSupabaseAdminEnvVars } from "./supabase/admin";
 
-type RateLimitEntry = { count: number; resetAt: number };
 type RateLimitInput = {
   bucket: string;
   maxAttempts: number;
@@ -9,7 +9,12 @@ type RateLimitInput = {
   now?: number;
 };
 
-const memoryAttempts = new Map<string, RateLimitEntry>();
+/**
+ * Buckets here embed `requestSource(request)` — a client-supplied
+ * `x-forwarded-for` — so the key space is caller-controlled and must be
+ * bounded. See lib/memory-rate-limit.ts.
+ */
+const memoryAttempts = new MemoryRateLimiter();
 
 export async function checkMemoryRateLimit(
   bucket: string,
@@ -17,14 +22,7 @@ export async function checkMemoryRateLimit(
   windowMs: number,
   now = Date.now()
 ): Promise<boolean> {
-  const existing = memoryAttempts.get(bucket);
-  if (!existing || now > existing.resetAt) {
-    memoryAttempts.set(bucket, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-
-  existing.count += 1;
-  return existing.count <= maxAttempts;
+  return memoryAttempts.check(bucket, maxAttempts, windowMs, now);
 }
 
 export function shouldFailClosedOnDurableRateLimitFailure(

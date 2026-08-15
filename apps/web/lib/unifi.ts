@@ -38,15 +38,43 @@ function protectUrl(consoleId: string, path: string): string {
 }
 
 /**
+ * UniFi's cloud API sits behind the property's uplink and occasionally just
+ * stops answering. Without a deadline the request hangs for Node's default
+ * (effectively forever), pinning the whole request context — and the guard
+ * iPads re-issue snapshot requests on an 8s tick, so hung calls stack up.
+ */
+const REQUEST_TIMEOUT_MS = 10_000;
+
+async function unifiFetch(url: string): Promise<Response> {
+  return fetch(url, {
+    headers: { "X-API-Key": apiKey() },
+    cache: "no-store",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+}
+
+/**
+ * Release a response whose body we are not going to read.
+ *
+ * An unconsumed body keeps its buffered chunks and holds the underlying
+ * connection out of the keep-alive pool until GC gets around to it. Every
+ * early return below is on the error path, which is exactly when the property
+ * is generating the most of them.
+ */
+async function discard(response: Response): Promise<void> {
+  await response.body?.cancel().catch(() => {});
+}
+
+/**
  * Every console the key's account owns, with its Protect cameras. Consoles
  * without Protect (or that error) are skipped rather than failing the sweep.
  */
 export async function listUnifiCameras(): Promise<UnifiConsole[]> {
-  const res = await fetch(`${API_BASE}/v1/hosts`, {
-    headers: { "X-API-Key": apiKey() },
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`UniFi hosts request failed (${res.status})`);
+  const res = await unifiFetch(`${API_BASE}/v1/hosts`);
+  if (!res.ok) {
+    await discard(res);
+    throw new Error(`UniFi hosts request failed (${res.status})`);
+  }
   const payload = (await res.json()) as {
     data?: Array<{ id?: string; type?: string; reportedState?: { name?: string; hostname?: string } }>;
   };
@@ -55,11 +83,11 @@ export async function listUnifiCameras(): Promise<UnifiConsole[]> {
   const results = await Promise.all(
     consoles.map(async (host): Promise<UnifiConsole | null> => {
       try {
-        const camsRes = await fetch(protectUrl(host.id as string, "/cameras"), {
-          headers: { "X-API-Key": apiKey() },
-          cache: "no-store",
-        });
-        if (!camsRes.ok) return null;
+        const camsRes = await unifiFetch(protectUrl(host.id as string, "/cameras"));
+        if (!camsRes.ok) {
+          await discard(camsRes);
+          return null;
+        }
         const cams = (await camsRes.json()) as Array<{ id?: string; name?: string; state?: string }>;
         if (!Array.isArray(cams)) return null;
         return {
@@ -84,11 +112,11 @@ export async function listUnifiCameras(): Promise<UnifiConsole[]> {
  */
 export async function fetchUnifiCameraName(consoleId: string, cameraId: string): Promise<string | null> {
   try {
-    const res = await fetch(protectUrl(consoleId, `/cameras/${encodeURIComponent(cameraId)}`), {
-      headers: { "X-API-Key": apiKey() },
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
+    const res = await unifiFetch(protectUrl(consoleId, `/cameras/${encodeURIComponent(cameraId)}`));
+    if (!res.ok) {
+      await discard(res);
+      return null;
+    }
     const cam = (await res.json()) as { name?: string };
     return cam.name?.trim() || null;
   } catch {
@@ -169,11 +197,13 @@ export async function fetchUnifiSnapshot(
   consoleId: string,
   cameraId: string,
 ): Promise<{ body: ArrayBuffer; contentType: string } | null> {
-  const res = await fetch(protectUrl(consoleId, `/cameras/${encodeURIComponent(cameraId)}/snapshot`), {
-    headers: { "X-API-Key": apiKey() },
-    cache: "no-store",
-  });
-  if (!res.ok) return null;
+  const res = await unifiFetch(
+    protectUrl(consoleId, `/cameras/${encodeURIComponent(cameraId)}/snapshot`),
+  );
+  if (!res.ok) {
+    await discard(res);
+    return null;
+  }
   return {
     body: await res.arrayBuffer(),
     contentType: res.headers.get("content-type") ?? "image/jpeg",

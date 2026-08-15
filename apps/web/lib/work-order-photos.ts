@@ -1,3 +1,4 @@
+import { base64ByteLength } from "@/lib/http";
 import { createAdminClient, createUntypedAdminClient } from "@/lib/supabase/admin";
 import type { AccessTokenSubject } from "@/lib/access-tokens";
 
@@ -180,12 +181,23 @@ export async function createWorkOrderPhoto(
   input: { dataBase64: string; contentType: string; phase?: WorkOrderPhotoPhase },
 ): Promise<WorkOrderPhotoCreateResult> {
   const contentType = input.contentType.toLowerCase();
+  // Validate against the size implied by the base64 length BEFORE decoding —
+  // otherwise an oversized upload is fully allocated just to be rejected.
+  const declared = validateWorkOrderPhotoUpload({
+    contentType,
+    byteSize: base64ByteLength(input.dataBase64),
+    phase: input.phase,
+  });
+  if (!declared.ok) return declared;
+
   let bytes: Buffer;
   try {
     bytes = Buffer.from(input.dataBase64, "base64");
   } catch {
     return { ok: false, status: 400, error: "Invalid base64 payload" };
   }
+  // Buffer.from skips non-base64 characters instead of throwing, so the
+  // decoded length can differ from the estimate. Re-check the truth.
   const valid = validateWorkOrderPhotoUpload({
     contentType,
     byteSize: bytes.length,

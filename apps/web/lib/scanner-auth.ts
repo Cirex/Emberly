@@ -13,9 +13,9 @@
 import { createHmac, randomBytes } from "crypto";
 import { SCANNER_KEY_HEADER } from "@emberly/core";
 import { secureCompare } from "./auth";
+import { MemoryRateLimiter } from "./memory-rate-limit";
 import { type ScannerRegistryClient } from "./scanner-devices";
 
-type RateLimitEntry = { count: number; resetAt: number };
 type ScannerAuthClient = {
   from: (table: string) => {
     select: (columns: string) => {
@@ -32,7 +32,13 @@ type ScannerAuthClient = {
 const WINDOW_MS = 60_000;
 const MAX_ATTEMPTS = 60;
 const HMAC_HASH_PREFIX = "hmac-sha256:";
-const attempts = new Map<string, RateLimitEntry>();
+
+/**
+ * Keys are `${scannerId}:${type}:${token.slice(-24)}` and resident entry
+ * tokens live 60 seconds, so nearly every scan produces a key that is never
+ * seen again. Bounded and swept — see lib/memory-rate-limit.ts.
+ */
+const attempts = new MemoryRateLimiter();
 
 export function createScannerSecret(): string {
   return randomBytes(32).toString("base64url");
@@ -139,12 +145,10 @@ export async function touchScannerLastSeen(
 }
 
 export function rateLimitScannerAttempt(key: string, now = Date.now()): boolean {
-  const existing = attempts.get(key);
-  if (!existing || now > existing.resetAt) {
-    attempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
-    return true;
-  }
+  return attempts.check(key, MAX_ATTEMPTS, WINDOW_MS, now);
+}
 
-  existing.count += 1;
-  return existing.count <= MAX_ATTEMPTS;
+/** Live key count, for the leak regression test. */
+export function scannerRateLimitSize(): number {
+  return attempts.size;
 }

@@ -33,6 +33,14 @@ async function loadSharp(): Promise<any | null> {
     const path = await import("node:path");
     const req = createRequire(path.join(process.cwd(), "package.json"));
     sharpModule = req("sharp");
+    // libvips defaults are tuned for a batch CLI, not a long-lived server: a
+    // 50MB operation cache plus a per-thread slab pool that glib never returns
+    // to the OS. Every frame here is a one-shot resize of a distinct image, so
+    // the cache can never hit — it only holds memory. Serialising to one
+    // thread bounds the pools too; the guard iPads poll thumbnails on an 8s
+    // tick and this route is the single hottest thing the server does.
+    sharpModule.cache(false);
+    sharpModule.concurrency(1);
   } catch (error) {
     console.error("[cameras/snapshot] sharp unavailable, serving full frames:", error);
     sharpModule = null;

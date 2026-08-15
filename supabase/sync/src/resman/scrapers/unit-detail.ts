@@ -462,6 +462,31 @@ export async function scrapeLeaseByPersonLeaseId(
   return scrapeLease(syntheticRow, propertyId, unitId, false, http, fetchTabsAndLedger);
 }
 
+// MARK: - scrapeLeaseLedgerOnly
+
+/**
+ * The LEDGER of an already-captured lease, and nothing else.
+ *
+ * Once a lease has been deep-captured, its fields and its residents' tabs
+ * (vehicles, employment, insurance, addresses, contacts) do not change — but
+ * its ledger keeps moving for as long as a balance exists: charges post,
+ * payments land, write-offs and collections activity continue long after a
+ * resident has left. Re-running the full scrape to pick that up costs roughly
+ * 13 requests on a two-resident lease (the detail page, then a page and five
+ * tabs per resident); this costs TWO — the detail page purely to locate the
+ * Ledger tab endpoint, then the ledger itself with LoadAllTransactions.
+ *
+ * Against a portal that serves error pages above six concurrent connections,
+ * that difference is what makes refreshing every settled lease affordable.
+ */
+export async function scrapeLeaseLedgerOnly(
+  personLeaseId: string,
+  http: ResManScrapeHttp,
+): Promise<Record<string, unknown>[]> {
+  const html = await http.getText(`/Residents/Detail/${personLeaseId}`);
+  return fetchAllLedger("Ledger", dataURLEndpoints(html), http);
+}
+
 // MARK: - scrapeResidentStatusAndTabs
 
 /**

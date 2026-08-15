@@ -30,6 +30,7 @@ import {
   fetchBuildingFloorplans,
   isTerminalLeaseStatus,
   scrapeLeaseByPersonLeaseId,
+  scrapeLeaseLedgerOnly,
   scrapeUnit,
 } from "../scrapers/unit-detail";
 import { vehicleIdentityKey } from "../normalize";
@@ -414,6 +415,8 @@ export interface SyncLeaseDetailsResult {
   leases: number;
   scraped: number;
   failed: number;
+  /** Finished applications that needed no request at all this run. */
+  skipped: number;
   leasesUpserted: number;
   transactions: number;
   residents: number;
@@ -429,9 +432,123 @@ interface QualifyingLease {
   resman_unit_id: string | null;
   unit_number: string;
   is_most_recent_lease: boolean;
+  status: string | null;
+  deep_synced_at: string | null;
 }
 
-/** Page the property's current/most-recent leases (the Swift qualifying filter). */
+/**
+ * Lease statuses that are an APPLICATION in flight rather than a residency.
+ *
+ * These leases are, by definition, neither `is_current_lease` nor
+ * `is_most_recent_lease` — the unit they are for usually still has a sitting
+ * resident whose lease holds both flags — so the original current/most-recent
+ * filter never scraped a single one. That left every pending application in the
+ * mirror as a bare shell: 63 rows on this property with a status and nothing
+ * else, no application_date, no leasing_agent, no move_in_date. The manager
+ * app's Pipeline board is built on exactly those fields, so it rendered them as
+ * anonymous rows that could not say who the prospect was or who owned the deal.
+ *
+ * `ilike` patterns, matched server-side, so "Pending Renewal" is caught by
+ * "pending%" without a second entry.
+ */
+export const APPLICATION_LEASE_STATUS_PATTERNS = ["pending%", "approved%", "applicant%", "prospect%"];
+
+/**
+ * Statuses whose lease FIELDS are still moving, so the full scrape re-runs on
+ * every sync. These are exactly the leases where somebody is still living in
+ * the unit, or still negotiating the terms of doing so:
+ *
+ *   current          — a sitting residency; rent, dates and balance all move
+ *   pending renewal  — terms under negotiation
+ *   notice           — "Notice to Vacate": move_out_date, notice_given_date and
+ *                      reason_for_leaving are being written right now
+ *   eviction         — "Under Eviction" (NOT "Evicted", which is terminal —
+ *                      the substring is chosen to exclude it); the set-out date
+ *                      lands on these while the case runs
+ *   month to month   — a live residency on a rolling term
+ *
+ * The move-out reporting reads move_out_date and reason_for_leaving off the
+ * notice/eviction rows, so freezing them after one capture would quietly stale
+ * that data — which is why they re-read in full rather than ledger-only.
+ *
+ * Every other status is captured in full exactly ONCE and then refreshed
+ * ledger-only (see leaseScrapeTier). Substring match against the lowercased
+ * ResMan status.
+ */
+export const ALWAYS_FULL_SCRAPE_STATUSES = [
+  "current",
+  "pending renewal",
+  "notice",
+  "eviction",
+  "month to month",
+];
+
+/** The PostgREST `or=` expression selecting leases worth reading at all. */
+export function qualifyingLeaseOrFilter(): string {
+  return [
+    "is_current_lease.eq.true",
+    "is_most_recent_lease.eq.true",
+    ...APPLICATION_LEASE_STATUS_PATTERNS.map((p) => `status.ilike.${p}`),
+    // Anything never deep-captured earns one full scrape, whatever its status.
+    "deep_synced_at.is.null",
+  ].join(",");
+}
+
+/**
+ * Statuses for an application that NEVER became a tenancy. Once captured they
+ * are finished — there is no ledger that can move, because no rent was ever
+ * charged against them — so they are skipped entirely on later runs.
+ *
+ * Contrast the ended-tenancy statuses (Former, Evicted, Renewed…), which do
+ * keep a moving ledger: collections, write-offs and final-account activity
+ * continue for months after the resident has gone. Those fall through to the
+ * ledger tier.
+ *
+ * ORDER MATTERS: "Pending Renewal" contains "pending", so this list is only
+ * consulted AFTER ALWAYS_FULL_SCRAPE_STATUSES has had its say. A renewal is a
+ * live negotiation, not a dead application.
+ */
+export const NO_LEDGER_STATUSES = [
+  "pending",
+  "denied",
+  "cancel",
+  "approved",
+  "applicant",
+  "prospect",
+];
+
+export type LeaseScrapeTier = "full" | "ledger" | "skip";
+
+/**
+ * How much of a lease to re-read this run.
+ *
+ * `full`   — never deep-captured (nothing is known beyond the shallow
+ *            skeleton), or somebody still lives in the unit so the fields move.
+ * `ledger` — captured, tenancy ended: the money still moves, nothing else does.
+ * `skip`   — captured, and it was an application that never became a tenancy.
+ *            Finished. No further requests, ever.
+ *
+ * The `deep_synced_at === null` check comes first and has no status condition,
+ * which is what makes "every lease type is scraped at least once" true.
+ */
+export function leaseScrapeTier(lease: {
+  status: string | null;
+  deep_synced_at: string | null;
+}): LeaseScrapeTier {
+  if (lease.deep_synced_at === null) return "full";
+  const s = (lease.status ?? "").toLowerCase();
+  if (ALWAYS_FULL_SCRAPE_STATUSES.some((k) => s.includes(k))) return "full";
+  if (NO_LEDGER_STATUSES.some((k) => s.includes(k))) return "skip";
+  // Ended tenancies, plus any status ResMan invents that we do not recognize:
+  // two requests to keep the money current is the safe default.
+  return "ledger";
+}
+
+/**
+ * Page every lease worth reading: current/most-recent residencies, in-flight
+ * applications, and anything never deep-captured. `leaseScrapeTier` then
+ * decides how much of each to re-read.
+ */
 async function loadQualifyingLeases(
   supabase: ServiceClient,
   propertyId: string,
@@ -441,9 +558,11 @@ async function loadQualifyingLeases(
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await supabase
       .from("resman_leases")
-      .select("resman_lease_id, resman_unit_id, unit_number, is_most_recent_lease, is_current_lease")
+      .select(
+        "resman_lease_id, resman_unit_id, unit_number, is_most_recent_lease, is_current_lease, status, deep_synced_at",
+      )
       .eq("resman_property_id", propertyId)
-      .or("is_current_lease.eq.true,is_most_recent_lease.eq.true")
+      .or(qualifyingLeaseOrFilter())
       .range(from, from + pageSize - 1);
     if (error) throw new Error(`read resman_leases failed: ${error.message}`);
     const batch = (data ?? []) as unknown as QualifyingLease[];
@@ -468,8 +587,9 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
   if (leases.length === 0) {
     log(`[lease-details] no current/most-recent leases for property ${propertyId}`);
     return {
-      leases: 0, scraped: 0, failed: 0, leasesUpserted: 0, transactions: 0, residents: 0,
-      vehicles: 0, employment: 0, insurance: 0, addresses: 0, alternateContacts: 0,
+      leases: 0, scraped: 0, failed: 0, skipped: 0, leasesUpserted: 0, transactions: 0,
+      residents: 0, vehicles: 0, employment: 0, insurance: 0, addresses: 0,
+      alternateContacts: 0,
     };
   }
 
@@ -477,13 +597,34 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
   let failed = 0;
   let started = 0;
   let done = 0;
-  const total = leases.length;
-  log(`[lease-details] scraping ${total} lease${total === 1 ? "" : "s"} (ledger + residents + tabs, concurrency ${concurrency})…`);
-  const scrapeResults = await mapWithConcurrency(leases, concurrency, async (lease) => {
+
+  // Finished applications cost nothing: drop them before the loop so they are
+  // not counted, logged or requested.
+  const skipped = leases.filter((l) => leaseScrapeTier(l) === "skip").length;
+  const work = leases.filter((l) => leaseScrapeTier(l) !== "skip");
+  const total = work.length;
+  const fullCount = work.filter((l) => leaseScrapeTier(l) === "full").length;
+  log(
+    `[lease-details] ${total} lease${total === 1 ? "" : "s"} to read — ` +
+      `${fullCount} full (fields + residents + tabs + ledger), ` +
+      `${total - fullCount} ledger-only; ` +
+      `${skipped} finished application${skipped === 1 ? "" : "s"} skipped; concurrency ${concurrency}…`,
+  );
+  const scrapeResults = await mapWithConcurrency(work, concurrency, async (lease) => {
     const label = lease.unit_number || lease.resman_lease_id;
+    const tier = leaseScrapeTier(lease);
     started += 1;
-    log(`[lease-details]   → [${started}/${total}] ${label}`);
+    log(`[lease-details]   → [${started}/${total}] ${label} (${tier})`);
     try {
+      if (tier === "ledger") {
+        // Already captured and settled: only the money still moves. Two
+        // requests instead of ~13 — see scrapeLeaseLedgerOnly.
+        const ledger = await scrapeLeaseLedgerOnly(lease.resman_lease_id, http);
+        scraped += 1;
+        done += 1;
+        log(`[lease-details] ✓ [${done}/${total}] ${label} — ledger only, ${ledger.length} entries`);
+        return { lease, tier, data: { ledger } as Record<string, unknown> };
+      }
       const data = await scrapeLeaseByPersonLeaseId(
         lease.resman_lease_id,
         propertyId,
@@ -496,7 +637,7 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
       const resCount = Array.isArray(data.residents) ? data.residents.length : 0;
       done += 1;
       log(`[lease-details] ✓ [${done}/${total}] ${label} — ${resCount} resident${resCount === 1 ? "" : "s"}, ${txCount} ledger`);
-      return { lease, data };
+      return { lease, tier, data };
     } catch (error) {
       // See the unit-detail loop above: a mid-run session expiry aborts the job
       // rather than silently degrading to sparse/empty data.
@@ -525,8 +666,19 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
 
   for (const entry of scrapeResults) {
     if (entry === null) continue;
-    const { lease, data } = entry;
+    const { lease, tier, data } = entry;
     const unitId = lease.resman_unit_id ?? str(data, "unitId");
+    const leaseId = lease.resman_lease_id;
+
+    // A ledger-only pass read NO lease fields and NO residents. Mapping its
+    // empty dict would write blanks over the very data the first full capture
+    // went and got — the mapper coerces absent keys to ""/null and the upsert
+    // overwrites. So it contributes transactions and nothing else.
+    if (tier === "ledger") {
+      txRows.push(...mapLedgerRows(dictArray(data["ledger"]), { leaseId, unitId, propertyId }));
+      continue;
+    }
+
     const leaseRow = mapLease(data, {
       unitId,
       unitNumber: lease.unit_number,
@@ -535,7 +687,6 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
     });
     leaseRow.deep_synced_at = new Date().toISOString();
     leaseRows.push(withoutTermDates(leaseRow));
-    const leaseId = lease.resman_lease_id;
     txRows.push(...mapLedgerRows(dictArray(data["ledger"]), { leaseId, unitId, propertyId }));
     const mapped = mapResidents(dictArray(data["residents"]), { leaseId });
     residentRows.push(...mapped.residents);
@@ -569,9 +720,10 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
   ]);
 
   const result: SyncLeaseDetailsResult = {
-    leases: leases.length,
+    leases: work.length,
     scraped,
     failed,
+    skipped,
     leasesUpserted: lOut.upserted,
     transactions: tOut.upserted,
     residents: rOut.upserted,

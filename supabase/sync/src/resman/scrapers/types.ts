@@ -108,6 +108,10 @@ export interface ResmanLeaseRow {
   lease_sent_date: string | null;
   /** When a signature package was voided — a deal in trouble. */
   lease_voided_date: string | null;
+  /** The security deposit added, per the Activity Log; null = none taken. */
+  deposit_amount: number | null;
+  /** The day the log recorded that deposit. */
+  deposit_logged_date: string | null;
   application_date: string | null;
   signed_date: string | null;
   start_date: string | null;

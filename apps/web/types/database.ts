@@ -1283,6 +1283,8 @@ export interface Database {
           start_date_changes: number;
           lease_sent_date: string | null;
           lease_voided_date: string | null;
+          deposit_amount: number | null;
+          deposit_logged_date: string | null;
           application_date: string | null;
           signed_date: string | null;
           start_date: string | null;
@@ -1321,6 +1323,8 @@ export interface Database {
           start_date_changes?: number;
           lease_sent_date?: string | null;
           lease_voided_date?: string | null;
+          deposit_amount?: number | null;
+          deposit_logged_date?: string | null;
           application_date?: string | null;
           signed_date?: string | null;
           start_date?: string | null;
@@ -1359,6 +1363,8 @@ export interface Database {
           start_date_changes?: number;
           lease_sent_date?: string | null;
           lease_voided_date?: string | null;
+          deposit_amount?: number | null;
+          deposit_logged_date?: string | null;
           application_date?: string | null;
           signed_date?: string | null;
           start_date?: string | null;

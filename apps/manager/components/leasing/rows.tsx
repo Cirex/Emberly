@@ -1,25 +1,26 @@
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View, useWindowDimensions } from "react-native";
-import { InitialsBadge } from "@/components/ui/InitialsBadge";
 import { StatusPill, type PillTone } from "@/components/leasing/primitives";
+import { TierGem } from "@/components/leasing/TierGem";
 import { activeLocale } from "@/lib/i18n";
 import type {
   ExpirationRow,
   ForecastRow,
   PipelineRow,
+  PipelineRowFlag,
   PipelineStage,
   TrackerStep,
   VacancyRow,
 } from "@/lib/derived/leasing";
-import { pipelineTrackerSteps, shortPct, signedMoney } from "@/lib/derived/leasing";
+import { pipelineRowFlags, pipelineTrackerSteps, shortPct, signedMoney } from "@/lib/derived/leasing";
 import { calendarDaysBetween, parseDay, startOfDay } from "@/lib/derived/time";
 import { HAIRLINE, MUTED, NAVY } from "@/theme/tokens";
 
 /**
  * Row renderers for the four Leasing modes — the mockup's `.row` anatomy:
- * initials lead, unit + tenant big line, muted sub line, status pill and
- * money on the right. All strings arrive translated via i18n keys; dates
- * format in the active locale.
+ * unit + tenant big line, muted sub line, status pill and money on the right.
+ * All strings arrive translated via i18n keys; dates format in the active
+ * locale.
  */
 
 /** "Jul 21" in the active locale. */
@@ -40,11 +41,14 @@ function RowShell({
   children,
   last,
   align = "center",
+  rail,
 }: {
   children: React.ReactNode;
   last: boolean;
   /** Pipeline rows carry three text lines, so they hang from the top. */
   align?: "center" | "flex-start";
+  /** 3px edge stripe in the worst flag's tone; null on a row with nothing wrong. */
+  rail?: string | null;
 }) {
   return (
     <View
@@ -58,6 +62,11 @@ function RowShell({
         borderBottomColor: HAIRLINE,
       }}
     >
+      {rail ? (
+        <View
+          style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, backgroundColor: rail }}
+        />
+      ) : null}
       {children}
     </View>
   );
@@ -85,9 +94,26 @@ function SubLine({ text }: { text: string }) {
 
 const TRACK_GOOD = "#33A666";
 const TRACK_IDLE = "rgba(9,27,84,0.16)";
+const TRACK_VOID = "#D1382E";
 
-/** One dot + label of the five-step funnel tracker (approved artifact). */
-function TrackerStepView({ step, first }: { step: TrackerStep; first: boolean }) {
+/** One dot + label of the four-step funnel tracker (approved artifact). */
+function TrackerStepView({
+  step,
+  first,
+  note,
+  voided = false,
+}: {
+  step: TrackerStep;
+  first: boolean;
+  /**
+   * Stands in for the date when the step has none but something DID happen —
+   * "sent Jul 17" under an unsigned Signed step, "voided Jul 18" under a
+   * pulled-back one. A blank line there reads as "nothing has occurred".
+   */
+  note?: string;
+  /** The signature was executed and then voided: slashed red ring. */
+  voided?: boolean;
+}) {
   const { t } = useTranslation();
   const reached = step.state === "done" || step.state === "skip";
   return (
@@ -110,15 +136,31 @@ function TrackerStepView({ step, first }: { step: TrackerStep; first: boolean })
           width: 13,
           height: 13,
           borderRadius: 999,
-          borderWidth: step.state === "done" ? 0 : 1.5,
+          borderWidth: step.state === "done" && !voided ? 0 : 1.5,
           borderStyle: step.state === "skip" ? "dashed" : "solid",
-          borderColor: step.state === "now" || step.state === "skip" ? TRACK_GOOD : TRACK_IDLE,
-          backgroundColor: step.state === "done" ? TRACK_GOOD : "#FFFFFF",
+          borderColor: voided
+            ? TRACK_VOID
+            : step.state === "now" || step.state === "skip"
+              ? TRACK_GOOD
+              : TRACK_IDLE,
+          backgroundColor: step.state === "done" && !voided ? TRACK_GOOD : "#FFFFFF",
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        {step.state === "done" ? (
+        {voided ? (
+          // The slash through the ring — a signature that was undone, not one
+          // that never happened, which is what an empty ring would say.
+          <View
+            style={{
+              position: "absolute",
+              width: 15,
+              height: 1.5,
+              backgroundColor: TRACK_VOID,
+              transform: [{ rotate: "-45deg" }],
+            }}
+          />
+        ) : step.state === "done" ? (
           <Text style={{ fontSize: 8, fontWeight: "800", color: "#fff", lineHeight: 10 }}>✓</Text>
         ) : null}
       </View>
@@ -130,16 +172,21 @@ function TrackerStepView({ step, first }: { step: TrackerStep; first: boolean })
           letterSpacing: 0.2,
           textTransform: "uppercase",
           marginTop: 4,
-          color: reached || step.state === "now" ? NAVY : MUTED,
+          color: voided ? TRACK_VOID : reached || step.state === "now" ? NAVY : MUTED,
         }}
       >
         {t(`leasing.tracker.${step.key}`)}
       </Text>
       <Text
         numberOfLines={1}
-        style={{ fontSize: 9.5, color: MUTED, fontVariant: ["tabular-nums"], marginTop: 1 }}
+        style={{
+          fontSize: 9.5,
+          color: voided ? TRACK_VOID : MUTED,
+          fontVariant: ["tabular-nums"],
+          marginTop: 1,
+        }}
       >
-        {step.dateMs !== null ? formatDay(step.dateMs) : step.state === "now" ? "—" : " "}
+        {note ?? (step.dateMs !== null ? formatDay(step.dateMs) : step.state === "now" ? "—" : " ")}
       </Text>
     </View>
   );
@@ -158,6 +205,60 @@ function relativeDay(
   return t("leasing.row.daysAgo", { count: -delta });
 }
 
+const FLAG_COLOR: Record<PipelineRowFlag["tone"], string> = {
+  bad: "#D1382E",
+  warn: "#B05E14",
+  info: "#2563B4",
+};
+
+/**
+ * The flag in the manager's language. `pipelineRowFlags` owns every RULE about
+ * which flags fire — this only re-words them: the engine is locale-free by
+ * design and spells its labels in English, so the row translates by the flag's
+ * key and re-reads the SAME numbers off the row the engine was handed. Nothing
+ * is recomputed except the overdue day count, which is a subtraction, not a
+ * rule.
+ *
+ * `flag.label` is the fallback, so a flag this catalog has no key for still
+ * reaches the screen in English rather than vanishing.
+ */
+function flagLabel(
+  flag: PipelineRowFlag,
+  row: PipelineRow,
+  todayMs: number,
+  t: (k: string, o?: Record<string, unknown>) => string,
+): string {
+  switch (flag.key) {
+    case "overdue":
+      return row.moveInMs === null
+        ? flag.label
+        : t("leasing.flags.overdue", { days: calendarDaysBetween(row.moveInMs, todayMs) });
+    case "voided":
+      return t("leasing.flags.voided");
+    case "noMovement":
+      return row.noMovementDays === null
+        ? flag.label
+        : t("leasing.flags.noMovement", { days: row.noMovementDays });
+    case "noDeposit":
+      return t("leasing.flags.noDeposit");
+    case "dateMoved":
+      return t("leasing.flags.dateMoved", { times: row.moveInSlips });
+    case "unitObstacle": {
+      // The engine tags WHICH obstacle; the date is re-formatted here from the
+      // same `dateAvailableMs` the engine parsed, so it lands in the reader's
+      // locale instead of the engine's "Aug 31".
+      const obstacle = row.unitObstacle;
+      if (obstacle === null) return flag.label;
+      if (obstacle.kind === "occupied") return t("leasing.flags.unitOccupied");
+      if (obstacle.kind === "notReady" || row.dateAvailableMs === null)
+        return t("leasing.flags.unitNotReady");
+      return t("leasing.flags.unitNotReadyAvail", { date: formatDay(row.dateAvailableMs) });
+    }
+    default:
+      return flag.label;
+  }
+}
+
 export function PipelineRowView({
   row,
   last,
@@ -174,11 +275,17 @@ export function PipelineRowView({
   // The tracker needs real horizontal room; the phone keeps the stage pill.
   const showTracker = width >= 900;
   const { lease } = row;
+  const today = startOfDay(nowMs);
   const appliedMs = parseDay(lease.applicationDate);
+  const sentMs = parseDay(lease.leaseSentDate ?? null);
+  const voidedMs = parseDay(lease.leaseVoidedDate ?? null);
 
-  // The UNIT leads — it is the thing being filled, and it is what a manager
-  // scans a leasing board for. The prospect is the second line.
-  const whoLine = [row.tenantName, row.classification].filter(Boolean).join(" · ");
+  const flags = pipelineRowFlags(row, nowMs);
+  // pipelineRowFlags is ordered worst-first, so the rail is simply the first
+  // flag's tone — and an informational flag (a slipping date) is a fact, not a
+  // fault, so it paints no rail at all.
+  const railTone = flags.find((flag) => flag.tone !== "info")?.tone ?? null;
+
   // The agent gets its OWN line rather than sharing a truncating one-liner —
   // it was being clipped away entirely at iPad widths. The applied date joins
   // it only when the tracker is hidden, since the tracker's "Applied" step
@@ -190,36 +297,126 @@ export function PipelineRowView({
     .filter(Boolean)
     .join(" · ");
 
+  // ResMan writes 0 into residentRent for a lease nobody has priced yet (one
+  // of the 47 today), so 0 is UNKNOWN here, not a free apartment — the column
+  // shows an em-dash and says so out loud to a screen reader.
+  const rent = lease.residentRent !== null && lease.residentRent !== undefined && lease.residentRent > 0
+    ? lease.residentRent
+    : null;
+
   const content = (
     <>
-      <InitialsBadge name={row.tenantName || lease.unitNumber || "?"} size={30} />
-      <View style={{ flex: 1, minWidth: 168 }}>
-        <BigLine text={lease.unitNumber || "—"} />
-        {whoLine ? <SubLine text={whoLine} /> : null}
-        {originLine ? <SubLine text={originLine} /> : null}
+      <View style={{ width: showTracker ? 238 : undefined, flex: showTracker ? undefined : 1, minWidth: 0 }}>
+        {/* The UNIT leads — it is the thing being filled, and it is what a
+            manager scans a leasing board for. The tier is a gem rather than a
+            word: it costs 13px instead of "Diamond", and the four cuts read
+            apart in greyscale. */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+          <TierGem tier={row.tier} />
+          <Text
+            className="text-navy dark:text-white"
+            numberOfLines={1}
+            style={{ fontSize: 15.5, fontWeight: "800", letterSpacing: -0.2 }}
+          >
+            {lease.unitNumber || "—"}
+          </Text>
+          {row.layout ? (
+            <Text numberOfLines={1} style={{ fontSize: 12, color: MUTED }}>
+              {`— ${row.layout}`}
+            </Text>
+          ) : null}
+        </View>
+        {row.tenantName ? (
+          <Text
+            className="text-slate dark:text-white/70"
+            numberOfLines={1}
+            style={{ fontSize: 12.5, color: "#4C556F", marginTop: 2 }}
+          >
+            {row.tenantName}
+          </Text>
+        ) : null}
+        {/* Who owns the file, deliberately the quietest line on the row. */}
+        {originLine ? (
+          <Text
+            className="text-slate dark:text-white/50"
+            numberOfLines={1}
+            style={{ fontSize: 11, color: MUTED, marginTop: 1 }}
+          >
+            {originLine}
+          </Text>
+        ) : null}
       </View>
       {showTracker ? (
         <View style={{ flex: 1.45, flexDirection: "row", paddingHorizontal: 10 }}>
-          {pipelineTrackerSteps(row).map((step, i) => (
-            <TrackerStepView key={step.key} step={step} first={i === 0} />
-          ))}
+          {pipelineTrackerSteps(row).map((step, i) => {
+            // A lease that went out and came back is not the same as one that
+            // never went out. The Signed step carries both stories.
+            const voided = step.key === "signed" && voidedMs !== null && step.dateMs === null;
+            const note =
+              step.key !== "signed" || step.dateMs !== null
+                ? undefined
+                : voidedMs !== null
+                  ? t("leasing.row.voidedOn", { date: formatDay(voidedMs) })
+                  : sentMs !== null
+                    ? t("leasing.row.sentOn", { date: formatDay(sentMs) })
+                    : undefined;
+            return (
+              <TrackerStepView
+                key={step.key}
+                step={step}
+                first={i === 0}
+                note={note}
+                voided={voided}
+              />
+            );
+          })}
         </View>
       ) : (
         <StatusPill label={t(`leasing.stages.${row.stage}`)} tone={STAGE_TONE[row.stage]} />
       )}
-      <View style={{ alignItems: "flex-end", gap: 2, width: 150 }}>
-        {/* Readiness is an EXCEPTION flag: a ready unit is the normal case and
-            saying so on every row is noise. Only the blockers speak. */}
-        {!row.ready ? (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-            <View style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: "#B05E14" }} />
-            <Text numberOfLines={1} style={{ fontSize: 10.5, fontWeight: "800", color: "#B05E14" }}>
-              {row.dateAvailableMs !== null
-                ? t("leasing.row.notReadyAvail", { date: formatDay(row.dateAvailableMs) })
-                : t("leasing.row.notReady")}
+      {showTracker ? (
+        <View style={{ width: 78, alignItems: "flex-end" }}>
+          <Text
+            numberOfLines={1}
+            accessibilityLabel={rent === null ? t("leasing.row.rentNotSet") : undefined}
+            style={{ fontSize: 12.5, fontWeight: "800", color: NAVY, fontVariant: ["tabular-nums"] }}
+          >
+            {rent !== null ? `$${Math.round(rent).toLocaleString()}` : "—"}
+          </Text>
+          {/* 44 of the 47 sit exactly at market, so "at market" on every row
+              would be noise — only the concession (or the premium) speaks. */}
+          {row.rentVariance !== null && row.rentVariance !== 0 ? (
+            <Text
+              numberOfLines={1}
+              style={{
+                fontSize: 10.5,
+                fontWeight: "800",
+                color: "#B05E14",
+                fontVariant: ["tabular-nums"],
+                marginTop: 1,
+              }}
+            >
+              {`${row.rentVariance < 0 ? "−" : "+"}$${Math.abs(Math.round(row.rentVariance)).toLocaleString()}`}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+      <View style={{ alignItems: "flex-end", gap: 2, width: showTracker ? 172 : 150 }}>
+        {/* Exceptions only: a ready unit, a paid deposit and a moving file are
+            the normal case, and saying so on every row is noise. */}
+        {flags.map((flag) => (
+          <View key={flag.key} style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+            <View
+              style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: FLAG_COLOR[flag.tone] }}
+            />
+            <Text
+              numberOfLines={1}
+              style={{ fontSize: 10.5, fontWeight: "800", color: FLAG_COLOR[flag.tone] }}
+            >
+              {flagLabel(flag, row, today, t)}
             </Text>
           </View>
-        ) : null}
+        ))}
         {row.moveInMs !== null ? (
           <Text
             numberOfLines={1}
@@ -235,20 +432,20 @@ export function PipelineRowView({
     </>
   );
 
-  if (onPress) {
-    return (
-      <Pressable onPress={onPress} accessibilityRole="button">
-        <RowShell last={last} align="flex-start">
-          {content}
-        </RowShell>
-      </Pressable>
-    );
-  }
-  return (
-    <RowShell last={last} align="flex-start">
+  const shell = (
+    <RowShell last={last} align="flex-start" rail={railTone === null ? null : FLAG_COLOR[railTone]}>
       {content}
     </RowShell>
   );
+
+  if (onPress) {
+    return (
+      <Pressable onPress={onPress} accessibilityRole="button">
+        {shell}
+      </Pressable>
+    );
+  }
+  return shell;
 }
 
 export function ExpirationRowView({ row, last }: { row: ExpirationRow; last: boolean }) {

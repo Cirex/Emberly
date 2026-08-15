@@ -184,6 +184,73 @@ test("'was signed on <date>' beats the row timestamp when they differ", () => {
   assert.equal(parseActivityLog(html).leaseSignedDate, "2026-07-18");
 });
 
+// ── The deposit, which exists nowhere else ──────────────────────────────────
+
+/**
+ * There is no deposit field on the resident or lease page. The Activity Log's
+ * "Added Security Deposit of amount X" line is the only record that one was
+ * taken — 26 of the 47 applications carry it, 19 do not, and that absence is
+ * what the Pipeline's "No deposit" flag is reading.
+ */
+
+test("the Added Security Deposit line gives the amount and the day", () => {
+  const html = HEADER + row("7/16/2026 3:41:02 PM", "Added Security Deposit of amount 300.00", "Nicole Jones");
+  const f = parseActivityLog(html);
+  assert.equal(f.depositAmount, 300);
+  assert.equal(f.depositLoggedDate, "2026-07-16");
+});
+
+test("a thousands separator in the amount is not truncated", () => {
+  const html = HEADER + row("7/16/2026 3:41:02 PM", "Added Security Deposit of amount 1,250.00", "Nicole Jones");
+  assert.equal(parseActivityLog(html).depositAmount, 1250);
+});
+
+test("a DELETED deposit is not a deposit", () => {
+  // The log carries both verbs. Matching the noun would report a deposit that
+  // was taken back off the lease as one that is held.
+  const html = HEADER + row("7/20/2026 9:00:00 AM", "Deleted Security Deposit of amount 300.00", "Nicole Jones");
+  const f = parseActivityLog(html);
+  assert.equal(f.depositAmount, null);
+  assert.equal(f.depositLoggedDate, null);
+});
+
+test("a log with no deposit line yields null — 19 of 45 applications are this", () => {
+  const html = HEADER + row("7/13/2026 10:02:11 AM", "Online Application", "Anyone Home");
+  const f = parseActivityLog(html);
+  assert.equal(f.depositAmount, null);
+  assert.equal(f.depositLoggedDate, null);
+});
+
+test("a deposit added, deleted and re-added reports the FIRST one", () => {
+  // Newest-first, same rule as every other field: the earliest match wins.
+  const html =
+    HEADER +
+    row("8/2/2026 10:00:00 AM", "Added Security Deposit of amount 500.00", "Nicole Jones") +
+    row("8/1/2026 10:00:00 AM", "Deleted Security Deposit of amount 300.00", "Nicole Jones") +
+    row("7/1/2026 10:00:00 AM", "Added Security Deposit of amount 300.00", "Nicole Jones");
+  const f = parseActivityLog(html);
+  assert.equal(f.depositAmount, 300);
+  assert.equal(f.depositLoggedDate, "2026-07-01");
+});
+
+test("mapLease carries the deposit through to the row", () => {
+  const mapped = mapLease(
+    { leaseId: "L1", status: "Approved", depositAmount: 300, depositLoggedDate: "2026-07-16" },
+    { unitId: "U1", unitNumber: "3712 EG-4", propertyId: "P1", isMostRecent: true },
+  );
+  assert.equal(mapped.deposit_amount, 300);
+  assert.equal(mapped.deposit_logged_date, "2026-07-16");
+});
+
+test("no deposit leaves both columns null rather than zero", () => {
+  const mapped = mapLease(
+    { leaseId: "L1", status: "Pending" },
+    { unitId: "U1", unitNumber: "3714 DU-2", propertyId: "P1", isMostRecent: true },
+  );
+  assert.equal(mapped.deposit_amount, null);
+  assert.equal(mapped.deposit_logged_date, null);
+});
+
 test("an empty log yields all-nulls and no counts", () => {
   const f = parseActivityLog(HEADER);
   assert.equal(f.approvedDate, null);
@@ -193,6 +260,8 @@ test("an empty log yields all-nulls and no counts", () => {
   assert.equal(f.leaseSentDate, null);
   assert.equal(f.leaseSignedDate, null);
   assert.equal(f.leaseVoidedDate, null);
+  assert.equal(f.depositAmount, null);
+  assert.equal(f.depositLoggedDate, null);
 });
 
 test("the page's own dates are not overwritten by the log", () => {

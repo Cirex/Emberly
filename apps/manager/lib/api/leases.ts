@@ -39,6 +39,16 @@ export const ManagerLeaseSchema = z.object({
   marketRent: num,
   residentRent: num,
   balance: num,
+  /**
+   * The security deposit as ResMan's Activity Log records it ("Added Security
+   * Deposit of amount X") — there is no deposit field on any lease page, so
+   * this is null until the deep scrape has read the log, and null means
+   * UNKNOWN, not zero. 19 of the 47 open applications have no deposit event.
+   */
+  depositAmount: num,
+  depositLoggedDate: str,
+  /** Day a sent signature was voided (log-sourced, same caveat as the deposit). */
+  leaseVoidedDate: str,
   isCurrentLease: z.boolean().default(false),
   isMostRecentLease: z.boolean().default(false),
 });

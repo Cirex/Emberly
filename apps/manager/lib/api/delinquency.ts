@@ -184,6 +184,10 @@ export const ManagerLeaseSchema = z.object({
   marketRent: num,
   residentRent: num,
   balance: num,
+  /** Activity-Log-sourced deposit; null is UNKNOWN, never zero. See leases.ts. */
+  depositAmount: num,
+  depositLoggedDate: z.string().nullable().optional(),
+  leaseVoidedDate: z.string().nullable().optional(),
   isCurrentLease: z.boolean().default(false),
   isMostRecentLease: z.boolean().default(false),
 });

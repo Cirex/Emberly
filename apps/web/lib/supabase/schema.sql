@@ -791,6 +791,8 @@ create table if not exists public.resman_leases (
   start_date_changes integer not null default 0,  -- how many times the desired move-in has moved
   lease_sent_date date,                           -- signature package sent (Activity Log)
   lease_voided_date date,                         -- signature package voided (Activity Log)
+  deposit_amount numeric(12,2),                   -- security deposit added (Activity Log); null = none taken
+  deposit_logged_date date,                       -- the day the log recorded that deposit
   application_date date,
   signed_date date,
   start_date date,

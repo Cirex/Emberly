@@ -197,6 +197,8 @@ const SKELETON_UNOBSERVED_COLUMNS = [
   "start_date_changes",
   "lease_sent_date",
   "lease_voided_date",
+  "deposit_amount",
+  "deposit_logged_date",
   "raw",
 ] as const;
 
@@ -296,6 +298,11 @@ export function mapLease(
     start_date_changes: numOrNull(leaseData["startDateChanges"]) ?? 0,
     lease_sent_date: parseLedgerDate(str(leaseData, "leaseSentDate")),
     lease_voided_date: parseLedgerDate(str(leaseData, "leaseVoidedDate")),
+    // The security deposit, also from the Activity Log — no page states it.
+    // Null means the log has no "Added Security Deposit" line, which is a
+    // deposit that was never taken (19 of the 45 applications), not an unknown.
+    deposit_amount: numOrNull(leaseData["depositAmount"]),
+    deposit_logged_date: parseLedgerDate(str(leaseData, "depositLoggedDate")),
     application_date: parseLedgerDate(str(leaseData, "applicationDate")),
     signed_date: parseLedgerDate(str(leaseData, "leaseSignedDate")),
     start_date: parseLedgerDate(str(leaseData, "leaseStartDate")),

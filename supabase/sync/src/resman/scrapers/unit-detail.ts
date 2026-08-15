@@ -420,6 +420,11 @@ export async function scrapeLease(
     if (log.startDateChanges > 0) lease.startDateChanges = log.startDateChanges;
     assignIfPresent(lease, "leaseSentDate", log.leaseSentDate);
     assignIfPresent(lease, "leaseVoidedDate", log.leaseVoidedDate);
+    // The deposit, which exists nowhere else: the resident page has no deposit
+    // field, so an application with no "Added Security Deposit" line is one
+    // where no deposit has been taken (19 of the 45 here).
+    assignIfPresent(lease, "depositAmount", log.depositAmount);
+    assignIfPresent(lease, "depositLoggedDate", log.depositLoggedDate);
     // The PAGE wins where it has a value; the log only fills a blank. Both
     // application date and signed date are absent from the page on most
     // applications (2 of 45 carry an application date), and the log is the
@@ -1263,6 +1268,9 @@ export interface ActivityLogFacts {
   leaseSignedDate: string | null;
   /** A signature package was voided — a deal in trouble. */
   leaseVoidedDate: string | null;
+  /** The security deposit the Activity Log says was added, and when. */
+  depositAmount: number | null;
+  depositLoggedDate: string | null;
 }
 
 const EMPTY_FACTS: ActivityLogFacts = {
@@ -1274,6 +1282,8 @@ const EMPTY_FACTS: ActivityLogFacts = {
   leaseSentDate: null,
   leaseSignedDate: null,
   leaseVoidedDate: null,
+  depositAmount: null,
+  depositLoggedDate: null,
 };
 
 /**
@@ -1292,6 +1302,10 @@ const EMPTY_FACTS: ActivityLogFacts = {
  *                               one on the board without this.
  *   approved for move in ...... the approval date
  *   Signature package sent .... 7 · signed 2 · VOIDED 2
+ *   Added Security Deposit .... 26 of the 45; the other 19 have no deposit
+ *                               event anywhere, and there is no deposit FIELD
+ *                               on the resident page — so the log is the only
+ *                               way to tell "deposit taken" from "not taken".
  *
  * Rows are newest-first. Every field therefore keeps the EARLIEST match (the
  * loop overwrites as it descends into older rows), which is what "when did
@@ -1325,6 +1339,16 @@ export function parseActivityLog(html: string): ActivityLogFacts {
     }
     if (/\bwas voided\b/i.test(activity)) {
       facts.leaseVoidedDate = when;
+      continue;
+    }
+    // "Added Security Deposit of amount 300.00". The verb is matched, not the
+    // noun: the log also carries "Deleted Security Deposit of amount …", and a
+    // bare /Security Deposit of amount/ would read a deposit that was taken
+    // back off the lease as one that is held.
+    const depositAdded = /\bAdded Security Deposit of amount\s+([\d,]+\.\d{2})/i.exec(activity);
+    if (depositAdded !== null) {
+      facts.depositAmount = numOrNull(depositAdded[1]);
+      facts.depositLoggedDate = when;
       continue;
     }
     // Two wordings: "…was signed on 8/1/2026" and "Resident(s) X signed their

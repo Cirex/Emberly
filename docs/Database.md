@@ -5,7 +5,7 @@
 > above each `create table` in that same file. To change this document, change the
 > schema or its comments.
 
-53 tables · 755 columns · **32 declared foreign keys** · 18 inferred references
+53 tables · 757 columns · **32 declared foreign keys** · 18 inferred references
 
 ## How to read the relationships
 
@@ -216,6 +216,8 @@ resman_leases (from Lease)
 | `start_date_changes` | integer | no |  |  | how many times the desired move-in has moved · default `0` |
 | `lease_sent_date` | date | yes |  |  | signature package sent (Activity Log) |
 | `lease_voided_date` | date | yes |  |  | signature package voided (Activity Log) |
+| `deposit_amount` | numeric | yes |  |  | security deposit added (Activity Log); null = none taken |
+| `deposit_logged_date` | date | yes |  |  | the day the log recorded that deposit |
 | `application_date` | date | yes |  |  |  |
 | `signed_date` | date | yes |  |  |  |
 | `start_date` | date | yes |  |  |  |

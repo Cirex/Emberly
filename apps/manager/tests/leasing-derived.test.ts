@@ -35,6 +35,7 @@ import {
   isReadyAvailability,
   isScreeningApproval,
   occupancySnapshot,
+  pipelineRowFlags,
   pipelineStageOf,
   primaryTenantName,
   shortMoney,
@@ -42,6 +43,7 @@ import {
   signedMoney,
   unitFactsIndex,
   unitFactsOf,
+  unitObstacleOf,
   vacancySummary,
 } from "@/lib/derived/leasing";
 import { addDays, calendarDaysBetween, monthStartShift, parseDay, startOfDay } from "@/lib/derived/time";
@@ -167,6 +169,20 @@ describe("unit facts", () => {
     expect(unitFactsOf(unit({ number: "4", holding_unit: true })).countsForOccupancy).toBe(false);
     expect(unitFactsOf(unit({ number: "5", excluded_from_occupancy: true })).countsForOccupancy).toBe(false);
     expect(unitFactsOf(unit({ number: "6" })).countsForOccupancy).toBe(true);
+  });
+
+  test("layout is Studio at zero bedrooms and empty when the mirror is silent", () => {
+    // The row prints "1824 VI-3 — 2×1" on its identity line. A unit whose
+    // bed/bath counts never synced prints nothing there — "0×0" would be a
+    // layout nobody lives in.
+    expect(unitFactsOf(unit({ number: "1824 VI-3", bedrooms: 2, bathrooms: 1 })).layout).toBe("2×1");
+    expect(unitFactsOf(unit({ number: "1728 MBS-1", bedrooms: 3, bathrooms: 2.5 })).layout).toBe("3×2.5");
+    expect(unitFactsOf(unit({ number: "1728 CW-2", bedrooms: 0, bathrooms: 1 })).layout).toBe("Studio");
+    const unknown = unitFactsOf(unit({ number: "0212" }));
+    expect(unknown.layout).toBe("");
+    expect(unknown.bedrooms).toBeNull();
+    // A bed count with no bath count is still not a layout we can print.
+    expect(unitFactsOf(unit({ number: "0214", bedrooms: 2 })).layout).toBe("");
   });
 
   test("primaryTenantName falls back to empty", () => {
@@ -536,6 +552,171 @@ describe("pipeline", () => {
     const steps = pipelineTrackerSteps(rows[0]);
     expect(steps).toHaveLength(4);
     for (const step of steps) expect(step.state).toBe("done");
+  });
+});
+
+// ── Pipeline row exceptions ─────────────────────────────────────────────────
+
+describe("pipeline row exceptions", () => {
+  /** 1824 VI-3 as the mirror has it: Ruby 2×1, $898 market, vacant and ready. */
+  const clean = unitFactsIndex([
+    unit({
+      number: "1824 VI-3", tenant_names: ["Dana Pope"], classification: "Ruby",
+      bedrooms: 2, bathrooms: 1, market_rent: 898,
+      occupied: false, occupancy_status: "Vacant", availability: "Ready",
+    }),
+  ]);
+  /** The same unit with its availability rewritten, for the obstacle branches. */
+  const withUnit = (fields: Partial<ResmanUnit>) =>
+    unitFactsIndex([unit({ number: "1824 VI-3", market_rent: 898, ...fields })]);
+  const rowFor = (fields: Partial<ManagerLease>, units = clean) =>
+    buildPipelineRows([lease({ unitNumber: "1824 VI-3", ...fields })], units, NOW)[0];
+
+  test("rows carry the tier and layout the identity line draws", () => {
+    const row = rowFor({ status: "Pending", startDate: day(10) });
+    expect(row.tier).toBe("Ruby"); // 390 of the property's units; the gem, not the word
+    expect(row.layout).toBe("2×1");
+    // A lease whose unit is not in the mirror carries NO tier. TierGem draws
+    // the empty ring for this, never the Legacy stone — Legacy is a real tier
+    // on 240 doors, so borrowing it here would state a reading nobody took.
+    const orphan = buildPipelineRows(
+      [lease({ unitNumber: "9999 ZZ-9", status: "Pending", startDate: day(10) })],
+      clean,
+      NOW,
+    )[0];
+    expect(orphan.tier).toBe("");
+    expect(orphan.layout).toBe("");
+  });
+
+  test("rent variance is the concession — and a zero rent is unpriced, not free", () => {
+    const at = (residentRent: number | null) =>
+      rowFor({ status: "Pending", startDate: day(10), residentRent }).rentVariance;
+    // 1824 VI-3 is one of the two live below-market applications: $898 market,
+    // $718 charged — the amber "−$180" second line.
+    expect(at(718)).toBe(-180);
+    // 44 of the 47 sit exactly at market, which the row says by saying nothing.
+    expect(at(898)).toBe(0);
+    // 1728 CW-2 carries residentRent 0 because nobody has priced it yet.
+    // Treating that as money would invent a −$898 concession.
+    expect(at(0)).toBeNull();
+    expect(at(null)).toBeNull();
+    // No market rent on the unit is the same kind of unknown.
+    expect(
+      rowFor({ status: "Pending", startDate: day(10), residentRent: 718 }, withUnit({ market_rent: null }))
+        .rentVariance,
+    ).toBeNull();
+  });
+
+  test("the deposit is null when the Activity Log never logged one", () => {
+    // 26 of the 47 open applications have a deposit event and 19 have none —
+    // a gap in the file, never a $0 deposit somebody entered.
+    expect(rowFor({ status: "Pending", startDate: day(10), depositAmount: 500 }).depositAmount).toBe(500);
+    expect(rowFor({ status: "Pending", startDate: day(10) }).depositAmount).toBeNull();
+  });
+
+  test("no-movement counts from the NEWEST milestone and stops at the signature", () => {
+    const approved = rowFor({
+      status: "Pending", approvalStatus: "Approved",
+      applicationDate: day(-60), approvedDate: day(-30), startDate: day(20),
+    });
+    expect(approved.noMovementDays).toBe(30); // the approval, not the application
+    const sent = rowFor({
+      status: "Pending", approvalStatus: "Lease Sent",
+      applicationDate: day(-60), approvedDate: day(-30), leaseSentDate: day(-4), startDate: day(20),
+    });
+    expect(sent.noMovementDays).toBe(4);
+    // Once it is signed the wait belongs to the move-in, not to the office.
+    expect(
+      rowFor({ status: "Pending", applicationDate: day(-60), signedDate: day(-40), startDate: day(20) })
+        .noMovementDays,
+    ).toBeNull();
+    // Nothing recorded at all would be measuring the sync, not the deal.
+    expect(rowFor({ status: "Pending", startDate: day(20) }).noMovementDays).toBeNull();
+  });
+
+  test("unit obstacles: occupied or undated blocks, a dated turn is a schedule", () => {
+    expect(
+      rowFor({ status: "Pending", startDate: day(10) }, withUnit({ occupied: true, occupancy_status: "Occupied" }))
+        .unitObstacle,
+    ).toEqual({ kind: "occupied", tone: "bad", label: "Unit occupied" });
+    expect(
+      rowFor({ status: "Pending", startDate: day(10) }, withUnit({ occupancy_status: "Vacant", availability: "Not Ready" }))
+        .unitObstacle,
+    ).toEqual({ kind: "notReady", tone: "bad", label: "Unit not ready" });
+    expect(
+      rowFor(
+        { status: "Pending", startDate: day(10) },
+        withUnit({ occupancy_status: "Vacant", availability: "Not Ready", date_available: day(41) }),
+      ).unitObstacle,
+    ).toEqual({ kind: "notReadyAvail", tone: "warn", label: "Unit not ready · avail Aug 31" });
+    // Vacant and ready: 41 of the 47 applications, and nothing to report.
+    expect(rowFor({ status: "Pending", startDate: day(10) }).unitObstacle).toBeNull();
+    // A unit the mirror does not have invents nothing.
+    expect(unitObstacleOf(undefined)).toBeNull();
+  });
+
+  test("an arrived resident's own occupancy is not an obstacle", () => {
+    // Same reasoning as `ready` on a movedIn row: the unit is occupied BY
+    // them, so flagging it would mark every successful arrival as a problem.
+    const row = rowFor(
+      { status: "Current", signedDate: day(-9), moveInDate: day(-2) },
+      withUnit({ occupied: true, occupancy_status: "Occupied" }),
+    );
+    expect(row.stage).toBe("movedIn");
+    expect(row.unitObstacle).toBeNull();
+  });
+
+  test("flags stack worst-first, because the row's rail takes the first tone", () => {
+    const row = rowFor(
+      {
+        status: "Pending", approvalStatus: "Approved",
+        applicationDate: day(-70), approvedDate: day(-50),
+        startDate: day(-6), moveInDate: null,
+        leaseVoidedDate: day(-3), startDateChanges: 6,
+      },
+      withUnit({ occupancy_status: "Vacant", availability: "Not Ready" }),
+    );
+    const flags = pipelineRowFlags(row, NOW);
+    expect(flags.map((f) => f.key)).toEqual([
+      "overdue", "voided", "noMovement", "noDeposit", "unitObstacle", "dateMoved",
+    ]);
+    // The desired move-in was six days ago and nobody has arrived.
+    expect(flags[0]).toEqual({ key: "overdue", tone: "bad", label: "Overdue 6d" });
+    expect(flags[1].label).toBe("Signature voided");
+    expect(flags[2]).toEqual({ key: "noMovement", tone: "bad", label: "No movement 50d" });
+    expect(flags[3]).toEqual({ key: "noDeposit", tone: "warn", label: "No deposit" });
+    expect(flags[5]).toEqual({ key: "dateMoved", tone: "info", label: "Date moved 6×" });
+  });
+
+  test("no-movement is amber from three weeks, red from six, silent before", () => {
+    const flagsAt = (age: number) =>
+      pipelineRowFlags(rowFor({ status: "Pending", applicationDate: day(age), startDate: day(20) }), NOW);
+    const stale = (age: number) => flagsAt(age).find((f) => f.key === "noMovement") ?? null;
+    expect(stale(-20)).toBeNull();
+    expect(stale(-21)).toEqual({ key: "noMovement", tone: "warn", label: "No movement 21d" });
+    expect(stale(-44)?.tone).toBe("warn");
+    expect(stale(-45)?.tone).toBe("bad");
+  });
+
+  test("a slip only speaks up at five — 80% of applications have moved once", () => {
+    const slipped = (times: number) =>
+      pipelineRowFlags(
+        rowFor({ status: "Pending", applicationDate: day(-2), startDate: day(20), startDateChanges: times }),
+        NOW,
+      ).some((f) => f.key === "dateMoved");
+    expect(slipped(4)).toBe(false);
+    expect(slipped(5)).toBe(true); // 9 applications are here today
+  });
+
+  test("a clean row carries no flags at all", () => {
+    const row = rowFor({
+      status: "Pending", approvalStatus: "Approved",
+      applicationDate: day(-5), approvedDate: day(-3), startDate: day(9),
+      residentRent: 898, depositAmount: 500, startDateChanges: 1,
+    });
+    // Nothing wrong → nothing rendered, and no rail. The board only spends
+    // space on exceptions.
+    expect(pipelineRowFlags(row, NOW)).toEqual([]);
   });
 });
 

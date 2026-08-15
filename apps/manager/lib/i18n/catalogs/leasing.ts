@@ -111,6 +111,25 @@ const en = {
       signed: "Signed",
       moveIn: "Move-in",
     },
+    /**
+     * Pipeline EXCEPTION flags — each one only ever renders when it is true,
+     * so the row stays quiet on the 30 of 47 applications that are simply
+     * fine. Day counts are `{{days}}` (not `{{count}}`) on purpose: they are
+     * a compact "3d" suffix, not a pluralised phrase.
+     */
+    flags: {
+      overdue: "Overdue {{days}}d",
+      voided: "Signature voided",
+      noMovement: "No movement {{days}}d",
+      noDeposit: "No deposit",
+      // Just "occupied": unitObstacleOf reads the unit's occupancy and NOTHING
+      // else, so the older "· no move-out" tail claimed a scheduled-move-out
+      // check that no code performs.
+      unitOccupied: "Unit occupied",
+      unitNotReady: "Unit not ready",
+      unitNotReadyAvail: "Unit not ready · avail {{date}}",
+      dateMoved: "Date moved {{times}}×",
+    },
     sheet: {
       close: "Close",
       appliedAgo_one: "applied {{count}} day ago",
@@ -168,6 +187,11 @@ const en = {
       daysAgo_other: "{{count}} days ago",
       moveInOn: "Move-in {{date}}",
       movedInOn: "Moved in {{date}}",
+      /** Tracker sub-labels on the Signed step, where the date would be blank. */
+      sentOn: "sent {{date}}",
+      voidedOn: "voided {{date}}",
+      /** Spoken for the rent column's em-dash — 1 of the 47 has no rent set. */
+      rentNotSet: "rent not set",
       endsOn: "Lease ends {{date}}",
       daysLeft_one: "{{count}} day",
       daysLeft_other: "{{count}} days",
@@ -478,6 +502,16 @@ const es: typeof en = {
       signed: "Firmado",
       moveIn: "Entrada",
     },
+    flags: {
+      overdue: "Atrasada {{days}}d",
+      voided: "Firma anulada",
+      noMovement: "Sin avance {{days}}d",
+      noDeposit: "Sin depósito",
+      unitOccupied: "Unidad ocupada",
+      unitNotReady: "Unidad no lista",
+      unitNotReadyAvail: "Unidad no lista · disp. {{date}}",
+      dateMoved: "Fecha movida {{times}}×",
+    },
     sheet: {
       close: "Cerrar",
       appliedAgo_one: "solicitó hace {{count}} día",
@@ -535,6 +569,9 @@ const es: typeof en = {
       daysAgo_other: "hace {{count}} días",
       moveInOn: "Entrada {{date}}",
       movedInOn: "Entró {{date}}",
+      sentOn: "enviado {{date}}",
+      voidedOn: "anulado {{date}}",
+      rentNotSet: "renta sin fijar",
       endsOn: "Contrato vence {{date}}",
       daysLeft_one: "{{count}} día",
       daysLeft_other: "{{count}} días",

@@ -108,6 +108,19 @@ export function isReadyAvailability(s: string): boolean {
 
 // ── Unit facts ──────────────────────────────────────────────────────────────
 
+/**
+ * "Studio" (no bedroom) or "2×1" — the layout the pipeline row prints beside
+ * the unit number. Empty when the mirror has no count to print: an unknown
+ * layout renders as nothing rather than as "0×0" or a guessed "1×1".
+ * Bathrooms are kept as ResMan sends them because halves are real ("2×1.5").
+ */
+function layoutLabel(bedrooms: number | null, bathrooms: number | null): string {
+  if (bedrooms === null) return "";
+  if (bedrooms === 0) return "Studio";
+  if (bathrooms === null) return "";
+  return `${bedrooms}×${bathrooms}`;
+}
+
 /** The slice of a ResMan unit the leasing boards read, pre-lowered once. */
 export interface UnitFacts {
   unitNumber: string;
@@ -115,6 +128,10 @@ export interface UnitFacts {
   classification: string;
   marketRent: number | null;
   balance: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  /** Preformatted `layoutLabel` — "Studio", "2×1", or "" when unknown. */
+  layout: string;
   occupied: boolean;
   vacant: boolean;
   ready: boolean;
@@ -128,12 +145,17 @@ export function unitFactsOf(u: ResmanUnit): UnitFacts {
   const occStatus = (u.occupancy_status ?? "").toLowerCase();
   const occupied = u.occupied === true || occStatus.startsWith("occupied");
   const vacant = !occupied && (u.occupied === false || occStatus.includes("vacant"));
+  const bedrooms = u.bedrooms ?? null;
+  const bathrooms = u.bathrooms ?? null;
   return {
     unitNumber: u.number,
     tenantNames: u.tenant_names,
     classification: u.classification ?? "",
     marketRent: u.market_rent ?? null,
     balance: u.balance ?? null,
+    bedrooms,
+    bathrooms,
+    layout: layoutLabel(bedrooms, bathrooms),
     occupied,
     vacant,
     ready: isReadyAvailability(u.availability ?? ""),
@@ -152,6 +174,61 @@ export function unitFactsIndex(units: ResmanUnit[]): Map<string, UnitFacts> {
 /** Primary display name for a unit's household ("" when unknown). */
 export function primaryTenantName(facts: UnitFacts | undefined): string {
   return facts?.tenantNames[0] ?? "";
+}
+
+/**
+ * "Aug 31". The flag labels below are literal strings (like work-insights'
+ * bucket labels) rather than i18n keys, so their dates are spelled the same
+ * way — no locale reaches this engine, and the tests stay deterministic.
+ */
+const MONTH_ABBR = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+function shortDayLabel(ms: number): string {
+  const d = new Date(ms);
+  return `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`;
+}
+
+/** Something about the UNIT that stands between an applicant and their keys. */
+export interface UnitObstacle {
+  /**
+   * WHICH obstacle, as a token rather than as prose. The three wordings are
+   * not recoverable from anything else on the row (`ready` cannot separate
+   * "occupied" from "not ready" — an occupied unit is usually both), so
+   * without this the UI can only echo `label`, and `label` is English. The
+   * pipeline row translates by this key and localizes the date itself from
+   * `row.dateAvailableMs`.
+   */
+  kind: "occupied" | "notReady" | "notReadyAvail";
+  /** bad = nothing scheduled to fix it; warn = not ready but dated. */
+  tone: "bad" | "warn";
+  /** English fallback for any surface that has no catalog. */
+  label: string;
+}
+
+/**
+ * The unit-side obstacle for an upcoming arrival, read from the unit mirror
+ * alone. Someone still living there is the worst case — nobody has even left
+ * yet — and so is "not ready" with no available date, because that is a unit
+ * nobody has committed a day to. "Not ready" WITH a date is a schedule to
+ * check against the move-in, not a hole: amber. 6 of the 47 live applications
+ * sit on a unit with one of these.
+ *
+ * Open work orders are deliberately NOT folded in: they live in a different
+ * mirror, and a made-up blocker is worse than a missing one.
+ */
+export function unitObstacleOf(facts: UnitFacts | undefined): UnitObstacle | null {
+  // An unknown unit states nothing — never an invented blocker.
+  if (!facts) return null;
+  if (facts.occupied) return { kind: "occupied", tone: "bad", label: "Unit occupied" };
+  if (facts.ready) return null;
+  const availMs = parseDay(facts.dateAvailable);
+  if (availMs === null) return { kind: "notReady", tone: "bad", label: "Unit not ready" };
+  return {
+    kind: "notReadyAvail",
+    tone: "warn",
+    label: `Unit not ready · avail ${shortDayLabel(availMs)}`,
+  };
 }
 
 // ── Shared lease predicates ─────────────────────────────────────────────────
@@ -261,11 +338,66 @@ export function pipelineStageOf(lease: ManagerLease, nowMs: number): PipelineSta
   return "application";
 }
 
+/**
+ * Days since the newest thing that actually happened on the application —
+ * applied, approved, lease sent, signed.
+ *
+ * Null once the lease is signed: the office is no longer the one holding it
+ * up, so a silent week after the signature is a normal wait for the move-in,
+ * not a stall. Null too when the mirror carries no milestone at all, because
+ * "no movement" would then be measuring our sync gap rather than the deal.
+ * Milestones dated in the FUTURE are ignored for the same reason — they have
+ * not happened yet. 17 of the 47 live applications are past three weeks.
+ */
+function noMovementDaysOf(
+  lease: ManagerLease,
+  stage: PipelineStage,
+  todayMs: number,
+): number | null {
+  if (stage === "signed" || stage === "movedIn") return null;
+  if (parseDay(lease.signedDate) !== null) return null;
+  const milestones = [
+    parseDay(lease.applicationDate),
+    parseDay(lease.approvedDate ?? null),
+    parseDay(lease.leaseSentDate ?? null),
+    parseDay(lease.signedDate),
+  ].filter((ms): ms is number => ms !== null && ms <= todayMs);
+  if (milestones.length === 0) return null;
+  return calendarDaysBetween(Math.max(...milestones), todayMs);
+}
+
 export interface PipelineRow {
   lease: ManagerLease;
   stage: PipelineStage;
   tenantName: string;
   classification: string;
+  /**
+   * The same classification under the name the row reads it by: the identity
+   * line draws a gem for it (Ruby 390 · Legacy 240 · Diamond 226 · LUX 35
+   * units on this property) instead of spelling the tier out in words.
+   */
+  tier: string;
+  /** UnitFacts.layout — "Studio" / "2×1", "" when the unit is unknown. */
+  layout: string;
+  /**
+   * Security deposit read off the Activity Log, null when no deposit event
+   * exists — 26 of the 47 open applications carry one and 19 have nothing
+   * logged, which is a real gap in the file, not a zero-dollar deposit.
+   */
+  depositAmount: number | null;
+  /** See noMovementDaysOf — null once signed, and while nothing is recorded. */
+  noMovementDays: number | null;
+  /**
+   * residentRent − the unit's market rent: negative is a concession. Null when
+   * either side is missing, and null when residentRent is 0, which is ResMan's
+   * "not priced yet" (1728 CW-2 today) rather than a free apartment — reading
+   * it as money would print a −$898 concession that nobody granted. 44 of the
+   * 47 live applications sit exactly at market, so the row only draws the
+   * second rent line when there is a real difference.
+   */
+  rentVariance: number | null;
+  /** unitObstacleOf(facts) — null once they have moved in, see below. */
+  unitObstacle: UnitObstacle | null;
   moveInMs: number | null;
   /** Move-in is UPCOMING and within PIPELINE_IMMINENT_DAYS (the top band). */
   imminent: boolean;
@@ -309,11 +441,25 @@ export function buildPipelineRows(
     // which is the movedIn stage's business, not an upcoming-arrival band's.
     const daysUntilMoveIn = moveInMs === null ? null : calendarDaysBetween(today, moveInMs);
     const facts = unitsByNumber.get(lease.unitNumber);
+    const residentRent = lease.residentRent ?? null;
+    const marketRent = facts?.marketRent ?? null;
     rows.push({
       lease,
       stage,
       tenantName: primaryTenantName(facts),
       classification: facts?.classification ?? "",
+      tier: facts?.classification ?? "",
+      layout: facts?.layout ?? "",
+      depositAmount: lease.depositAmount ?? null,
+      noMovementDays: noMovementDaysOf(lease, stage, today),
+      rentVariance:
+        residentRent === null || residentRent === 0 || marketRent === null
+          ? null
+          : residentRent - marketRent,
+      // Same reasoning as `ready` below: once the household is in the unit,
+      // the unit's occupancy IS them, so reporting it as a blocker would flag
+      // every arrival the moment it succeeded.
+      unitObstacle: stage === "movedIn" ? null : unitObstacleOf(facts),
       moveInMs,
       moveInIsDesired: parseDay(lease.moveInDate) === null && moveInMs !== null,
       moveInSlips: lease.startDateChanges ?? 0,
@@ -346,6 +492,82 @@ export function buildPipelineRows(
     return (a.moveInMs ?? Number.MAX_SAFE_INTEGER) - (b.moveInMs ?? Number.MAX_SAFE_INTEGER);
   });
   return rows;
+}
+
+// ── Pipeline row flags ──────────────────────────────────────────────────────
+
+/** Silence this long on an unsigned application is amber… */
+export const PIPELINE_STALE_WARN_DAYS = 21;
+/** …and this long is red. 17 of 47 are past the first line today. */
+export const PIPELINE_STALE_BAD_DAYS = 45;
+/**
+ * A desired move-in that has moved this many times stops being a date and
+ * starts being a pattern. 80% of applications here have slipped at least once,
+ * so a low bar would flag almost the whole board; 9 have hit five.
+ */
+export const PIPELINE_SLIP_FLAG_COUNT = 5;
+
+export interface PipelineRowFlag {
+  key: string;
+  /** bad = red, warn = amber, info = blue (a fact, not a fault). */
+  tone: "bad" | "warn" | "info";
+  label: string;
+}
+
+/**
+ * The exception flags stacked on the right of a pipeline row — what is WRONG
+ * with this application, and nothing else: a row with nothing wrong returns an
+ * empty array and renders no flags at all (44 of the 47 are at market, so a
+ * board that also stated the normal case would be mostly noise).
+ *
+ * ORDER IS LOAD-BEARING. The row paints its 3px left rail with the FIRST
+ * flag's tone, so these run worst-first: a missed move-in, then a voided
+ * signature, then a stalled file, then the softer money/unit notes, and last
+ * the informational slip count.
+ */
+export function pipelineRowFlags(row: PipelineRow, nowMs: number): PipelineRowFlag[] {
+  const today = startOfDay(nowMs);
+  const flags: PipelineRowFlag[] = [];
+
+  // The date they asked for has passed and they are not in the unit. Arrived
+  // residents are excluded by their stage, not by the date, because a move-in
+  // recorded today is in the past by lunchtime.
+  if (row.stage !== "movedIn" && row.moveInMs !== null && row.moveInMs < today) {
+    flags.push({
+      key: "overdue",
+      tone: "bad",
+      label: `Overdue ${calendarDaysBetween(row.moveInMs, today)}d`,
+    });
+  }
+
+  // A voided signature means the executed lease was pulled back — the tracker
+  // draws the Signed node slashed, and the flag says why in words.
+  if (parseDay(row.lease.leaseVoidedDate) !== null) {
+    flags.push({ key: "voided", tone: "bad", label: "Signature voided" });
+  }
+
+  if (row.noMovementDays !== null && row.noMovementDays >= PIPELINE_STALE_WARN_DAYS) {
+    flags.push({
+      key: "noMovement",
+      tone: row.noMovementDays >= PIPELINE_STALE_BAD_DAYS ? "bad" : "warn",
+      label: `No movement ${row.noMovementDays}d`,
+    });
+  }
+
+  // Missing entirely — never "a $0 deposit", which is a number nobody entered.
+  if (row.depositAmount === null) {
+    flags.push({ key: "noDeposit", tone: "warn", label: "No deposit" });
+  }
+
+  if (row.unitObstacle !== null) {
+    flags.push({ key: "unitObstacle", tone: row.unitObstacle.tone, label: row.unitObstacle.label });
+  }
+
+  if (row.moveInSlips >= PIPELINE_SLIP_FLAG_COUNT) {
+    flags.push({ key: "dateMoved", tone: "info", label: `Date moved ${row.moveInSlips}×` });
+  }
+
+  return flags;
 }
 
 // ── Pipeline tracker ────────────────────────────────────────────────────────

@@ -500,6 +500,57 @@ describe("agentLeaseInputs / agentDrillIn", () => {
     expect(drill.evictions[0].signed).toBe("2026-07-01");
   });
 
+  test("balances group by tenure, keeping priority order inside each group", () => {
+    const now = new Date(2026, 7, 15).getTime();
+    const units = [
+      unit({ unitId: "u1", unitNumber: "101", balance: 300, currentMonthBalance: 300, currentLeaseId: "L1" }),
+      unit({ unitId: "u2", unitNumber: "102", balance: 4000, previousBalance: 4000, currentLeaseId: "L2" }),
+      unit({ unitId: "u3", unitNumber: "103", balance: 900, previousBalance: 900, currentLeaseId: "L3" }),
+      unit({ unitId: "u4", unitNumber: "104", balance: 50, currentMonthBalance: 50, currentLeaseId: "L4" }),
+    ];
+    const moveIn = new Map([
+      ["u1", "2026-08-01"], // 14 days
+      ["u2", "2026-07-20"], // 26 days — same band, bigger balance
+      ["u3", "2020-07-20"], // six years
+      // u4 deliberately absent: no move-in date known
+    ]);
+    const board = buildBalancesBoard(units, [], new Map(), now, moveIn);
+
+    expect(board.tenureGroups.map((g) => g.bucket)).toEqual(["0-30", "1yr+", "unknown"]);
+    // Priority order survives inside the band: the 90+ $4,000 outranks the
+    // 0-30 $300 even though it is the newer resident of the two.
+    expect(board.tenureGroups[0].rows.map((r) => r.unit.unitNumber)).toEqual(["102", "101"]);
+    expect(board.tenureGroups[0].owed).toBe(4300);
+    // Empty bands are dropped, but a missing move-in date must never hide a
+    // debtor — it gets its own group instead.
+    expect(board.tenureGroups[2].rows.map((r) => r.unit.unitNumber)).toEqual(["104"]);
+    expect(board.rows).toHaveLength(4);
+  });
+
+  test("with no move-in dates at all, every row still appears under unknown", () => {
+    const units = [unit({ unitId: "u1", unitNumber: "101", balance: 100, currentLeaseId: "L1" })];
+    const board = buildBalancesBoard(units, [], new Map(), Date.now());
+    expect(board.tenureGroups).toHaveLength(1);
+    expect(board.tenureGroups[0].bucket).toBe("unknown");
+    expect(board.tenureGroups[0].rows).toHaveLength(1);
+  });
+
+  test("the ledger timeline keeps ResMan's order for entries sharing a date", () => {
+    // The running-balance column only reads as a tab if the rows stay in
+    // ledger order. Several entries routinely share one date, and sorting
+    // those by id put a rent charge above the late fee that followed it, so
+    // the balance column appeared to jump backwards.
+    const entries = [
+      entry({ id: "e3", date: "2026-08-06", description: "Late Fee Charge", charges: 71.8, balance: 1907.6 }),
+      entry({ id: "e1", date: "2026-08-01", description: "Rent Charge", charges: 718, balance: 1835.8 }),
+      entry({ id: "e2", date: "2026-08-01", description: "Pest Control", charges: 3, balance: 1117.8 }),
+    ];
+    const timeline = buildTimeline(entries, [], "L1");
+    expect(timeline.map((i) => (i.type === "ledger" ? i.entry.id : i.key))).toEqual(["e3", "e1", "e2"]);
+    // Newest first, so the top row's balance is what is owed today.
+    expect(timeline[0].type === "ledger" && timeline[0].entry.balance).toBe(1907.6);
+  });
+
   test("firstLateDelayBucket maps month deltas to the six histogram buckets", () => {
     expect(firstLateDelayBucket(0)).toBe(0);
     expect(firstLateDelayBucket(1)).toBe(1);

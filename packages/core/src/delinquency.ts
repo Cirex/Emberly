@@ -11,6 +11,52 @@ export const AGING_BUCKETS = ["0-30", "31-60", "61-90", "90+"] as const;
 export type AgingBucket = (typeof AGING_BUCKETS)[number];
 
 /**
+ * How long the resident has lived here, in bands.
+ *
+ * Distinct from AGING_BUCKETS, which measure how old the DEBT is. Tenure
+ * measures how long the TENANCY is, and the two answer different questions: a
+ * 90+ balance on someone three weeks in is a screening problem, the same
+ * balance on a five-year resident is a life-event problem, and they call for
+ * different conversations.
+ *
+ * The bands are tight early because that is where risk moves fastest — across
+ * the property, delinquency runs 28% in the first six months, peaks at 41%
+ * between six and twelve, then settles near 29% and falls to 20% past five
+ * years.
+ */
+export const TENURE_BUCKETS = ["0-30", "31-60", "61-90", "91-120", "121-180", "181-365", "1yr+"] as const;
+export type TenureBucket = (typeof TENURE_BUCKETS)[number];
+
+/**
+ * Days lived here → band. Negative days (a move-in dated in the future, which
+ * ResMan does carry on approved-but-not-arrived leases) fold into the first
+ * band rather than falling out of the grouping entirely.
+ */
+export function tenureBucket(daysSinceMoveIn: number): TenureBucket {
+  if (daysSinceMoveIn <= 30) return "0-30";
+  if (daysSinceMoveIn <= 60) return "31-60";
+  if (daysSinceMoveIn <= 90) return "61-90";
+  if (daysSinceMoveIn <= 120) return "91-120";
+  if (daysSinceMoveIn <= 180) return "121-180";
+  if (daysSinceMoveIn <= 365) return "181-365";
+  return "1yr+";
+}
+
+/**
+ * Whole days from a "YYYY-MM-DD" move-in to `nowMs`, or null when unparseable.
+ * Parsed as LOCAL midnight — UTC parsing shifts the date back a day and can
+ * push a same-day move-in into the wrong band.
+ */
+export function daysSinceMoveIn(moveInDate: string | null | undefined, nowMs: number): number | null {
+  if (!moveInDate) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(moveInDate.trim());
+  if (!m) return null;
+  const start = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+  if (Number.isNaN(start)) return null;
+  return Math.floor((nowMs - start) / 86_400_000);
+}
+
+/**
  * The aging columns as synced from ResMan's delinquency report:
  * current month = 0-30 days, last month = 31-60, period = 61-90,
  * previous = 90+. `balance` is the total owed when the report carries it.

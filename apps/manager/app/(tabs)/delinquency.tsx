@@ -4,7 +4,7 @@ import { ActivityIndicator, ScrollView, Text, View, useWindowDimensions } from "
 import type { AgentStat } from "@emberly/core";
 import { AgentDetailBody } from "@/components/delinquency/AgentDetail";
 import { AgentsList } from "@/components/delinquency/AgentsList";
-import { BalancesList, type BalancesFilter } from "@/components/delinquency/BalancesList";
+import { BalancesList, type BalancesFilter, type BalancesGrouping } from "@/components/delinquency/BalancesList";
 import { DetailSheet } from "@/components/delinquency/DetailSheet";
 import { LogActionSheet, type LogActionDraft } from "@/components/delinquency/LogActionSheet";
 import { TenantDetailBody } from "@/components/delinquency/TenantDetail";
@@ -53,6 +53,7 @@ export default function DelinquencyScreen() {
   const [mode, setMode] = useState<Mode>("balances");
   const [headerH, setHeaderH] = useState(0);
   const [filter, setFilter] = useState<BalancesFilter>("all");
+  const [grouping, setGrouping] = useState<BalancesGrouping>("priority");
   const [selectedLeaseId, setSelectedLeaseId] = useState<string | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -83,9 +84,20 @@ export default function DelinquencyScreen() {
   const [mountedAt] = useState(() => Date.now());
   const nowMs = refreshedAt > 0 ? refreshedAt : mountedAt;
   const lastPayment = useMemo(() => lastPaymentMap(summaries), [summaries]);
+  // The delinquency report has no move-in date, so tenure is joined from the
+  // leases already loaded for the agent board. Keyed by unit: a unit's current
+  // lease is the tenancy standing behind its balance.
+  const moveInByUnit = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const lease of leases) {
+      if (!lease.unitId || !lease.isCurrentLease || !lease.moveInDate) continue;
+      out.set(lease.unitId, lease.moveInDate);
+    }
+    return out;
+  }, [leases]);
   const board = useMemo(
-    () => buildBalancesBoard(units, actions, lastPayment, nowMs),
-    [units, actions, lastPayment, nowMs],
+    () => buildBalancesBoard(units, actions, lastPayment, nowMs, moveInByUnit),
+    [units, actions, lastPayment, nowMs, moveInByUnit],
   );
   const pnls = useMemo(
     () => assembleTenantPnl({ leases, units, summaries, actions, nowMs }),
@@ -292,6 +304,8 @@ export default function DelinquencyScreen() {
         board={board}
         filter={filter}
         onFilter={setFilter}
+        grouping={grouping}
+        onGrouping={setGrouping}
         selectedUnitId={split ? selectedUnitId : null}
         onSelect={onSelectBalanceRow}
       />

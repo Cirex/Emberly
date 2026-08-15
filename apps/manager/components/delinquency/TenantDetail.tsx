@@ -148,16 +148,37 @@ function TimelineRow({ item }: { item: TimelineItem }) {
             {entry.transactionType ? ` · ${entry.transactionType}` : ""}
           </Text>
         </View>
-        <Text
-          style={{
-            fontSize: 11.5,
-            fontWeight: "800",
-            fontVariant: ["tabular-nums"],
-            color: isPayment ? MONEY_COLORS.pos : MONEY_COLORS.slate,
-          }}
-        >
-          {display}
-        </Text>
+        {/*
+          Charge/credit on top, RUNNING BALANCE beneath — the ledger as ResMan
+          presents it. Without the running figure you can read every line and
+          still not see how the total was arrived at; with it, the last row's
+          balance is the amount owed and each line above shows the step that
+          got there. The balance is stored per entry by ledger_sequence, so it
+          is ResMan's own running total, not one recomputed here.
+        */}
+        <View style={{ alignItems: "flex-end" }}>
+          <Text
+            style={{
+              fontSize: 11.5,
+              fontWeight: "800",
+              fontVariant: ["tabular-nums"],
+              color: isPayment ? MONEY_COLORS.pos : MONEY_COLORS.slate,
+            }}
+          >
+            {display}
+          </Text>
+          <Text
+            style={{
+              fontSize: 9,
+              fontWeight: "700",
+              fontVariant: ["tabular-nums"],
+              color: (entry.balance ?? 0) > 0 ? MONEY_COLORS.muted : MONEY_COLORS.pos,
+              marginTop: 1,
+            }}
+          >
+            {fmtMoney(entry.balance ?? 0)}
+          </Text>
+        </View>
       </View>
     );
   }

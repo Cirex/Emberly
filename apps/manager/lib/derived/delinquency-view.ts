@@ -2,6 +2,9 @@ import {
   AGING_BUCKETS,
   agingBucket,
   buildAgentStats,
+  daysSinceMoveIn,
+  TENURE_BUCKETS,
+  tenureBucket,
   delinquencyPriority,
   isRenewalLease,
   netPosition,
@@ -10,6 +13,7 @@ import {
   type AgentStat,
   type AgingBucket,
   type LeaseVerdict,
+  type TenureBucket,
 } from "@emberly/core";
 import type {
   DelinquencyAction,
@@ -205,11 +209,21 @@ export interface QueueRow {
   lastAction: DelinquencyAction | null;
   /** True when no action has ever been logged for the lease. */
   noActionEver: boolean;
+  /** Days the resident has lived here, or null when no move-in date is known. */
+  tenureDays: number | null;
+  /** {@link tenureDays} banded; null when the move-in date is unknown. */
+  tenure: TenureBucket | null;
 }
 
 export interface BalancesBoard {
   rows: QueueRow[];
   bands: Record<QueueBand, QueueRow[]>;
+  /**
+   * The same rows grouped by how long the resident has lived here, newest
+   * tenancy first, plus an `unknown` group for units with no move-in date so
+   * nothing silently drops out of the grouped view.
+   */
+  tenureGroups: { bucket: TenureBucket | "unknown"; rows: QueueRow[]; owed: number }[];
   distribution: ReturnType<typeof agingDistribution>;
   totalOwed: number;
   evictionCount: number;
@@ -232,6 +246,12 @@ export function buildBalancesBoard(
   actions: readonly DelinquencyAction[],
   lastPaymentByLease: ReadonlyMap<string, string>,
   nowMs: number,
+  /**
+   * unitId → the resident's move-in date. The delinquency report carries no
+   * move-in date, so the caller joins it from the leases it already holds.
+   * Units missing from the map group under `unknown`.
+   */
+  moveInByUnit: ReadonlyMap<string, string> = new Map(),
 ): BalancesBoard {
   const promiseStatuses = promiseStatusByLease(actions, lastPaymentByLease, nowMs);
 
@@ -275,6 +295,8 @@ export function buildBalancesBoard(
         ? leaseActions.reduce((best, a) => ((a.createdAt ?? "") > (best.createdAt ?? "") ? a : best))
         : null;
 
+    const tenureDays = daysSinceMoveIn(moveInByUnit.get(unit.unitId) ?? null, nowMs);
+
     return {
       unit,
       bucket,
@@ -291,6 +313,8 @@ export function buildBalancesBoard(
       promise,
       lastAction,
       noActionEver: leaseActions.length === 0,
+      tenureDays,
+      tenure: tenureDays === null ? null : tenureBucket(tenureDays),
     };
   });
 
@@ -299,9 +323,28 @@ export function buildBalancesBoard(
   const bands: Record<QueueBand, QueueRow[]> = { needsAction: [], promise: [], currentCycle: [] };
   for (const row of rows) bands[row.band].push(row);
 
+  // Tenure groups keep the priority sort WITHIN each band, so the worst row in
+  // a tenure group is still the first one you see. Empty bands are dropped —
+  // a header over nothing is just noise — but `unknown` is kept whenever it
+  // has rows, so a missing move-in date never silently hides a debtor.
+  const byTenure = new Map<TenureBucket | "unknown", QueueRow[]>();
+  for (const row of rows) {
+    const key = row.tenure ?? "unknown";
+    const list = byTenure.get(key);
+    if (list) list.push(row);
+    else byTenure.set(key, [row]);
+  }
+  const tenureGroups = [...TENURE_BUCKETS, "unknown" as const]
+    .map((bucket) => {
+      const groupRows = byTenure.get(bucket) ?? [];
+      return { bucket, rows: groupRows, owed: groupRows.reduce((acc, r) => acc + r.balance, 0) };
+    })
+    .filter((g) => g.rows.length > 0);
+
   return {
     rows,
     bands,
+    tenureGroups,
     distribution: agingDistribution(units),
     totalOwed: rows.reduce((acc, r) => acc + r.balance, 0),
     evictionCount: rows.filter((r) => r.evicted).length,
@@ -716,8 +759,8 @@ export function agentDrillIn(
 // ---- interleaved ledger + action timeline ----------------------------------
 
 export type TimelineItem =
-  | { type: "ledger"; key: string; dateIso: string; entry: LedgerEntry }
-  | { type: "action"; key: string; dateIso: string; action: DelinquencyAction };
+  | { type: "ledger"; key: string; dateIso: string; entry: LedgerEntry; ord: number }
+  | { type: "action"; key: string; dateIso: string; action: DelinquencyAction; ord: number };
 
 /**
  * Interleave a lease's ledger entries with its logged actions on one
@@ -731,19 +774,26 @@ export function buildTimeline(
   leaseId: string,
 ): TimelineItem[] {
   const items: TimelineItem[] = [];
+  // The server returns the ledger in ResMan's own order (date desc, then
+  // ledger_sequence desc). That order is what makes the running balance read
+  // as a tab, and several entries routinely share one date — so the incoming
+  // position is kept as the tiebreak. Sorting same-day rows by id instead put
+  // a $718 rent charge above the late fee that followed it and made the
+  // balance column appear to jump backwards.
+  let ord = 0;
   for (const entry of entries) {
     if (!entry.date) continue;
-    items.push({ type: "ledger", key: `l-${entry.id}`, dateIso: dateOnly(entry.date), entry });
+    items.push({ type: "ledger", key: `l-${entry.id}`, dateIso: dateOnly(entry.date), entry, ord: ord++ });
   }
   for (const action of actions) {
     if (action.resmanLeaseId !== leaseId || !action.createdAt) continue;
-    items.push({ type: "action", key: `a-${action.id}`, dateIso: dateOnly(action.createdAt), action });
+    items.push({ type: "action", key: `a-${action.id}`, dateIso: dateOnly(action.createdAt), action, ord: ord++ });
   }
   items.sort((a, b) => {
     const cmp = b.dateIso.localeCompare(a.dateIso);
     if (cmp !== 0) return cmp;
     if (a.type !== b.type) return a.type === "action" ? -1 : 1;
-    return a.key.localeCompare(b.key);
+    return a.ord - b.ord;
   });
   return items;
 }

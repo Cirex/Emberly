@@ -31,6 +31,20 @@ const en = {
       delinquencyLoad: "Delinquency load",
       loadCaption: "Of active rent roll",
     },
+    grouping: {
+      priority: "By priority",
+      tenure: "By time here",
+    },
+    tenure: {
+      "0-30": "First 30 days",
+      "31-60": "31-60 days",
+      "61-90": "61-90 days",
+      "91-120": "91-120 days",
+      "121-180": "121-180 days",
+      "181-365": "181 days - 1 year",
+      "1yr+": "1 year or more",
+      unknown: "Move-in date unknown",
+    },
     chips: {
       all: "All",
       ninetyPlus: "90+",
@@ -71,6 +85,7 @@ const en = {
     },
     footer: {
       priority: "Sorted by priority — age × balance × broken promises",
+      tenure: "Newest residents first · priority order within each group",
       netFormula:
         "Net = collected − concessions − bad debt − legal − utility exposure − maintenance estimate",
       agents: "Rates use leases signed in window · former staff stay attributed",
@@ -210,6 +225,20 @@ const es: typeof en = {
       delinquencyLoad: "Carga de morosidad",
       loadCaption: "De la renta activa",
     },
+    grouping: {
+      priority: "Por prioridad",
+      tenure: "Por tiempo aquí",
+    },
+    tenure: {
+      "0-30": "Primeros 30 días",
+      "31-60": "31-60 días",
+      "61-90": "61-90 días",
+      "91-120": "91-120 días",
+      "121-180": "121-180 días",
+      "181-365": "181 días - 1 año",
+      "1yr+": "1 año o más",
+      unknown: "Fecha de ingreso desconocida",
+    },
     chips: {
       all: "Todos",
       ninetyPlus: "90+",
@@ -250,6 +279,7 @@ const es: typeof en = {
     },
     footer: {
       priority: "Ordenado por prioridad — antigüedad × saldo × promesas incumplidas",
+      tenure: "Residentes más nuevos primero · por prioridad dentro de cada grupo",
       netFormula:
         "Neto = cobrado − concesiones − deuda incobrable − legal − exposición de servicios − estimado de mantenimiento",
       agents: "Las tasas usan contratos firmados en la ventana · el personal anterior queda atribuido",

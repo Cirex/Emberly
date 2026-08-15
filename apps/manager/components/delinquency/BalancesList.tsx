@@ -15,6 +15,16 @@ import type { BalancesBoard, QueueRow } from "@/lib/derived/delinquency-view";
 
 export type BalancesFilter = "all" | "ninetyPlus" | "promise" | "eviction" | "noAction";
 
+/**
+ * How the queue is grouped. Orthogonal to the filter chips: grouping decides
+ * the headers, filtering decides which rows appear under them.
+ *
+ * "priority" is the collections workflow — what to do next. "tenure" answers a
+ * different question: how long has this resident been here? The same 90+
+ * balance means something different at three weeks than at five years.
+ */
+export type BalancesGrouping = "priority" | "tenure";
+
 function rowMatches(row: QueueRow, filter: BalancesFilter): boolean {
   switch (filter) {
     case "all":
@@ -120,12 +130,16 @@ export function BalancesList({
   board,
   filter,
   onFilter,
+  grouping,
+  onGrouping,
   selectedUnitId,
   onSelect,
 }: {
   board: BalancesBoard;
   filter: BalancesFilter;
   onFilter: (f: BalancesFilter) => void;
+  grouping: BalancesGrouping;
+  onGrouping: (g: BalancesGrouping) => void;
   selectedUnitId: string | null;
   onSelect: (row: QueueRow) => void;
 }) {
@@ -146,6 +160,9 @@ export function BalancesList({
   ];
 
   const filtered = board.rows.filter((row) => rowMatches(row, filter));
+  const tenureGroups = board.tenureGroups
+    .map((group) => ({ ...group, rows: group.rows.filter((row) => rowMatches(row, filter)) }))
+    .filter((group) => group.rows.length > 0);
 
   return (
     <View>
@@ -161,8 +178,40 @@ export function BalancesList({
         ))}
       </View>
 
+      <View style={{ flexDirection: "row", gap: 6, paddingHorizontal: 16, paddingTop: 8 }}>
+        {(["priority", "tenure"] as const).map((key) => (
+          <QuickChip
+            key={key}
+            label={t(`delinquency.grouping.${key}`)}
+            active={grouping === key}
+            onPress={() => onGrouping(key)}
+          />
+        ))}
+      </View>
+
       {board.rows.length === 0 ? (
         <ListFooter>{t("delinquency.empty.balances")}</ListFooter>
+      ) : grouping === "tenure" ? (
+        <>
+          {tenureGroups.map((group) => (
+            <Fragment key={group.bucket}>
+              <BandHeader
+                label={t(`delinquency.tenure.${group.bucket}`)}
+                count={group.rows.length}
+                hot={group.bucket === "0-30" || group.bucket === "31-60"}
+              />
+              {group.rows.map((row) => (
+                <BalanceRow
+                  key={row.unit.unitId}
+                  row={row}
+                  selected={row.unit.unitId === selectedUnitId}
+                  onPress={() => onSelect(row)}
+                />
+              ))}
+            </Fragment>
+          ))}
+          <ListFooter>{t("delinquency.footer.tenure")}</ListFooter>
+        </>
       ) : filter === "all" ? (
         <>
           {bands.map(({ key, hot }) =>

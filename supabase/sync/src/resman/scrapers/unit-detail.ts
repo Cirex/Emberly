@@ -389,11 +389,47 @@ export async function scrapeLease(
     "moveInDate",
     normalizeDate(fields["Move-in date"] ?? labelForValue("MoveInDate", primaryHTML)),
   );
-  assignIfPresent(lease, "renewalDate", normalizeDate(fields["Renewal Date"]));
-  assignIfPresent(lease, "noticeGivenDate", normalizeDate(fields["NTV date"]));
+  // `renewalDate` is NOT read: there is no `for="RenewalDate"` node on the
+  // page, checked against a Pending Renewal lease. ResMan does not surface it
+  // here, so the column stays null rather than pretending.
+  //
+  // The NTV date needs the labelForValue route, like the three dates above.
+  // Its fl/fv label is not standalone — the Vacating Information block puts
+  // several labels in one `fl` div, so flFvPairs returns the whole run as a
+  // single mangled key ("Application date 9/9/2025 Lease signed date … NTV
+  // date") and `fields["NTV date"]` is never present. That is why
+  // notice_given_date was null on all 1,252 leases. Verified on 1732 ST-4
+  // (Notice to Vacate): `for="NoticeGivenDate"` holds "7/31/2026".
+  assignIfPresent(
+    lease,
+    "noticeGivenDate",
+    normalizeDate(fields["NTV date"] ?? labelForValue("NoticeGivenDate", primaryHTML)),
+  );
+  // Left on the fl/fv route deliberately: hap_rent is populated on ~2.7% of
+  // leases, so this read demonstrably works and the column is simply sparse —
+  // only HAP residents have one.
   assignIfPresent(lease, "hapRent", numOrNull(fields["HAP Rent"]));
-  assignIfPresent(lease, "balance", numOrNull(fields["Balance"]));
-  assignIfPresent(lease, "collectionBalance", numOrNull(fields["Collection"]));
+  // NO balance / collection read here, deliberately.
+  //
+  // The resident page has the boxes — `<div class="fl">Balance</div><div
+  // id="Balance" class="fv"></div>`, and the same for Deposits and Collection —
+  // but the server sends them EMPTY. ResMan fills that whole BalancesTable with
+  // JavaScript, and adds the `red` class at the same time, so a browser's
+  // Inspect panel shows a number that View Source does not. Verified against
+  // 1833 WX-4, which owes $8,165.75: the raw response contains neither the
+  // figure nor the `fv red` class, and `flFvPairs` returns undefined for the
+  // label (it skips pairs whose value is empty).
+  //
+  // Reading them here therefore could not work — and did not, for all 1,252
+  // leases in the mirror. It only looked like it might, which is worse than an
+  // obvious gap: `balance` was silently null everywhere and the delinquency
+  // view papered over it with a unit-level fallback for current leases.
+  //
+  // The balance is set from the LEDGER instead — see leaseBalanceFromLedger in
+  // ./leases, which is exact (matched resman_units.balance to the cent on the
+  // four largest debtors) and free, because the ledger is already fetched.
+  // `collection_balance` has no such source and stays null; recovering it would
+  // mean executing ResMan's JavaScript, a headless browser per lease.
   const reason = fields["Reason for leaving"];
   if (reason !== undefined) {
     const v = trimmedForCell(reason);

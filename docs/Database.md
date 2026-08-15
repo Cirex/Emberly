@@ -399,7 +399,7 @@ resman_units (from PropertyUnit)
 | `current_lease_id` | text | yes |  |  | denormalized, nullable (no FK) |
 | `pending_lease_id` | text | yes |  |  | denormalized, nullable |
 | `availability` | text | no |  |  | default `''` |
-| `lease_status` | text | yes |  |  |  |
+| `lease_status` | text | yes |  |  | the CURRENT lease; a vacant unit has none, so Evicted/Former never appear |
 | `occupancy_status` | text | yes |  |  |  |
 | `classification` | text | no |  |  | default `''` |
 | `notes` | text | no |  |  | default `''` |
@@ -455,7 +455,7 @@ resman_units (from PropertyUnit)
 
 **Allowed values**
 
-- `lease_status` — `Current`, `Under Eviction`, `Notice to Vacate`, `Month to Month`, `Pending`, `Pending Renewal`, `Cancelled`
+- `lease_status` — `Current`, `Under Eviction`, `Notice to Vacate`, `Month to Month`, `Pending`, `Pending Renewal`, `Renewed`, `Cancelled`
 - `occupancy_status` — `Occupied`, `Vacant`, `Notice`
 
 ### `resman_work_orders`

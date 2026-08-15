@@ -74,6 +74,26 @@ test("mapAllUnitsRow maps an occupied unit", () => {
   assert.equal(u.lease_start_date, "2026-01-15");
 });
 
+/**
+ * ResMan's All-Units export emits nine distinct LeaseStatus values. The mirror
+ * allowed eight, and "Renewed" — the ninth — was silently written as null.
+ *
+ * Worth knowing what the column actually is, because two of its values lie:
+ * of the 516 units with a current lease, 499 agree with it and 17 do not — 14
+ * say "Cancelled" and 2 say "Pending Renewal" while the resident sits on a
+ * live Current lease. ResMan is naming a superseded lease record there. So the
+ * mirror stores what ResMan said, and anything that needs the truth reads
+ * resman_leases.status instead.
+ *
+ * "Evicted" and "Former" are deliberately absent: ResMan never sends them at
+ * unit level. When a tenancy genuinely ends the unit goes vacant and the field
+ * is emptied (277 of 891 units, every one vacant).
+ */
+test("Renewed is a real ResMan value and must survive the allow-list", () => {
+  const u = mapAllUnitsRow(lookup, row({ UnitId: "u-r", Unit: "3717 QU-1", LeaseStatus: "Renewed" }), ctx);
+  assert.equal(u.lease_status, "Renewed");
+});
+
 test("mapAllUnitsRow derives Notice + coerces unknown lease_status to null", () => {
   const u = mapAllUnitsRow(lookup, row({
     UnitId: "u-2", Unit: "102", LeaseStatus: "Notice to Vacate", Vacant: "false",

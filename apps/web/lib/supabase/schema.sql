@@ -705,7 +705,7 @@ create table if not exists public.resman_units (
   current_lease_id text,               -- denormalized, nullable (no FK)
   pending_lease_id text,               -- denormalized, nullable
   availability text not null default '',
-  lease_status text check (lease_status is null or lease_status in ('Current','Under Eviction','Notice to Vacate','Month to Month','Pending','Pending Renewal','Cancelled')),
+  lease_status text check (lease_status is null or lease_status in ('Current','Under Eviction','Notice to Vacate','Month to Month','Pending','Pending Renewal','Renewed','Cancelled')),  -- the CURRENT lease; a vacant unit has none, so Evicted/Former never appear
   occupancy_status text check (occupancy_status is null or occupancy_status in ('Occupied','Vacant','Notice')),
   classification text not null default '',
   notes text not null default '',

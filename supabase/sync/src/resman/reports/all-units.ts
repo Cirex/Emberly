@@ -66,6 +66,22 @@ export function buildAllUnitsForm(
 
 const KNOWN_CLASSIFICATIONS = new Set(["ruby", "diamond", "legacy", "lux"]);
 
+/**
+ * The unit-level lease statuses ResMan actually emits, mirrored to the
+ * `resman_units.lease_status` CHECK constraint — anything outside the set is
+ * stored as null rather than failing the whole upsert chunk.
+ *
+ * This is the status of the unit's CURRENT or incoming lease, not the outcome
+ * of a past one: "Evicted" and "Former" never appear here, because a unit
+ * whose tenancy ended has no lease and ResMan sends an empty string (277 of
+ * the 891 units, every one of them vacant). The departed tenancy's outcome
+ * lives on resman_leases.status instead.
+ *
+ * "Renewed" was missing and was being silently nulled on one unit. It is a
+ * stale value when it appears — 3717 QU-1 carried it while the resident sat
+ * on a Current lease running to Jul 2027 — but dropping it lost the fact that
+ * ResMan said anything at all.
+ */
 const ALLOWED_LEASE_STATUS = new Set([
   "Current",
   "Under Eviction",
@@ -73,6 +89,7 @@ const ALLOWED_LEASE_STATUS = new Set([
   "Month to Month",
   "Pending",
   "Pending Renewal",
+  "Renewed",
   "Cancelled",
 ]);
 

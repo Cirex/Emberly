@@ -543,6 +543,7 @@ export function agentLeaseInputs(
       leasingAgent: lease.leasingAgent,
       isCurrentLease: lease.isCurrentLease,
       applicationDate: lease.applicationDate ?? null,
+      startDate: lease.startDate ?? null,
       moveInDate: lease.moveInDate ?? null,
       balance: lease.balance ?? null,
       residentRent: lease.residentRent ?? null,
@@ -687,16 +688,24 @@ export function agentDrillIn(
       evictions.push({
         leaseId: lease.id,
         unitNumber: lease.unitNumber,
-        signed: lease.applicationDate ?? lease.moveInDate ?? null,
+        // Not moveInDate: on a renewal that is the ORIGINAL move-in, which
+        // dated a 2026 lease to 2020.
+        signed: lease.applicationDate ?? lease.startDate ?? lease.moveInDate ?? null,
         firstLateMonth: summary?.firstLateMonth ?? null,
         balance: Math.max(0, lease.balance ?? 0),
       });
     }
 
-    const moveIn = lease.moveInDate ? monthIdx(lease.moveInDate) : null;
+    // Anchored on the start of THIS lease term, not the original move-in.
+    // On a renewal those differ by years: a resident who arrived in 2020, was
+    // renewed in July 2026 and first went late that same month landed in the
+    // "1yr+" bucket, so brand-new delinquency read as ancient history on the
+    // agent who signed the renewal.
+    const anchor = lease.startDate ?? lease.moveInDate;
+    const termStart = anchor ? monthIdx(anchor) : null;
     const late = summary?.firstLateMonth ? monthIdx(summary.firstLateMonth) : null;
-    if (moveIn !== null && late !== null && late >= moveIn) {
-      histogram[firstLateDelayBucket(late - moveIn)] += 1;
+    if (termStart !== null && late !== null && late >= termStart) {
+      histogram[firstLateDelayBucket(late - termStart)] += 1;
     }
   }
 

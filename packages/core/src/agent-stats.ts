@@ -26,6 +26,8 @@ export interface AgentLeaseInput {
   leasingAgent: string;
   isCurrentLease: boolean;
   applicationDate?: string | null;
+  /** When THIS lease term began. The signing fallback for a renewal. */
+  startDate?: string | null;
   moveInDate?: string | null;
   balance?: number | null;
   residentRent?: number | null;
@@ -234,7 +236,14 @@ export function buildAgentStats(leases: AgentLeaseInput[], opts: AgentStatsOptio
     split.total += 1;
     if (lease.evicted) acc.evictions += 1;
 
-    const signedRaw = lease.applicationDate ?? lease.moveInDate;
+    // A renewal carries no application date — nobody applied, they already
+    // live there — so this fell through to the move-in date, which on a
+    // renewal is the ORIGINAL one. An agent's July 2026 renewal of a resident
+    // who arrived in 2020 was dated 2020: outside every signing window, so it
+    // never counted as work they did. `startDate` is when THIS term began and
+    // is the right fallback; on a new move-in it equals the move-in date
+    // anyway, so nothing else moves.
+    const signedRaw = lease.applicationDate ?? lease.startDate ?? lease.moveInDate;
     const signedMs = signedRaw ? localDateMs(signedRaw) : null;
     if (signedMs !== null && signedMs >= windowStartMs) {
       acc.signed += 1;

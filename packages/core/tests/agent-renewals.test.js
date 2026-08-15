@@ -126,3 +126,53 @@ test("a renewal cannot be an early default — it is out of the denominator enti
   const [s] = buildAgentStats(leases, OPTS);
   assert.equal(s.earlyDefaultRate, 1, "1 of 1 move-ins, not 1 of 3 leases");
 });
+
+/**
+ * A renewal has no application date — nobody applied, they already live there
+ * — so the signing date fell through to the move-in date, which on a renewal
+ * is the ORIGINAL one.
+ *
+ * Real case: unit 1732 ST-2, resident since 2020-07-20, renewed 2026-07-01 by
+ * an agent who had been at the property about three months. The renewal was
+ * dated 2020, so it fell outside every signing window and never counted as
+ * work she did — while the balance that accrued on it did count against her.
+ */
+test("a renewal is signed when its TERM began, not when the resident first moved in", () => {
+  const [s] = buildAgentStats(
+    [
+      lease({
+        applicationDate: null,
+        startDate: "2026-07-01",
+        moveInDate: "2020-07-20",
+        isRenewal: true,
+      }),
+    ],
+    OPTS,
+  );
+  assert.equal(s.leasesSigned, 1, "signed July 2026, inside a 12-month window ending July 2026");
+  assert.equal(s.renewal.signed, 1);
+});
+
+test("the old move-in fallback would have dated that lease six years early", () => {
+  // Same lease with only the move-in date: outside the window, uncounted.
+  const [s] = buildAgentStats(
+    [lease({ applicationDate: null, startDate: null, moveInDate: "2020-07-20", isRenewal: true })],
+    OPTS,
+  );
+  assert.equal(s.leasesSigned, 0);
+});
+
+test("an application date still wins, and a new move-in is unaffected", () => {
+  // On a new tenancy startDate and moveInDate are the same day, so adding the
+  // fallback cannot move anything that was already right.
+  const [withApp] = buildAgentStats(
+    [lease({ applicationDate: "2026-05-11", startDate: "2026-05-29", moveInDate: "2026-05-29" })],
+    OPTS,
+  );
+  assert.equal(withApp.leasesSigned, 1);
+  const [noApp] = buildAgentStats(
+    [lease({ applicationDate: null, startDate: "2026-05-29", moveInDate: "2026-05-29" })],
+    OPTS,
+  );
+  assert.equal(noApp.leasesSigned, 1);
+});

@@ -462,6 +462,44 @@ describe("agentLeaseInputs / agentDrillIn", () => {
     expect(board.overallEvictionRate).toBe(0);
   });
 
+  /**
+   * Unit 1732 ST-2: resident since 2020-07-20, renewed 2026-07-01 by an agent
+   * three months into the job, first late that same month. Anchored on the
+   * move-in it read as 72 months in — the "1yr+" bucket — so delinquency that
+   * began weeks ago looked like inherited history. Anchored on the term it is
+   * month 0, which is what actually happened.
+   */
+  test("a renewal's histogram measures from the renewal, not the original move-in", () => {
+    const leases = [
+      lease({
+        id: "L1",
+        leasingAgent: "KC",
+        applicationDate: null,
+        startDate: "2026-07-01",
+        moveInDate: "2020-07-20",
+        balance: 1907.6,
+      }),
+    ];
+    const drill = agentDrillIn("KC", leases, [], [summary({ leaseId: "L1", firstLateMonth: "2026-07" })], []);
+    expect(drill.histogram).toEqual([1, 0, 0, 0, 0, 0]);
+  });
+
+  test("a renewal's eviction row is dated by its term, not the original move-in", () => {
+    const leases = [
+      lease({
+        id: "L1",
+        leasingAgent: "KC",
+        applicationDate: null,
+        startDate: "2026-07-01",
+        moveInDate: "2020-07-20",
+        status: "Evicted",
+        isCurrentLease: false,
+      }),
+    ];
+    const drill = agentDrillIn("KC", leases, [], [], []);
+    expect(drill.evictions[0].signed).toBe("2026-07-01");
+  });
+
   test("firstLateDelayBucket maps month deltas to the six histogram buckets", () => {
     expect(firstLateDelayBucket(0)).toBe(0);
     expect(firstLateDelayBucket(1)).toBe(1);
@@ -474,10 +512,13 @@ describe("agentLeaseInputs / agentDrillIn", () => {
   });
 
   test("drill-in collects the agent's evictions and first-late histogram", () => {
+    // New tenancies, so the term starts the day they move in — the histogram
+    // is anchored on startDate, and leaving these to the helper's 2024 default
+    // would make them renewals a year and a half deep.
     const leases = [
-      lease({ id: "L1", leasingAgent: "DJ", moveInDate: "2025-08-01", status: "Evicted", balance: 6940, isCurrentLease: false, unitNumber: "0288" }),
-      lease({ id: "L2", leasingAgent: "DJ", moveInDate: "2026-02-01", balance: 1310 }),
-      lease({ id: "L3", leasingAgent: "QH", moveInDate: "2026-01-01", status: "Evicted", isCurrentLease: false }),
+      lease({ id: "L1", leasingAgent: "DJ", startDate: "2025-08-01", moveInDate: "2025-08-01", status: "Evicted", balance: 6940, isCurrentLease: false, unitNumber: "0288" }),
+      lease({ id: "L2", leasingAgent: "DJ", startDate: "2026-02-01", moveInDate: "2026-02-01", balance: 1310 }),
+      lease({ id: "L3", leasingAgent: "QH", startDate: "2026-01-01", moveInDate: "2026-01-01", status: "Evicted", isCurrentLease: false }),
     ];
     const summaries = [
       summary({ leaseId: "L1", firstLateMonth: "2025-10" }), // +2 months → bucket 2

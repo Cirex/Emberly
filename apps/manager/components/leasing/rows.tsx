@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Text, View } from "react-native";
+import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import { InitialsBadge } from "@/components/ui/InitialsBadge";
 import { StatusPill, type PillTone } from "@/components/leasing/primitives";
 import { activeLocale } from "@/lib/i18n";
@@ -8,10 +8,11 @@ import type {
   ForecastRow,
   PipelineRow,
   PipelineStage,
+  TrackerStep,
   VacancyRow,
 } from "@/lib/derived/leasing";
-import { shortPct, signedMoney } from "@/lib/derived/leasing";
-import { parseDay } from "@/lib/derived/time";
+import { pipelineTrackerSteps, shortPct, signedMoney } from "@/lib/derived/leasing";
+import { calendarDaysBetween, parseDay, startOfDay } from "@/lib/derived/time";
 import { HAIRLINE, MUTED, NAVY } from "@/theme/tokens";
 
 /**
@@ -35,12 +36,21 @@ const STAGE_TONE: Record<PipelineStage, PillTone> = {
   movedIn: "good",
 };
 
-function RowShell({ children, last }: { children: React.ReactNode; last: boolean }) {
+function RowShell({
+  children,
+  last,
+  align = "center",
+}: {
+  children: React.ReactNode;
+  last: boolean;
+  /** Pipeline rows carry three text lines, so they hang from the top. */
+  align?: "center" | "flex-start";
+}) {
   return (
     <View
       style={{
         flexDirection: "row",
-        alignItems: "center",
+        alignItems: align,
         gap: 10,
         paddingHorizontal: 14,
         paddingVertical: 11,
@@ -73,35 +83,170 @@ function SubLine({ text }: { text: string }) {
   );
 }
 
-export function PipelineRowView({ row, last }: { row: PipelineRow; last: boolean }) {
+const TRACK_GOOD = "#33A666";
+const TRACK_IDLE = "rgba(9,27,84,0.16)";
+
+/** One dot + label of the five-step funnel tracker (approved artifact). */
+function TrackerStepView({ step, first }: { step: TrackerStep; first: boolean }) {
   const { t } = useTranslation();
-  const { lease } = row;
-  const title = row.tenantName
-    ? `${row.tenantName} · ${lease.unitNumber}`
-    : lease.unitNumber || "—";
-  const appliedMs = parseDay(lease.applicationDate);
-  const subParts = [
-    row.classification,
-    appliedMs !== null ? t("leasing.row.appliedOn", { date: formatDay(appliedMs) }) : "",
-    lease.leasingAgent ? t("leasing.row.agent", { agent: lease.leasingAgent }) : "",
-  ].filter(Boolean);
-  const rightSub =
-    row.moveInMs !== null
-      ? t(row.stage === "movedIn" ? "leasing.row.movedInOn" : "leasing.row.moveInOn", {
-          date: formatDay(row.moveInMs),
-        })
-      : "";
+  const reached = step.state === "done" || step.state === "skip";
   return (
-    <RowShell last={last}>
+    <View style={{ flex: 1, alignItems: "center" }}>
+      {/* Connector into this step; colored once the step is reached or live. */}
+      {!first ? (
+        <View
+          style={{
+            position: "absolute",
+            top: 6,
+            left: "-50%",
+            width: "100%",
+            height: 2,
+            backgroundColor: reached || step.state === "now" ? TRACK_GOOD : TRACK_IDLE,
+          }}
+        />
+      ) : null}
+      <View
+        style={{
+          width: 13,
+          height: 13,
+          borderRadius: 999,
+          borderWidth: step.state === "done" ? 0 : 1.5,
+          borderStyle: step.state === "skip" ? "dashed" : "solid",
+          borderColor: step.state === "now" || step.state === "skip" ? TRACK_GOOD : TRACK_IDLE,
+          backgroundColor: step.state === "done" ? TRACK_GOOD : "#FFFFFF",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {step.state === "done" ? (
+          <Text style={{ fontSize: 8, fontWeight: "800", color: "#fff", lineHeight: 10 }}>✓</Text>
+        ) : null}
+      </View>
+      <Text
+        numberOfLines={1}
+        style={{
+          fontSize: 9.5,
+          fontWeight: "800",
+          letterSpacing: 0.2,
+          textTransform: "uppercase",
+          marginTop: 4,
+          color: reached || step.state === "now" ? NAVY : MUTED,
+        }}
+      >
+        {t(`leasing.tracker.${step.key}`)}
+      </Text>
+      <Text
+        numberOfLines={1}
+        style={{ fontSize: 9.5, color: MUTED, fontVariant: ["tabular-nums"], marginTop: 1 }}
+      >
+        {step.dateMs !== null ? formatDay(step.dateMs) : step.state === "now" ? "—" : " "}
+      </Text>
+    </View>
+  );
+}
+
+/** "today" / "tomorrow" / "in 8 days" / "3 days ago" for the move-in line. */
+function relativeDay(
+  ms: number,
+  nowMs: number,
+  t: (k: string, o?: Record<string, unknown>) => string,
+): string {
+  const delta = calendarDaysBetween(startOfDay(nowMs), ms);
+  if (delta === 0) return t("leasing.row.today");
+  if (delta === 1) return t("leasing.row.tomorrow");
+  if (delta > 1) return t("leasing.row.inDays", { count: delta });
+  return t("leasing.row.daysAgo", { count: -delta });
+}
+
+export function PipelineRowView({
+  row,
+  last,
+  nowMs,
+  onPress,
+}: {
+  row: PipelineRow;
+  last: boolean;
+  nowMs: number;
+  onPress?: () => void;
+}) {
+  const { t } = useTranslation();
+  const { width } = useWindowDimensions();
+  // The tracker needs real horizontal room; the phone keeps the stage pill.
+  const showTracker = width >= 900;
+  const { lease } = row;
+  const appliedMs = parseDay(lease.applicationDate);
+
+  // The UNIT leads — it is the thing being filled, and it is what a manager
+  // scans a leasing board for. The prospect is the second line.
+  const whoLine = [row.tenantName, row.classification].filter(Boolean).join(" · ");
+  // The agent gets its OWN line rather than sharing a truncating one-liner —
+  // it was being clipped away entirely at iPad widths. The applied date joins
+  // it only when the tracker is hidden, since the tracker's "Applied" step
+  // already carries that date and repeating it is noise.
+  const originLine = [
+    lease.leasingAgent,
+    !showTracker && appliedMs !== null ? t("leasing.row.appliedOn", { date: formatDay(appliedMs) }) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const content = (
+    <>
       <InitialsBadge name={row.tenantName || lease.unitNumber || "?"} size={30} />
-      <View style={{ flex: 1 }}>
-        <BigLine text={title} />
-        {subParts.length > 0 ? <SubLine text={subParts.join(" · ")} /> : null}
+      <View style={{ flex: 1, minWidth: 168 }}>
+        <BigLine text={lease.unitNumber || "—"} />
+        {whoLine ? <SubLine text={whoLine} /> : null}
+        {originLine ? <SubLine text={originLine} /> : null}
       </View>
-      <View style={{ alignItems: "flex-end" }}>
+      {showTracker ? (
+        <View style={{ flex: 1.45, flexDirection: "row", paddingHorizontal: 10 }}>
+          {pipelineTrackerSteps(row).map((step, i) => (
+            <TrackerStepView key={step.key} step={step} first={i === 0} />
+          ))}
+        </View>
+      ) : (
         <StatusPill label={t(`leasing.stages.${row.stage}`)} tone={STAGE_TONE[row.stage]} />
-        {rightSub ? <SubLine text={rightSub} /> : null}
+      )}
+      <View style={{ alignItems: "flex-end", gap: 2, width: 150 }}>
+        {/* Readiness is an EXCEPTION flag: a ready unit is the normal case and
+            saying so on every row is noise. Only the blockers speak. */}
+        {!row.ready ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+            <View style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: "#B05E14" }} />
+            <Text numberOfLines={1} style={{ fontSize: 10.5, fontWeight: "800", color: "#B05E14" }}>
+              {row.dateAvailableMs !== null
+                ? t("leasing.row.notReadyAvail", { date: formatDay(row.dateAvailableMs) })
+                : t("leasing.row.notReady")}
+            </Text>
+          </View>
+        ) : null}
+        {row.moveInMs !== null ? (
+          <Text
+            numberOfLines={1}
+            style={{ fontSize: 11.5, fontWeight: "800", color: NAVY, fontVariant: ["tabular-nums"] }}
+          >
+            {formatDay(row.moveInMs)}
+          </Text>
+        ) : null}
+        {row.moveInMs !== null ? (
+          <SubLine text={relativeDay(row.moveInMs, nowMs, t)} />
+        ) : null}
       </View>
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable onPress={onPress} accessibilityRole="button">
+        <RowShell last={last} align="flex-start">
+          {content}
+        </RowShell>
+      </Pressable>
+    );
+  }
+  return (
+    <RowShell last={last} align="flex-start">
+      {content}
     </RowShell>
   );
 }

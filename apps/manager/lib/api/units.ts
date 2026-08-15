@@ -53,6 +53,9 @@ export const ResmanUnitSchema = z.object({
   times_late: num,
   delinquency_reason: str,
   leasing_agent: str,
+  // Available-units enrichment: when a not-ready unit becomes available. The
+  // pipeline board reads it next to the applicant's move-in date.
+  date_available: str,
   source_url: str,
   scraped_at: str,
   synced_at: str,

@@ -63,6 +63,19 @@ export function isNoticeStatus(s: string): boolean {
   return s.toLowerCase().includes("notice");
 }
 
+/**
+ * A renewal of an existing residency — the Renewals board's business, NOT the
+ * applicant funnel's.
+ *
+ * ResMan spells it "Pending Renewal", and `isPipelineStatus` matches on the
+ * "pending" substring, so every renewing resident on the property was landing
+ * on the Pipeline board as though they were a new application: 28 of them, none
+ * with a leasing agent or an application date, because a renewal has neither.
+ */
+export function isRenewalStatus(s: string): boolean {
+  return s.toLowerCase().includes("renewal");
+}
+
 /** Under eviction (still an active residency — "evicted" is ended, this is not). */
 export function isEvictionStatus(s: string): boolean {
   const sl = s.toLowerCase();
@@ -105,6 +118,8 @@ export interface UnitFacts {
   occupied: boolean;
   vacant: boolean;
   ready: boolean;
+  /** ISO day the unit becomes available (Available Units enrichment), "" unknown. */
+  dateAvailable: string;
   /** Real, occupancy-counting door (not a holding unit / excluded placeholder). */
   countsForOccupancy: boolean;
 }
@@ -122,6 +137,7 @@ export function unitFactsOf(u: ResmanUnit): UnitFacts {
     occupied,
     vacant,
     ready: isReadyAvailability(u.availability ?? ""),
+    dateAvailable: u.date_available ?? "",
     countsForOccupancy: u.excluded_from_occupancy !== true && u.holding_unit !== true,
   };
 }
@@ -187,6 +203,8 @@ export const PIPELINE_ACTIVITY_DAYS = 120;
  */
 export function pipelineStageOf(lease: ManagerLease, nowMs: number): PipelineStage | null {
   if (isDeadLease(lease) || isEndedStatus(lease.status)) return null;
+  // A renewing resident is not an applicant. See isRenewalStatus.
+  if (isRenewalStatus(lease.status)) return null;
 
   const today = startOfDay(nowMs);
   const inMs = parseDay(lease.moveInDate);
@@ -203,9 +221,18 @@ export function pipelineStageOf(lease: ManagerLease, nowMs: number): PipelineSta
   const signedMs = parseDay(lease.signedDate);
   const recentActivity = (ms: number | null) =>
     ms !== null && ms <= today && calendarDaysBetween(ms, today) <= PIPELINE_ACTIVITY_DAYS;
+  // A pipeline STATUS on its own is not an application. ResMan carries bare
+  // "Pending" lease stubs with no application date, no agent, no move-in and no
+  // approval status — 47 of them on this property — and admitting them on the
+  // status string alone filled the board with rows that could never answer
+  // "who is this, who owns it, when do they land". Qualification now needs
+  // real evidence: a date the sync fills, or an approval the screener set.
   const qualifies =
-    isPipelineStatus(lease.status) || inMs !== null ||
-    recentActivity(signedMs) || recentActivity(appliedMs);
+    inMs !== null ||
+    recentActivity(signedMs) ||
+    recentActivity(appliedMs) ||
+    (isPipelineStatus(lease.status) &&
+      (isApprovedApproval(lease.approvalStatus) || isScreeningApproval(lease.approvalStatus)));
   if (!qualifies) return null;
 
   if (signedMs !== null) return "signed";
@@ -223,6 +250,10 @@ export interface PipelineRow {
   moveInMs: number | null;
   /** Move-in within ±PIPELINE_IMMINENT_DAYS of today (the top band). */
   imminent: boolean;
+  /** Unit availability from the mirror (isReadyAvailability). */
+  ready: boolean;
+  /** Day the unit becomes available when not ready — null when unknown. */
+  dateAvailableMs: number | null;
 }
 
 /** All pipeline rows, imminent move-ins first, then by stage, then by move-in date. */
@@ -237,14 +268,19 @@ export function buildPipelineRows(
     const stage = pipelineStageOf(lease, nowMs);
     if (stage === null) continue;
     const moveInMs = parseDay(lease.moveInDate) ?? parseDay(lease.startDate);
+    const facts = unitsByNumber.get(lease.unitNumber);
     rows.push({
       lease,
       stage,
-      tenantName: primaryTenantName(unitsByNumber.get(lease.unitNumber)),
-      classification: unitsByNumber.get(lease.unitNumber)?.classification ?? "",
+      tenantName: primaryTenantName(facts),
+      classification: facts?.classification ?? "",
       moveInMs,
       imminent:
         moveInMs !== null && Math.abs(calendarDaysBetween(moveInMs, today)) <= PIPELINE_IMMINENT_DAYS,
+      // A unit the household already occupies is trivially "ready" for them —
+      // the readiness question only bites before move-in.
+      ready: stage === "movedIn" ? true : (facts?.ready ?? true),
+      dateAvailableMs: facts ? parseDay(facts.dateAvailable) : null,
     });
   }
   rows.sort((a, b) => {
@@ -255,6 +291,70 @@ export function buildPipelineRows(
     return (a.moveInMs ?? Number.MAX_SAFE_INTEGER) - (b.moveInMs ?? Number.MAX_SAFE_INTEGER);
   });
   return rows;
+}
+
+// ── Pipeline tracker ────────────────────────────────────────────────────────
+
+export type TrackerStepKey = "applied" | "screened" | "approved" | "signed" | "moveIn";
+
+export interface TrackerStep {
+  key: TrackerStepKey;
+  /**
+   * done  — the stage happened;
+   * now   — the stage the application is waiting on;
+   * todo  — not reached yet;
+   * skip  — passed WITHOUT ResMan recording it (dashed ring in the mockup):
+   *         the application is approved or beyond but no screening status was
+   *         ever observed, so "screened" cannot honestly be a solid check.
+   */
+  state: "done" | "now" | "todo" | "skip";
+  /** The date the stage happened / is scheduled, when the mirror has one.
+   *  Screening and approval carry no date column in ResMan — always null. */
+  dateMs: number | null;
+}
+
+/**
+ * The five-step funnel tracker under each pipeline row (approved artifact,
+ * frame 01). Derived purely from the row: the stage decides how far the green
+ * fill reaches; the dates come from the columns the sync fills reliably.
+ */
+export function pipelineTrackerSteps(row: PipelineRow): TrackerStep[] {
+  const { lease, stage } = row;
+  // How many of the five steps are behind the application, per stage.
+  const doneThrough: Record<PipelineStage, number> = {
+    application: 1, // applied happened; screening is next
+    screening: 1,
+    approved: 3, // applied + screened + approved; signature is next
+    leaseSent: 3, // lease out ≈ still waiting on the signature
+    signed: 4,
+    movedIn: 5,
+  };
+  const done = doneThrough[stage];
+  const screeningObserved = isScreeningApproval(lease.approvalStatus);
+
+  const dates: Record<TrackerStepKey, number | null> = {
+    applied: parseDay(lease.applicationDate),
+    screened: null,
+    approved: null,
+    signed: parseDay(lease.signedDate),
+    moveIn: row.moveInMs,
+  };
+
+  const keys: TrackerStepKey[] = ["applied", "screened", "approved", "signed", "moveIn"];
+  return keys.map((key, i) => {
+    if (i < done) {
+      // Screening that was never observed in approval_status is a "skip":
+      // the funnel passed through it but ResMan holds no record.
+      const state = key === "screened" && !screeningObserved ? "skip" : "done";
+      return { key, state, dateMs: dates[key] };
+    }
+    return { key, state: i === done ? "now" : "todo", dateMs: dates[key] };
+  });
+}
+
+/** Stages still waiting on a signature (the mockup's "awaiting signature"). */
+export function isAwaitingSignature(stage: PipelineStage): boolean {
+  return stage === "approved" || stage === "leaseSent";
 }
 
 // ── Expirations ─────────────────────────────────────────────────────────────
@@ -605,43 +705,51 @@ export function buildLeasingMetrics(input: {
 
   switch (mode) {
     case "pipeline": {
+      // The approved artifact's score strip: numbers a leasing manager acts
+      // on — how many are landing, which units can't take them, who still
+      // hasn't signed — instead of the old generic counts.
       const rows = input.pipelineRows;
-      const approved = rows.filter((r) => r.stage === "approved").length;
-      const screening = rows.filter((r) => r.stage === "screening").length;
-      const moveIns30 = scheduledMoveIns(input.leases, nowMs, 30);
-      const signedRents = input.leases
-        .filter((lease) => {
-          if (isDeadLease(lease)) return false;
-          const signedMs = parseDay(lease.signedDate);
-          return (
-            signedMs !== null && signedMs <= today &&
-            calendarDaysBetween(signedMs, today) <= SIGNED_CYCLE_DAYS &&
-            lease.residentRent !== null && lease.residentRent !== undefined
-          );
-        })
-        .map((lease) => lease.residentRent as number);
-      const avgRent =
-        signedRents.length > 0
-          ? signedRents.reduce((a, b) => a + b, 0) / signedRents.length
-          : null;
+      const imminent = rows.filter((r) => r.imminent).length;
+      const notReady = rows.filter((r) => !r.ready && r.stage !== "movedIn").length;
+      const unsigned = rows.filter((r) => isAwaitingSignature(r.stage)).length;
+      // Signed → move-in gap over the recent signing cycle (both dates known).
+      const gaps = input.leases
+        .filter((lease) => !isDeadLease(lease))
+        .map((lease) => ({ signed: parseDay(lease.signedDate), moveIn: parseDay(lease.moveInDate) }))
+        .filter(
+          (d): d is { signed: number; moveIn: number } =>
+            d.signed !== null && d.moveIn !== null && d.signed <= today &&
+            d.moveIn >= d.signed && calendarDaysBetween(d.signed, today) <= SIGNED_CYCLE_DAYS,
+        )
+        .map((d) => calendarDaysBetween(d.signed, d.moveIn));
+      const avgGap =
+        gaps.length > 0 ? Math.round((gaps.reduce((a, b) => a + b, 0) / gaps.length) * 10) / 10 : null;
       return [
         {
-          key: "applicants", value: String(rows.length), tint: TINT.blue,
-          labelKey: "leasing.metrics.applicants",
-          captionKey: "leasing.metrics.applicantsCaption",
-          captionParams: { approved, screening },
+          key: "inPipeline", value: String(rows.length), tint: TINT.blue,
+          labelKey: "leasing.metrics.inPipeline",
         },
         {
-          key: "moveIns30", value: String(moveIns30), tint: TINT.olive,
-          labelKey: "leasing.metrics.moveIns30",
-          captionKey: "leasing.metrics.moveIns30Caption",
+          key: "moveInsWeek", value: String(imminent), tint: TINT.olive,
+          labelKey: "leasing.metrics.moveInsWeek",
         },
         {
-          key: "avgRent",
-          value: avgRent !== null ? `$${Math.round(avgRent).toLocaleString()}` : "—",
+          key: "unitsNotReady", value: String(notReady),
+          tint: notReady > 0 ? TINT.amber : TINT.green,
+          labelKey: "leasing.metrics.unitsNotReady",
+          captionKey: "leasing.metrics.unitsNotReadyCaption",
+          captionParams: { total: rows.length },
+        },
+        {
+          key: "awaitingSignature", value: String(unsigned), tint: TINT.blue,
+          labelKey: "leasing.metrics.awaitingSignature",
+        },
+        {
+          key: "signedToMoveIn",
+          value: avgGap !== null ? String(avgGap) : "—",
           tint: TINT.green,
-          labelKey: "leasing.metrics.avgLeaseRent",
-          captionKey: "leasing.metrics.avgLeaseRentCaption",
+          labelKey: "leasing.metrics.signedToMoveIn",
+          captionKey: "leasing.metrics.signedToMoveInCaption",
         },
       ];
     }

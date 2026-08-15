@@ -38,6 +38,8 @@ import {
   buildPipelineRows,
   buildVacancyRows,
   expiringByMonth,
+  isAwaitingSignature,
+  PIPELINE_STAGE_ORDER,
   unitFactsOf,
   unitFactsIndex,
   type ExpirationRow,
@@ -46,7 +48,9 @@ import {
   type PipelineStage,
   type ScoreMetric,
 } from "@/lib/derived/leasing";
+import { PipelineDetailSheet } from "@/components/leasing/PipelineDetailSheet";
 import { buildLeasingAgentBoard, buildLeasingAgentMetrics } from "@/lib/derived/leasing-agents";
+import { isClosedWorkOrder } from "@emberly/core";
 import { buildMakeReadyBoard, buildWorkData } from "@/lib/derived/work-boards";
 import { useWorkOrders } from "@/lib/stores/work-orders";
 import {
@@ -101,6 +105,10 @@ export default function LeasingScreen() {
   const [offerSheet, setOfferSheet] = useState<{ nonce: number; leaseId: string } | null>(null);
   /** Compliance detail sheet target; same fresh-nonce remount pattern. */
   const [insuranceSheet, setInsuranceSheet] = useState<{ nonce: number; leaseId: string } | null>(
+    null,
+  );
+  /** Pipeline detail sheet target; same fresh-nonce remount pattern. */
+  const [pipelineSheet, setPipelineSheet] = useState<{ nonce: number; leaseId: string } | null>(
     null,
   );
 
@@ -234,13 +242,21 @@ export default function LeasingScreen() {
   // ── Quick chips per mode (live counts) ────────────────────────────────────
   const chips: QuickChip[] = useMemo(() => {
     if (mode === "pipeline") {
-      const byStage = (stage: PipelineStage) => pipelineRows.filter((r) => r.stage === stage).length;
+      // The artifact's quick filters: the questions a leasing manager asks of
+      // the funnel ("who lands this week? which units can't take them? who
+      // hasn't signed?"), plus one chip per active leasing agent in place of
+      // the mockup's "By agent" dropdown — same capability, existing chip UI.
+      const agents = [...new Set(pipelineRows.map((r) => r.lease.leasingAgent).filter(Boolean))].sort();
       return [
         { key: "all", label: t("leasing.chips.all"), count: pipelineRows.length },
-        { key: "screening", label: t("leasing.stages.screening"), count: byStage("screening") },
-        { key: "approved", label: t("leasing.stages.approved"), count: byStage("approved") },
-        { key: "leaseSent", label: t("leasing.stages.leaseSent"), count: byStage("leaseSent") },
-        { key: "signed", label: t("leasing.stages.signed"), count: byStage("signed") },
+        { key: "thisWeek", label: t("leasing.chips.thisWeek"), count: pipelineRows.filter((r) => r.imminent).length },
+        { key: "notReady", label: t("leasing.chips.unitNotReady"), count: pipelineRows.filter((r) => !r.ready).length },
+        { key: "unsigned", label: t("leasing.chips.unsigned"), count: pipelineRows.filter((r) => isAwaitingSignature(r.stage)).length },
+        ...agents.map((agent) => ({
+          key: `agent:${agent}`,
+          label: agent.split(" ")[0] ?? agent,
+          count: pipelineRows.filter((r) => r.lease.leasingAgent === agent).length,
+        })),
       ];
     }
     if (mode === "expirations") {
@@ -306,10 +322,15 @@ export default function LeasingScreen() {
   }, [mode, pipelineRows, expirationRows, vacancyRows, renewalsBoard, insuranceBoard, t]);
 
   // ── Chip-filtered lists ───────────────────────────────────────────────────
-  const visiblePipeline = useMemo(
-    () => (chip === "all" ? pipelineRows : pipelineRows.filter((r) => r.stage === chip)),
-    [pipelineRows, chip],
-  );
+  const visiblePipeline = useMemo(() => {
+    if (chip === "thisWeek") return pipelineRows.filter((r) => r.imminent);
+    if (chip === "notReady") return pipelineRows.filter((r) => !r.ready);
+    if (chip === "unsigned") return pipelineRows.filter((r) => isAwaitingSignature(r.stage));
+    if (chip.startsWith("agent:")) {
+      return pipelineRows.filter((r) => r.lease.leasingAgent === chip.slice("agent:".length));
+    }
+    return pipelineRows;
+  }, [pipelineRows, chip]);
   const visibleExpirations = useMemo(() => {
     if (chip === "d30") return expirationRows.filter((r) => r.daysLeft <= 30);
     if (chip === "open") return expirationRows.filter((r) => r.state === "open");
@@ -358,15 +379,34 @@ export default function LeasingScreen() {
 
   // ── Mode bodies ───────────────────────────────────────────────────────────
   const pipelineBody = () => {
+    // The approved artifact's banding: imminent move-ins pinned on top (hot),
+    // then one band per stage, later stages first — a shaped funnel instead of
+    // the old flat "in flight" bucket.
     const imminent = visiblePipeline.filter((r) => r.imminent);
-    const inFlight = visiblePipeline.filter((r) => !r.imminent);
+    const rest = visiblePipeline.filter((r) => !r.imminent);
     const rowViews = (rows: PipelineRow[]) =>
-      rows.map((r, i) => <PipelineRowView key={r.lease.id} row={r} last={i === rows.length - 1} />);
+      rows.map((r, i) => (
+        <PipelineRowView
+          key={r.lease.id}
+          row={r}
+          last={i === rows.length - 1}
+          nowMs={nowMs}
+          onPress={() => setPipelineSheet({ nonce: Date.now(), leaseId: r.lease.id })}
+        />
+      ));
     if (visiblePipeline.length === 0) return emptyState;
     return (
       <View style={{ gap: 4 }}>
-        {band(t("leasing.bands.moveInThisWeek", { count: imminent.length }), false, rowViews(imminent), "imminent")}
-        {band(t("leasing.bands.inFlight", { count: inFlight.length }), false, rowViews(inFlight), "inflight")}
+        {band(t("leasing.bands.moveInThisWeek", { count: imminent.length }), true, rowViews(imminent), "imminent")}
+        {PIPELINE_STAGE_ORDER.map((stage) => {
+          const rows = rest.filter((r) => r.stage === stage);
+          return band(
+            `${t(`leasing.stages.${stage}`)} · ${rows.length}`,
+            false,
+            rowViews(rows),
+            `stage-${stage}`,
+          );
+        })}
       </View>
     );
   };
@@ -582,6 +622,27 @@ export default function LeasingScreen() {
     );
   };
 
+  // ── Pipeline sheet wiring ─────────────────────────────────────────────────
+  const pipelineSheetRow: PipelineRow | null = pipelineSheet
+    ? pipelineRows.find((r) => r.lease.id === pipelineSheet.leaseId) ?? null
+    : null;
+  // The unit's make-ready tickets, open first — "what's holding the unit up".
+  const pipelineSheetTurnWos = useMemo(() => {
+    if (!pipelineSheetRow) return [];
+    return buildWorkData(workOrders, allUnits)
+      .parsed.filter(
+        (wo) => wo.isMakeReady && wo.unitNumber === pipelineSheetRow.lease.unitNumber,
+      )
+      .map((wo) => ({
+        id: wo.id,
+        number: wo.number,
+        title: wo.title,
+        status: wo.status,
+        open: !isClosedWorkOrder(wo),
+      }))
+      .sort((a, b) => Number(b.open) - Number(a.open));
+  }, [pipelineSheetRow, workOrders, allUnits]);
+
   // ── Compliance sheet wiring ───────────────────────────────────────────────
   const insuranceRow: InsuranceRowView | null = insuranceSheet
     ? insuranceBoard.rows.find((r) => r.policy.leaseId === insuranceSheet.leaseId) ?? null
@@ -702,8 +763,17 @@ export default function LeasingScreen() {
         <View
           style={{
             paddingHorizontal: pad,
+            // Pipeline joins the wide modes: its rows carry the five-step
+            // tracker plus three text columns, and squeezing that into 860pt
+            // truncated the agent and applied-date lines off the row.
             maxWidth:
-              wide && mode !== "expirations" && mode !== "agents" && mode !== "runway" ? 860 : undefined,
+              wide &&
+              mode !== "pipeline" &&
+              mode !== "expirations" &&
+              mode !== "agents" &&
+              mode !== "runway"
+                ? 860
+                : undefined,
           }}
         >
           {mode === "pipeline"
@@ -745,6 +815,18 @@ export default function LeasingScreen() {
           onClose={() => setOfferSheet(null)}
           onSend={submitOffer}
           onResolve={submitResolve}
+        />
+      ) : null}
+
+      {pipelineSheet && pipelineSheetRow ? (
+        <PipelineDetailSheet
+          key={pipelineSheet.nonce}
+          visible
+          row={pipelineSheetRow}
+          turnWorkOrders={pipelineSheetTurnWos}
+          config={config}
+          nowMs={nowMs}
+          onClose={() => setPipelineSheet(null)}
         />
       ) : null}
 

@@ -23,6 +23,9 @@ import {
   buildVacancyRows,
   expiringByMonth,
   hasLaterLease,
+  isAwaitingSignature,
+  isRenewalStatus,
+  pipelineTrackerSteps,
   isApprovedApproval,
   isCurrentStatus,
   isDeniedStatus,
@@ -208,6 +211,34 @@ describe("pipeline", () => {
     expect(pipelineStageOf(lease({ status: "", applicationDate: day(-150) }), NOW)).toBeNull();
   });
 
+  test("a renewing resident is NOT an applicant", () => {
+    // "Pending Renewal" contains "pending", so isPipelineStatus matched it and
+    // put all 28 of the property's renewals on the applicant board — none with
+    // a leasing agent or an application date, because a renewal has neither.
+    // Renewals have their own mode; the funnel must not claim them.
+    expect(pipelineStageOf(lease({ status: "Pending Renewal" }), NOW)).toBeNull();
+    expect(
+      pipelineStageOf(lease({ status: "Pending Renewal", moveInDate: day(5) }), NOW),
+    ).toBeNull();
+    expect(isRenewalStatus("Pending Renewal")).toBe(true);
+    expect(isRenewalStatus("Pending")).toBe(false);
+  });
+
+  test("a bare pipeline status with no application evidence is not an application", () => {
+    // ResMan carries 47 empty "Pending" stubs on this property: no application
+    // date, no agent, no move-in, no approval. Admitting them on the status
+    // string alone filled 55% of the board with rows that could not say who
+    // the prospect was, who owned it, or when they land.
+    expect(pipelineStageOf(lease({ status: "Pending" }), NOW)).toBeNull();
+    expect(pipelineStageOf(lease({ status: "Future" }), NOW)).toBeNull();
+    // Evidence in any form admits it: a date the sync fills…
+    expect(pipelineStageOf(lease({ status: "Pending", moveInDate: day(9) }), NOW)).toBe("application");
+    expect(pipelineStageOf(lease({ status: "Pending", applicationDate: day(-5) }), NOW)).toBe("application");
+    // …or an approval a screener actually set.
+    expect(pipelineStageOf(lease({ status: "Pending", approvalStatus: "Approved" }), NOW)).toBe("approved");
+    expect(pipelineStageOf(lease({ status: "Pending", approvalStatus: "Screening" }), NOW)).toBe("screening");
+  });
+
   test("rows join tenants, band imminent move-ins first, sort by stage then date", () => {
     const rows = buildPipelineRows(
       [
@@ -224,6 +255,76 @@ describe("pipeline", () => {
     expect(rows[0].classification).toBe("Diamond");
     expect(rows[1].stage).toBe("screening");
     expect(rows[1].imminent).toBe(false);
+  });
+
+  test("rows carry unit readiness and the available date; movedIn is trivially ready", () => {
+    const readyUnits = unitFactsIndex([
+      unit({ number: "3735 CC-8", availability: "Not Ready", date_available: day(6) }),
+      unit({ number: "0212", availability: "Ready" }),
+    ]);
+    const rows = buildPipelineRows(
+      [
+        lease({ unitNumber: "3735 CC-8", status: "Pending", approvalStatus: "Approved", moveInDate: day(3) }),
+        lease({ unitNumber: "0212", status: "Current", moveInDate: day(-2) }),
+      ],
+      readyUnits,
+      NOW,
+    );
+    const notReady = rows.find((r) => r.lease.unitNumber === "3735 CC-8")!;
+    expect(notReady.ready).toBe(false);
+    expect(notReady.dateAvailableMs).toBe(parseDay(day(6)));
+    const movedIn = rows.find((r) => r.lease.unitNumber === "0212")!;
+    expect(movedIn.stage).toBe("movedIn");
+    expect(movedIn.ready).toBe(true); // they live there — readiness no longer applies
+  });
+
+  test("tracker: green fill follows the stage, dates come from the reliable columns", () => {
+    const rows = buildPipelineRows(
+      [lease({ unitNumber: "0212", status: "Pending", signedDate: day(-3), applicationDate: day(-12), moveInDate: day(4) })],
+      units,
+      NOW,
+    );
+    const steps = pipelineTrackerSteps(rows[0]);
+    expect(steps.map((s) => s.key)).toEqual(["applied", "screened", "approved", "signed", "moveIn"]);
+    expect(steps.map((s) => s.state)).toEqual(["done", "skip", "done", "done", "now"]);
+    expect(steps[0].dateMs).toBe(parseDay(day(-12)));
+    expect(steps[3].dateMs).toBe(parseDay(day(-3)));
+    expect(steps[4].dateMs).toBe(parseDay(day(4)));
+    // Screening and approval have no date column in the mirror — never fabricated.
+    expect(steps[1].dateMs).toBeNull();
+    expect(steps[2].dateMs).toBeNull();
+  });
+
+  test("tracker: screening observed in approval_status is a solid check, not a skip", () => {
+    const rows = buildPipelineRows(
+      [lease({ unitNumber: "0212", status: "Pending", approvalStatus: "Screening", applicationDate: day(-2), moveInDate: day(10) })],
+      units,
+      NOW,
+    );
+    const steps = pipelineTrackerSteps(rows[0]);
+    expect(steps.map((s) => s.state)).toEqual(["done", "now", "todo", "todo", "todo"]);
+  });
+
+  test("tracker: an application awaiting signature waits on the signed step", () => {
+    const rows = buildPipelineRows(
+      [lease({ unitNumber: "0212", status: "Pending", approvalStatus: "Approved", moveInDate: day(10) })],
+      units,
+      NOW,
+    );
+    const steps = pipelineTrackerSteps(rows[0]);
+    expect(steps[3].state).toBe("now");
+    expect(isAwaitingSignature(rows[0].stage)).toBe(true);
+  });
+
+  test("tracker: moved in is five solid (or skip) checks", () => {
+    const rows = buildPipelineRows(
+      [lease({ unitNumber: "0212", status: "Current", approvalStatus: "Approved", signedDate: day(-9), moveInDate: day(-2) })],
+      units,
+      NOW,
+    );
+    for (const step of pipelineTrackerSteps(rows[0])) {
+      expect(["done", "skip"]).toContain(step.state);
+    }
   });
 });
 
@@ -422,12 +523,13 @@ describe("score metrics", () => {
   const forecastRows = buildForecastRows(leases, units, NOW);
   const vacancyRows = buildVacancyRows(units);
 
-  test("every leasing mode returns exactly three metrics with resolvable keys", () => {
+  test("every leasing mode returns metrics with resolvable keys (pipeline has five)", () => {
     for (const mode of ["pipeline", "expirations", "forecast", "vacancy"] as const) {
       const metrics = buildLeasingMetrics({
         mode, pipelineRows, expirationRows90, forecastRows, vacancyRows, leases, nowMs: NOW,
       });
-      expect(metrics).toHaveLength(3);
+      // Pipeline carries the redesigned five-cell strip; the others keep three.
+      expect(metrics).toHaveLength(mode === "pipeline" ? 5 : 3);
       for (const m of metrics) {
         expect(m.value.length).toBeGreaterThan(0);
         expect(m.labelKey.startsWith("leasing.metrics.")).toBe(true);
@@ -435,13 +537,20 @@ describe("score metrics", () => {
     }
   });
 
-  test("pipeline metrics: applicants count and signed-cycle average rent", () => {
-    const [applicants, moveIns, avg] = buildLeasingMetrics({
+  test("pipeline metrics: the board's action numbers, per the approved artifact", () => {
+    const [inPipeline, thisWeek, notReady, unsigned, gap] = buildLeasingMetrics({
       mode: "pipeline", pipelineRows, expirationRows90, forecastRows, vacancyRows, leases, nowMs: NOW,
     });
-    expect(applicants.value).toBe(String(pipelineRows.length));
-    expect(moveIns.value).toBe("2"); // both future move-ins inside 30d
-    expect(avg.value).toBe("$1,400");
+    expect(inPipeline.value).toBe(String(pipelineRows.length));
+    expect(thisWeek.value).toBe(String(pipelineRows.filter((r) => r.imminent).length));
+    expect(notReady.value).toBe(
+      String(pipelineRows.filter((r) => !r.ready && r.stage !== "movedIn").length),
+    );
+    expect(unsigned.value).toBe(
+      String(pipelineRows.filter((r) => r.stage === "approved" || r.stage === "leaseSent").length),
+    );
+    // The one signed lease with a move-in: signed day(-10) → move-in day(3) = 13 days.
+    expect(gap.value).toBe("13");
   });
 
   test("expiration metrics split 30 / 31–60 and count renewals", () => {

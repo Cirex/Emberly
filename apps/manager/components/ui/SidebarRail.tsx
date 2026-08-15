@@ -1,3 +1,4 @@
+import { EmberlyBrandLogo } from "@emberly/ui";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -210,10 +211,11 @@ export function SidebarRail({ state, navigation }: TabNav) {
         style={StyleSheet.absoluteFill}
       />
 
-      {/* Brand lockup */}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 10, paddingBottom: 16, paddingTop: 4 }}>
-        <Ionicons name="flower" size={20} color={OLIVE} />
-        <Text style={{ fontSize: 12.5, fontWeight: "800", letterSpacing: 2.4, color: "#fff" }}>EMBERLY</Text>
+      {/* Brand lockup — the real reversed artwork (mockup: the rail wears the
+          same asset the admin portal sidebar uses), not a recomposed
+          icon-plus-tracked-text stand-in. */}
+      <View style={{ paddingHorizontal: 10, paddingBottom: 18, paddingTop: 6, alignItems: "center" }}>
+        <EmberlyBrandLogo variant="reversed" size={92} />
       </View>
 
       {/* Primary destinations (tab routes) */}

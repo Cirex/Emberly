@@ -379,6 +379,9 @@ export const unitsResource = defineResource({
     // callouts read these; harmless extras for the other apps.
     "current_month_balance", "last_month_balance", "period_balance", "previous_balance",
     "times_late", "delinquency_reason", "leasing_agent",
+    // Available-units enrichment — the pipeline board shows when a not-ready
+    // unit becomes available next to the applicant's move-in date.
+    "date_available",
     "source_url", "scraped_at", "synced_at",
     "created_at", "updated_at",
   ],

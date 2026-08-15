@@ -59,6 +59,44 @@ export function isWriteoffEntry(
   return WRITEOFF_RE.test(entry.category) || WRITEOFF_RE.test(entry.ledger_description);
 }
 
+// ---- legal action, read off the ledger -------------------------------------
+
+/**
+ * ResMan's ledger category for every eviction-related fee: the court filing
+ * fee, the attorney's fee, and service of process. It is a CODE, not free
+ * text, which is what makes it trustworthy — unlike the delinquency note,
+ * which a leasing agent types by hand and half the time leaves blank.
+ *
+ * Matching must be on the category and never on the description, because
+ * DMG-WVR "Renters Legal Liability Charge" is renter's INSURANCE, carries the
+ * word "Legal", and posts monthly on 2,400+ entries across the property.
+ */
+export const LEGAL_FEE_CATEGORY = "ATTYCH";
+
+/**
+ * Service of process within ATTYCH — descriptions seen in the wild are
+ * "PROCESS SERVER", "process server", and "ELITE PROCESS" (the vendor).
+ * Costs $45 per service; the court/attorney fee is typically $235.
+ */
+const PROCESS_SERVER_RE = /process/i;
+
+/**
+ * True for an ATTYCH row that actually MOVED money onto the resident's ledger.
+ *
+ * Reversals are excluded by requiring charges > 0: ResMan reverses a charge by
+ * posting a matching negative row ("Reversed …" / "Reversed to collections …")
+ * and annotating the original with a "(Rev 3/10/26)" prefix. The original
+ * stays positive, so a filing that later moved to collections still counts —
+ * as it should, since the filing happened. Only 4 leases on the property carry
+ * a genuine mistaken-charge reversal; the other 75 net-zero leases are
+ * write-offs to collections, i.e. the eviction ran its course.
+ */
+export function isLegalFeeEntry(
+  entry: Pick<LedgerSummaryEntry, "category" | "charges">,
+): boolean {
+  return entry.category === LEGAL_FEE_CATEGORY && (entry.charges ?? 0) > 0;
+}
+
 /** One-row-per-lease ledger aggregate, camelCased for the wire. */
 export interface LeaseLedgerSummary {
   leaseId: string;
@@ -74,6 +112,21 @@ export interface LeaseLedgerSummary {
   concessions: number;
   /** Net write-off value: credits minus charges over write-off-matched entries. */
   writeoffs: number;
+  /**
+   * Date of the first legal fee charged AFTER the lease's opening ledger day —
+   * the machine's record that an eviction was filed, and the closest thing to
+   * a reliable FED-filed date this property has. Null when no filing exists.
+   */
+  legalFiledDate: string | null;
+  /**
+   * Date of the first process-server fee, i.e. when the summons was served.
+   * Always on or after {@link legalFiledDate} — across 63 leases carrying both
+   * fees the service never once precedes the filing, so the two read as
+   * ordered stages rather than interchangeable "legal happened" markers.
+   */
+  legalServedDate: string | null;
+  /** Gross legal fees charged (reversals excluded), in dollars. */
+  legalFees: number;
 }
 
 function round2(value: number): number {
@@ -87,6 +140,14 @@ function round2(value: number): number {
  * month as that month's month-end balance, and reports the earliest month
  * whose month-end balance exceeds LATE_BALANCE_THRESHOLD. Entries without a
  * date or lease are skipped. Output is ordered by leaseId.
+ *
+ * legalFiledDate / legalServedDate / legalFees read eviction activity off the
+ * ATTYCH category (see {@link isLegalFeeEntry}). This is deliberately the only
+ * legal signal the board trusts: 151 leases carry a dated post-migration
+ * filing against 64 units whose hand-typed delinquency note names any legal
+ * stage at all, and 83 of those 151 have no note whatsoever. The note wins on
+ * exactly one axis — it can say "writ" where the ledger only says "a fee was
+ * charged" — so the two are complementary, not redundant.
  */
 export function summarizeLedgerEntries(entries: readonly LedgerSummaryEntry[]): LeaseLedgerSummary[] {
   const byLease = new Map<string, LedgerSummaryEntry[]>();
@@ -105,6 +166,19 @@ export function summarizeLedgerEntries(entries: readonly LedgerSummaryEntry[]): 
     let concessions = 0;
     let writeoffs = 0;
     let lastPaymentDate: string | null = null;
+    let legalFiledDate: string | null = null;
+    let legalServedDate: string | null = null;
+    let legalFees = 0;
+
+    // The February 2026 ResMan migration opened every existing lease's ledger
+    // with one dated batch carrying the balance it arrived with — including,
+    // on 48 leases, legal fees billed long before. Those are history, not a
+    // filing we can date, so the opening day is excluded outright.
+    let openingDay: string | null = null;
+    for (const row of rows) {
+      if (row.date === null) continue;
+      if (openingDay === null || row.date < openingDay) openingDay = row.date;
+    }
 
     for (const row of rows) {
       billed += row.charges ?? 0;
@@ -114,6 +188,13 @@ export function summarizeLedgerEntries(entries: readonly LedgerSummaryEntry[]): 
       if (isWriteoffEntry(row)) writeoffs += net;
       if ((row.credits ?? 0) > 0 && row.date !== null) {
         if (lastPaymentDate === null || row.date > lastPaymentDate) lastPaymentDate = row.date;
+      }
+      if (isLegalFeeEntry(row) && row.date !== null && row.date !== openingDay) {
+        legalFees += row.charges ?? 0;
+        if (legalFiledDate === null || row.date < legalFiledDate) legalFiledDate = row.date;
+        if (PROCESS_SERVER_RE.test(row.ledger_description)) {
+          if (legalServedDate === null || row.date < legalServedDate) legalServedDate = row.date;
+        }
       }
     }
 
@@ -145,6 +226,9 @@ export function summarizeLedgerEntries(entries: readonly LedgerSummaryEntry[]): 
       firstLateMonth,
       concessions: round2(concessions),
       writeoffs: round2(writeoffs),
+      legalFiledDate,
+      legalServedDate,
+      legalFees: round2(legalFees),
     });
   }
   return out;

@@ -11,9 +11,9 @@ import {
 } from "@/components/delinquency/bits";
 import { AgingMeter } from "@/components/delinquency/AgingMeter";
 import { fmtMoney, fmtShortDate } from "@/components/delinquency/format";
-import type { BalancesBoard, QueueRow } from "@/lib/derived/delinquency-view";
+import { isSilent, type BalancesBoard, type QueueRow } from "@/lib/derived/delinquency-view";
 
-export type BalancesFilter = "all" | "ninetyPlus" | "promise" | "eviction" | "noAction";
+export type BalancesFilter = "all" | "ninetyPlus" | "promise" | "eviction" | "silent";
 
 /**
  * How the queue is grouped. Orthogonal to the filter chips: grouping decides
@@ -34,17 +34,38 @@ function rowMatches(row: QueueRow, filter: BalancesFilter): boolean {
     case "promise":
       return row.promise !== null && row.promise.state !== "kept";
     case "eviction":
-      return row.evicted;
-    case "noAction":
-      return row.noActionEver;
+      // A ledger filing counts even when the note is blank, which it is on
+      // more than half the leases that have one.
+      return row.inEviction;
+    case "silent":
+      return isSilent(row);
   }
 }
 
+/**
+ * The one-line story under the unit: how old the debt is, then the strongest
+ * dated fact we hold about the case.
+ *
+ * The legal clause comes off the ledger's attorney/court fees rather than the
+ * delinquency note, so it appears on all 151 leases with a filing instead of
+ * the 68 whose note happens to mention one. The tail is days since the last
+ * payment — the honest staleness clock. It replaced "No action logged", which
+ * read as "nobody has done anything" on every row on the board, because the
+ * actions table it counted has never had a row written to it.
+ */
 function RowSubtitle({ row }: { row: QueueRow }) {
   const { t } = useTranslation();
   const parts: string[] = [];
   if (row.bucket) parts.push(row.bucket);
   if (row.unit.timesLate) parts.push(t("delinquency.row.timesLate", { count: row.unit.timesLate ?? 0 }));
+  if (row.legal) {
+    const filed = t("delinquency.row.fedFiled", { date: fmtShortDate(row.legal.filedDate) });
+    parts.push(
+      row.legal.servedDate
+        ? `${filed} · ${t("delinquency.row.served", { date: fmtShortDate(row.legal.servedDate) })}`
+        : filed,
+    );
+  }
   if (row.promise && row.promise.state === "broken") {
     parts.push(t("delinquency.row.promiseBroken", { date: fmtShortDate(row.promise.dueDate) }));
   } else if (row.promise && row.promise.state === "open") {
@@ -63,8 +84,10 @@ function RowSubtitle({ row }: { row: QueueRow }) {
         date: fmtShortDate(row.lastAction.createdAt),
       }),
     );
+  } else if (row.daysSincePayment !== null) {
+    parts.push(t("delinquency.row.noPaymentDays", { count: row.daysSincePayment }));
   } else {
-    parts.push(t("delinquency.row.noActionLogged"));
+    parts.push(t("delinquency.row.neverPaid"));
   }
   return (
     <Text numberOfLines={1} style={{ fontSize: 9.5, fontWeight: "600", color: MONEY_COLORS.muted, marginTop: 1 }}>
@@ -150,7 +173,7 @@ export function BalancesList({
     { key: "ninetyPlus", label: t("delinquency.chips.ninetyPlus"), count: board.ninetyPlusCount },
     { key: "promise", label: t("delinquency.chips.promise"), count: board.promiseCount },
     { key: "eviction", label: t("delinquency.chips.eviction"), count: board.evictionCount },
-    { key: "noAction", label: t("delinquency.chips.noAction"), count: board.noActionCount },
+    { key: "silent", label: t("delinquency.chips.silent"), count: board.silentCount },
   ];
 
   const bands: { key: keyof BalancesBoard["bands"]; hot?: boolean }[] = [

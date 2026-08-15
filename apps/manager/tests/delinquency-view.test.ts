@@ -15,7 +15,9 @@ import {
   buildBalancesBoard,
   buildTimeline,
   firstLateDelayBucket,
+  isSilent,
   lastPaymentMap,
+  legalMap,
   promiseStatusByLease,
   suggestNextAction,
   tenantBands,
@@ -94,6 +96,9 @@ function summary(over: Partial<LeaseLedgerSummary> & { leaseId: string }): Lease
     firstLateMonth: null,
     concessions: 0,
     writeoffs: 0,
+    legalFiledDate: null,
+    legalServedDate: null,
+    legalFees: 0,
     ...over,
   };
 }
@@ -320,6 +325,71 @@ describe("buildBalancesBoard", () => {
     expect(board.evictionCount).toBe(1);
     expect(board.bands.needsAction[0].unit.unitId).toBe("ev");
     expect(board.bands.needsAction[0].suggestion).toBe("writeOff");
+  });
+
+  test("a ledger filing needs action and awaits court even on a young balance", () => {
+    // 1840 BA-2's shape: current, paying, only a 0-30 balance — but a $235
+    // court fee was charged in March. Reading the note alone (which says
+    // nothing) this row would sit in the current cycle and be told to "watch".
+    const filed = unit({
+      unitId: "filed",
+      currentLeaseId: "L-filed",
+      currentMonthBalance: 300,
+      balance: 300,
+    });
+    const quiet = unit({ unitId: "quiet", currentLeaseId: "L-quiet", currentMonthBalance: 300, balance: 300 });
+    const legal = legalMap([
+      summary({ leaseId: "L-filed", legalFiledDate: "2026-03-04", legalServedDate: "2026-03-25", legalFees: 280 }),
+      summary({ leaseId: "L-quiet" }),
+    ]);
+
+    const board = buildBalancesBoard([filed, quiet], [], new Map(), NOW, new Map(), legal);
+    const filedRow = board.rows.find((r) => r.unit.unitId === "filed")!;
+    const quietRow = board.rows.find((r) => r.unit.unitId === "quiet")!;
+
+    expect(filedRow.band).toBe("needsAction");
+    expect(filedRow.suggestion).toBe("awaitCourt");
+    expect(filedRow.legal).toEqual({ filedDate: "2026-03-04", servedDate: "2026-03-25", fees: 280 });
+    // The unfiled twin is identical in every other way and stays a watch item.
+    expect(quietRow.band).toBe("currentCycle");
+    expect(quietRow.suggestion).toBe("watch");
+    expect(quietRow.legal).toBeNull();
+
+    expect(board.fedFiledCount).toBe(1);
+    expect(board.legalSpend).toBe(280);
+    // The eviction chip counts note-text evictions AND ledger filings, so its
+    // count and its filter agree.
+    expect(filedRow.inEviction).toBe(true);
+    expect(quietRow.inEviction).toBe(false);
+    expect(board.evictionCount).toBe(1);
+  });
+
+  test("daysSincePayment measures the ledger, not when staff last typed a note", () => {
+    const u = unit({ unitId: "u1", currentLeaseId: "L-1", currentMonthBalance: 500, balance: 500 });
+    const board = buildBalancesBoard([u], [], new Map([["L-1", "2026-05-11"]]), NOW);
+    // NOW is 2026-07-15 in this suite.
+    expect(board.rows[0].daysSincePayment).toBe(65);
+
+    const never = buildBalancesBoard([u], [], new Map(), NOW);
+    expect(never.rows[0].daysSincePayment).toBeNull();
+  });
+
+  test("silent counts 60+ days without a payment, and never-paid", () => {
+    const quiet = unit({ unitId: "quiet", currentLeaseId: "L-q", currentMonthBalance: 400, balance: 400 });
+    const paying = unit({ unitId: "pay", currentLeaseId: "L-p", currentMonthBalance: 400, balance: 400 });
+    const never = unit({ unitId: "nev", currentLeaseId: "L-n", currentMonthBalance: 400, balance: 400 });
+    const board = buildBalancesBoard(
+      [quiet, paying, never],
+      [],
+      // NOW is 2026-07-15: 65 days silent, 14 days ago, and never.
+      new Map([
+        ["L-q", "2026-05-11"],
+        ["L-p", "2026-07-01"],
+      ]),
+      NOW,
+    );
+    expect(board.silentCount).toBe(2);
+    expect(board.rows.filter(isSilent).map((r) => r.unit.unitId).sort()).toEqual(["nev", "quiet"]);
   });
 });
 

@@ -124,6 +124,12 @@ export const LeaseLedgerSummarySchema = z.object({
   concessions: z.number(),
   /** Net write-off value (credits − charges over write-off entries). */
   writeoffs: z.number(),
+  /** First post-migration attorney/court fee — the machine's FED-filed date. */
+  legalFiledDate: z.string().nullable().default(null),
+  /** First process-server fee — the summons was served on this date. */
+  legalServedDate: z.string().nullable().default(null),
+  /** Gross legal fees charged, in dollars. */
+  legalFees: z.number().default(0),
 });
 export type LeaseLedgerSummary = z.infer<typeof LeaseLedgerSummarySchema>;
 

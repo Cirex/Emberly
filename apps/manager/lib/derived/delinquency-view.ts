@@ -34,6 +34,62 @@ const n = (v: number | null | undefined): number => (typeof v === "number" ? v :
 /** /evict/i over free text — the sync writes phrases like "Eviction filed". */
 const EVICT_RE = /evict/i;
 
+// ---- legal action, read off the ledger -------------------------------------
+
+/**
+ * What the ledger knows about a lease's eviction, from the ATTYCH fee category
+ * (see apps/web/lib/manager-ledger.ts).
+ *
+ * This replaces `delinquency_actions` as the board's legal signal. That table
+ * has never had a row written to it, so every legal branch downstream of it
+ * was permanently dead; the ledger, by contrast, dates a filing on 151 leases.
+ * The trade is that money cannot name a stage — a $235 court fee proves the
+ * filing happened and when, but only the hand-typed note can say "writ".
+ */
+export interface LegalFacts {
+  /** First post-migration attorney/court fee: the FED was filed on this date. */
+  filedDate: string;
+  /** First process-server fee, when one exists — the summons was served. */
+  servedDate: string | null;
+  /** Gross legal fees charged to the resident, in dollars. */
+  fees: number;
+}
+
+/** leaseId → {@link LegalFacts}; leases with no filing are absent. */
+export function legalMap(summaries: readonly LeaseLedgerSummary[]): Map<string, LegalFacts> {
+  const out = new Map<string, LegalFacts>();
+  for (const s of summaries) {
+    if (!s.legalFiledDate) continue;
+    out.set(s.leaseId, {
+      filedDate: dateOnly(s.legalFiledDate),
+      servedDate: s.legalServedDate ? dateOnly(s.legalServedDate) : null,
+      fees: s.legalFees ?? 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * No payment in this many days makes a row "silent". Two missed cycles: one
+ * skipped month is a bad month, two is a resident who has stopped paying.
+ */
+export const SILENT_DAYS = 60;
+
+/** True when the resident has not paid in {@link SILENT_DAYS}+ days, or ever. */
+export function isSilent(row: Pick<QueueRow, "daysSincePayment">): boolean {
+  return row.daysSincePayment === null || row.daysSincePayment >= SILENT_DAYS;
+}
+
+/** Whole days between two "YYYY-MM-DD" days, or null when either is missing. */
+function daysBetweenDays(from: string | null | undefined, toMs: number): number | null {
+  if (!from) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(from);
+  if (!m) return null;
+  const start = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+  if (Number.isNaN(start)) return null;
+  return Math.floor((toMs - start) / 86_400_000);
+}
+
 // ---- aging distribution (the meter bar) ------------------------------------
 
 export interface AgingSegment {
@@ -146,7 +202,7 @@ export function promiseStatusByLease(
  * | # | Condition                                                | Suggestion  |
  * |---|----------------------------------------------------------|-------------|
  * | 1 | evicted (reason/eviction_completed), owes, no writeoff   | writeOff    |
- * | 2 | fed_filed logged (eviction not yet completed)            | awaitCourt  |
+ * | 2 | FED filed on the ledger (eviction not yet completed)     | awaitCourt  |
  * | 3 | promise broken (dated promise past due, nothing since)   | escalate    |
  * | 4 | 90+ bucket AND notice_served logged                      | fileFed     |
  * | 5 | 90+ bucket, no notice yet                                | serveNotice |
@@ -155,6 +211,11 @@ export function promiseStatusByLease(
  * | 8 | 31-60 / 61-90 bucket with prior action                   | call        |
  * | 9 | 0-30 bucket                                              | watch       |
  * |10 | no bucket (reason-only row, nothing owed)                | review      |
+ *
+ * Row 2 used to read the `fed_filed` action kind, which no one has ever
+ * recorded — the branch could not fire. It now reads the ledger's filing date,
+ * so the 151 leases with a real filing stop being told to serve a notice that
+ * was served months ago.
  */
 export type NextAction =
   | "writeOff"
@@ -209,10 +270,26 @@ export interface QueueRow {
   lastAction: DelinquencyAction | null;
   /** True when no action has ever been logged for the lease. */
   noActionEver: boolean;
+  /**
+   * The resident is in the eviction process: the note says so, or the ledger
+   * carries a filing. Either alone under-counts — the note is blank on 83 of
+   * the 151 leases with a filing, and 10 units have a note naming a legal
+   * stage with no fee behind it.
+   */
+  inEviction: boolean;
   /** Days the resident has lived here, or null when no move-in date is known. */
   tenureDays: number | null;
   /** {@link tenureDays} banded; null when the move-in date is unknown. */
   tenure: TenureBucket | null;
+  /** The ledger's eviction record, or null when no filing exists. */
+  legal: LegalFacts | null;
+  /**
+   * Days since the last payment landed, or null when the resident has never
+   * paid. This is the honest staleness clock: the alternative — days since
+   * someone typed a delinquency note — measures how recently staff wrote
+   * something down, not how long the money has been missing.
+   */
+  daysSincePayment: number | null;
 }
 
 export interface BalancesBoard {
@@ -226,8 +303,18 @@ export interface BalancesBoard {
   tenureGroups: { bucket: TenureBucket | "unknown"; rows: QueueRow[]; owed: number }[];
   distribution: ReturnType<typeof agingDistribution>;
   totalOwed: number;
+  /** Rows in the eviction process by note OR ledger ({@link QueueRow.inEviction}). */
   evictionCount: number;
+  /** Rows whose ledger carries a dated attorney/court fee. */
   fedFiledCount: number;
+  /** Total legal fees charged across the board, in dollars. */
+  legalSpend: number;
+  /**
+   * Rows with no payment in {@link SILENT_DAYS}+ days, including residents who
+   * have never paid at all. This replaced a "no action logged" count that was
+   * equal to the row count on every board ever rendered.
+   */
+  silentCount: number;
   promiseCount: number;
   ninetyPlusCount: number;
   noActionCount: number;
@@ -252,6 +339,8 @@ export function buildBalancesBoard(
    * Units missing from the map group under `unknown`.
    */
   moveInByUnit: ReadonlyMap<string, string> = new Map(),
+  /** leaseId → the ledger's eviction record, from {@link legalMap}. */
+  legalByLease: ReadonlyMap<string, LegalFacts> = new Map(),
 ): BalancesBoard {
   const promiseStatuses = promiseStatusByLease(actions, lastPaymentByLease, nowMs);
 
@@ -270,11 +359,12 @@ export function buildBalancesBoard(
     const bucket = agingBucket(unit);
     const balance = Math.max(0, n(unit.balance));
     const evicted = EVICT_RE.test(unit.delinquencyReason) || has("eviction_completed");
+    const legal = legalByLease.get(leaseId) ?? null;
 
     const suggestion = suggestNextAction({
       bucket,
       evicted,
-      hasFedFiled: has("fed_filed"),
+      hasFedFiled: legal !== null,
       hasEvictionCompleted: has("eviction_completed"),
       hasNoticeServed: has("notice_served"),
       hasWriteoff: has("writeoff"),
@@ -286,7 +376,7 @@ export function buildBalancesBoard(
     const band: QueueBand =
       promise && promise.state !== "kept"
         ? "promise"
-        : evicted || bucket === "31-60" || bucket === "61-90" || bucket === "90+"
+        : evicted || legal !== null || bucket === "31-60" || bucket === "61-90" || bucket === "90+"
           ? "needsAction"
           : "currentCycle";
 
@@ -313,8 +403,11 @@ export function buildBalancesBoard(
       promise,
       lastAction,
       noActionEver: leaseActions.length === 0,
+      inEviction: evicted || legal !== null,
       tenureDays,
       tenure: tenureDays === null ? null : tenureBucket(tenureDays),
+      legal,
+      daysSincePayment: daysBetweenDays(lastPaymentByLease.get(leaseId), nowMs),
     };
   });
 
@@ -347,17 +440,24 @@ export function buildBalancesBoard(
     tenureGroups,
     distribution: agingDistribution(units),
     totalOwed: rows.reduce((acc, r) => acc + r.balance, 0),
-    evictionCount: rows.filter((r) => r.evicted).length,
-    fedFiledCount: rows.filter((r) => (actionsByLease.get(r.unit.currentLeaseId ?? "") ?? []).some((a) => a.kind === "fed_filed")).length,
+    evictionCount: rows.filter((r) => r.inEviction).length,
+    fedFiledCount: rows.filter((r) => r.legal !== null).length,
+    legalSpend: rows.reduce((acc, r) => acc + (r.legal?.fees ?? 0), 0),
     promiseCount: bands.promise.length,
     ninetyPlusCount: rows.filter((r) => r.bucket === "90+").length,
     noActionCount: rows.filter((r) => r.noActionEver).length,
+    silentCount: rows.filter(isSilent).length,
   };
 }
 
 // ---- tenant P&L ------------------------------------------------------------
 
-/** Action kinds whose `amount` counts as legal/collections spend. */
+/**
+ * Action kinds whose `amount` counts as legal/collections spend, ADDED to what
+ * the ledger already charged. Kept so a manually logged cost the ledger never
+ * saw still lands in the P&L, but the ledger is the primary source — see
+ * {@link legalMap}.
+ */
 const LEGAL_KINDS = new Set<DelinquencyAction["kind"]>([
   "notice_served",
   "fed_filed",
@@ -382,7 +482,7 @@ export interface TenantPnl {
   concessions: number;
   /** Write-offs + open balance — dollars billed that we will not / have not seen. */
   badDebt: number;
-  /** Sum of legal-kind action amounts (notices, FED filings, evictions). */
+  /** Legal fees charged on the ledger, plus any hand-logged action amounts. */
   legal: number;
   /** Utility exposure — not yet synced per lease; always 0, labeled in UI. */
   utilityExposure: number;
@@ -414,10 +514,10 @@ function monthsBetween(fromIso: string, toMs: number): number {
  *
  * where badDebt = write-offs (ledger) + open balance (unpaid but not yet
  * written off — the two are mutually exclusive states of the same dollars, so
- * summing never double-counts), legal = amounts on notice/FED/eviction
- * actions, and utilityExposure / maintenanceEstimate are 0 until their feeds
- * exist (the UI labels those lines "not yet tracked"). Verdict via
- * verdictFor(net, monthsOccupied).
+ * summing never double-counts), legal = ATTYCH fees off the ledger plus any
+ * hand-logged notice/FED/eviction amounts, and utilityExposure /
+ * maintenanceEstimate are 0 until their feeds exist (the UI labels those lines
+ * "not yet tracked"). Verdict via verdictFor(net, monthsOccupied).
  */
 export function assembleTenantPnl(args: {
   leases: readonly ManagerLease[];
@@ -462,7 +562,10 @@ export function assembleTenantPnl(args: {
     );
     const concessions = Math.max(0, summary.concessions);
     const badDebt = Math.max(0, summary.writeoffs) + openBalance;
-    const legal = legalByLease.get(lease.id) ?? 0;
+    // Attorney, court, and process-server fees the resident was actually
+    // charged, plus anything staff logged by hand. Before the ledger fed this,
+    // every lease on the property reported $0 legal spend.
+    const legal = (summary.legalFees ?? 0) + (legalByLease.get(lease.id) ?? 0);
 
     const startIso = lease.moveInDate ?? lease.startDate ?? null;
     const endMs = lease.moveOutDate ? Date.parse(lease.moveOutDate) || nowMs : nowMs;

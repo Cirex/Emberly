@@ -20,6 +20,7 @@ import {
   buildBalancesBoard,
   buildTimeline,
   lastPaymentMap,
+  legalMap,
   tenantBands,
   type QueueRow,
   type TenantPnl,
@@ -84,6 +85,9 @@ export default function DelinquencyScreen() {
   const [mountedAt] = useState(() => Date.now());
   const nowMs = refreshedAt > 0 ? refreshedAt : mountedAt;
   const lastPayment = useMemo(() => lastPaymentMap(summaries), [summaries]);
+  // Eviction filings come off the ledger's attorney/court fees, not the
+  // delinquency note — the note is blank on 83 of the 151 leases with a filing.
+  const legal = useMemo(() => legalMap(summaries), [summaries]);
   // The delinquency report has no move-in date, so tenure is joined from the
   // leases already loaded for the agent board. Keyed by unit: a unit's current
   // lease is the tenancy standing behind its balance.
@@ -96,8 +100,8 @@ export default function DelinquencyScreen() {
     return out;
   }, [leases]);
   const board = useMemo(
-    () => buildBalancesBoard(units, actions, lastPayment, nowMs, moveInByUnit),
-    [units, actions, lastPayment, nowMs, moveInByUnit],
+    () => buildBalancesBoard(units, actions, lastPayment, nowMs, moveInByUnit, legal),
+    [units, actions, lastPayment, nowMs, moveInByUnit, legal],
   );
   const pnls = useMemo(
     () => assembleTenantPnl({ leases, units, summaries, actions, nowMs }),

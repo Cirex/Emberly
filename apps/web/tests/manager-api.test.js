@@ -332,6 +332,9 @@ test("summarizeLedgerEntries aggregates one row per lease", () => {
       firstLateMonth: "2026-03",
       concessions: 0,
       writeoffs: 0,
+      legalFiledDate: null,
+      legalServedDate: null,
+      legalFees: 0,
     },
     {
       leaseId: "lease-2",
@@ -341,6 +344,9 @@ test("summarizeLedgerEntries aggregates one row per lease", () => {
       firstLateMonth: "2026-04",
       concessions: 150,
       writeoffs: 550,
+      legalFiledDate: null,
+      legalServedDate: null,
+      legalFees: 0,
     },
   ]);
 });
@@ -358,7 +364,42 @@ test("summarizeLedgerEntries: no dated balances means no late month", () => {
     firstLateMonth: null,
     concessions: 0,
     writeoffs: 0,
+    legalFiledDate: null,
+    legalServedDate: null,
+    legalFees: 0,
   });
+});
+
+test("summarizeLedgerEntries dates the eviction from ATTYCH fees", () => {
+  const [summary] = summarizeLedgerEntries([
+    // The migration opened this ledger on 2026-02-16 carrying an attorney fee
+    // billed long before ResMan. It has no filing date we can trust, so the
+    // whole opening day is excluded.
+    ledgerEntry({ date: "2026-02-16", charges: 2345, balance: 2345 }),
+    ledgerEntry({ date: "2026-02-16", charges: 180, category: "ATTYCH", ledger_description: "Attorney's Fees / Court Fees Charge" }),
+    // Renter's insurance says "Legal" and must never read as a filing.
+    ledgerEntry({ date: "2026-02-20", charges: 19, category: "DMG-WVR", ledger_description: "Renters Legal Liability Charge" }),
+    // The real filing, then service of process three weeks later.
+    ledgerEntry({ date: "2026-03-04", charges: 235, category: "ATTYCH", ledger_description: "Attorney's Fees / Court Fees Charge" }),
+    ledgerEntry({ date: "2026-03-25", charges: 45, category: "ATTYCH", ledger_description: "PROCESS SERVER" }),
+    // Negative rows are the reversal half of a pair; the positive original is
+    // still counted above, because the filing did happen.
+    ledgerEntry({ date: "2026-04-02", charges: -45, category: "ATTYCH", ledger_description: "Reversed to collections PROCESS SERVER" }),
+  ]);
+  assert.equal(summary.legalFiledDate, "2026-03-04");
+  assert.equal(summary.legalServedDate, "2026-03-25");
+  assert.equal(summary.legalFees, 280);
+});
+
+test("summarizeLedgerEntries reports no filing when ATTYCH only lands on the opening day", () => {
+  const [summary] = summarizeLedgerEntries([
+    ledgerEntry({ date: "2026-02-16", charges: 900, balance: 900 }),
+    ledgerEntry({ date: "2026-02-16", charges: 235, category: "ATTYCH", ledger_description: "Attorney's Fees / Court Fees Charge" }),
+    ledgerEntry({ date: "2026-03-01", charges: 800, balance: 1935 }),
+  ]);
+  assert.equal(summary.legalFiledDate, null);
+  assert.equal(summary.legalServedDate, null);
+  assert.equal(summary.legalFees, 0);
 });
 
 // --- pure helpers: MLGW monthly totals ------------------------------------
@@ -487,6 +528,7 @@ test("GET leases returns the 24-month window as camelCase DTOs", async () => {
       applicationDate: "2026-05-01",
       signedDate: "2026-05-10",
       startDate: "2026-06-01",
+      startDateChanges: 0,
       endDate: "2027-05-31",
       moveInDate: "2026-06-01",
       moveOutDate: null,
@@ -853,6 +895,9 @@ test("GET ledger-summary aggregates the paged transaction mirror", async () => {
       firstLateMonth: null,
       concessions: 0,
       writeoffs: 0,
+      legalFiledDate: null,
+      legalServedDate: null,
+      legalFees: 0,
     },
   ]);
 

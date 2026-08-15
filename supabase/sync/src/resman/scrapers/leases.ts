@@ -157,6 +157,82 @@ export type LeaseRowWithoutBalance = Omit<ResmanLeaseRow, "balance">;
  * union of a batch's keys, so a single unstripped row puts the nulls back for
  * every row in it.
  */
+/**
+ * The columns a SKELETON lease row has no source for.
+ *
+ * `scrapeUnit` writes a skeleton for every non-current, non-terminal lease
+ * (Pending, Notice to Vacate, Under Eviction, Month to Month) from the unit's
+ * lease-history table alone. That table carries the status, the term dates,
+ * the move-out date, the rent and the resident's name — and nothing else.
+ * `mapLease` fills everything else with "" or null, and PostgREST writes those
+ * blanks straight over whatever the DEEP pass had read from the resident page.
+ *
+ * Measured 2026-08-15: 40 of the 45 application leases had their leasing
+ * agent, approval status and every date wiped this way. The deep pass had
+ * captured them at 02:51 UTC; the unit pass overwrote them at 14:55. And once
+ * overwritten they never recovered, because `leaseScrapeTier` returns "skip"
+ * for a Pending lease that already carries `deep_synced_at` — so the blanks
+ * were permanent.
+ *
+ * This is the same failure the balance and the term dates each had: a pass
+ * writing a column it cannot observe.
+ */
+const SKELETON_UNOBSERVED_COLUMNS = [
+  "unit_lease_group_id",
+  "approval_status",
+  "approved_date",
+  "approved_by",
+  "application_date",
+  "signed_date",
+  "move_in_date",
+  "leasing_agent",
+  "renewal_date",
+  "notice_given_date",
+  "market_rent",
+  "hap_rent",
+  "monthly_charge",
+  "collection_balance",
+  "reason_for_leaving",
+  "original_start_date",
+  "start_date_changes",
+  "lease_sent_date",
+  "lease_voided_date",
+  "raw",
+] as const;
+
+export type LeaseRowFromSkeleton = Omit<
+  ResmanLeaseRow,
+  (typeof SKELETON_UNOBSERVED_COLUMNS)[number]
+>;
+
+/**
+ * Drop every column the lease-history table cannot see, so a skeleton refresh
+ * updates what it observed and leaves the rest alone. Keys are REMOVED, not
+ * nulled: an absent key leaves the column untouched on upsert, a null key
+ * overwrites it. That difference is the whole bug.
+ */
+export function withoutUnobservedFields(row: Record<string, unknown>): LeaseRowFromSkeleton {
+  const out = { ...row };
+  for (const column of SKELETON_UNOBSERVED_COLUMNS) delete out[column];
+  return out as LeaseRowFromSkeleton;
+}
+
+/** The keys a skeleton lease dict genuinely carries, for the guard test. */
+export const SKELETON_OBSERVED_COLUMNS = [
+  "resman_lease_id",
+  "resman_property_id",
+  "resman_unit_id",
+  "unit_number",
+  "status",
+  "start_date",
+  "end_date",
+  "move_out_date",
+  "resident_rent",
+  "is_current_lease",
+  "is_most_recent_lease",
+  "balance",
+] as const;
+
 export function withoutBalance(row: ResmanLeaseRow): LeaseRowWithoutBalance {
   const { balance: _balance, ...rest } = row;
   return rest;

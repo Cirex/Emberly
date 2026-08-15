@@ -267,6 +267,10 @@ export async function scrapeUnit(
         leaseId: leaseRow.leaseID,
         status: leaseRow.status,
         residents: [residentEntry],
+        // Marked so the job can strip the columns this dict has no source for.
+        // Without that, the skeleton's blanks overwrite what the deep pass
+        // read — see `withoutUnobservedFields`.
+        _skeleton: true,
       };
       if (leaseRow.leaseStartDate !== null) skeleton.leaseStartDate = leaseRow.leaseStartDate;
       if (leaseRow.leaseEndDate !== null) skeleton.leaseEndDate = leaseRow.leaseEndDate;
@@ -1191,6 +1195,58 @@ export function parseVehiclesTab(html: string): Record<string, unknown>[] {
  * lease that was approved, transferred and re-approved should report when it
  * was first approved rather than the most recent administrative echo.
  */
+/** One line of a lease's Activity Log, exactly as ResMan wrote it. */
+export interface ActivityLogEntry {
+  /** The timestamp cell verbatim — "8/13/2026 2:08:40 PM". */
+  occurredAtText: string;
+  /** Its date part, or null when the cell is not a date. */
+  occurredOn: string | null;
+  activity: string;
+  performedBy: string;
+  /** Oldest row = 0, counting up. Stable as the log grows: ResMan prepends. */
+  sequence: number;
+}
+
+/**
+ * Every row of the Activity Log, oldest-first by `sequence`.
+ *
+ * The log is stored whole rather than only the handful of fields the Pipeline
+ * reads today. The page is already being fetched, and across 45 application
+ * leases it held 797 rows in 394 distinct shapes — roommates added, income
+ * records changed, documents uploaded, deposits added and deleted, recurring
+ * charges edited, consent given, units transferred. Keeping only the 7 facts
+ * we parse would mean re-scraping every lease the first time any of the rest
+ * turns out to matter.
+ *
+ * The time of day is kept as TEXT, not a timestamptz. ResMan renders a local
+ * wall-clock time with no zone, and stamping one on would be inventing
+ * precision; `occurred_on` carries the date, which is what anything downstream
+ * actually sorts and filters by.
+ */
+export function parseActivityLogRows(html: string): ActivityLogEntry[] {
+  const rows: Omit<ActivityLogEntry, "sequence">[] = [];
+  for (const row of rmsMatches(TR_PATTERN, html)) {
+    if (row.length <= 1) continue;
+    const cells = rmsMatches(TD_TH_PATTERN, row[1])
+      .filter((m) => m.length > 1)
+      .map((m) => trimmedForCell(stripTags(m[1])));
+    if (cells.length < 2) continue;
+    const [timestamp, activity] = cells;
+    if (/^Timestamp$/i.test(timestamp)) continue;
+    if (activity.length === 0) continue;
+    rows.push({
+      occurredAtText: timestamp,
+      occurredOn: normalizeDate(timestamp.split(/\s+/)[0] ?? ""),
+      activity,
+      performedBy: cells.length > 2 ? cells[2] : "",
+    });
+  }
+  // ResMan lists newest first. Numbering from the OLDEST makes the sequence
+  // stable as new rows arrive — the same reason the ledger numbers this way.
+  const total = rows.length;
+  return rows.map((r, i) => ({ ...r, sequence: total - 1 - i }));
+}
+
 export interface ActivityLogFacts {
   /** "approved for move in" — the approval, and who recorded it. */
   approvedDate: string | null;
@@ -1246,15 +1302,9 @@ export function parseActivityLog(html: string): ActivityLogFacts {
   // The oldest "changed from X" line holds the date the lease originally had.
   let oldestStartChange: string | null = null;
 
-  for (const row of rmsMatches(TR_PATTERN, html)) {
-    if (row.length <= 1) continue;
-    const cells = rmsMatches(TD_TH_PATTERN, row[1])
-      .filter((m) => m.length > 1)
-      .map((m) => trimmedForCell(stripTags(m[1])));
-    if (cells.length < 2) continue;
-    const [timestamp, activity] = cells;
-    if (/^Timestamp$/i.test(timestamp)) continue;
-    const when = normalizeDate(timestamp.split(/\s+/)[0] ?? "");
+  for (const entry of parseActivityLogRows(html)) {
+    const { activity, occurredOn: when } = entry;
+    const cells = [entry.occurredAtText, entry.activity, entry.performedBy];
     if (when === null) continue;
 
     // "approved for move in" specifically. A bare /approv/ would also catch

@@ -24,6 +24,7 @@ import {
   leaseBalanceFromLedger,
   mapLease,
   withoutBalance,
+  withoutUnobservedFields,
   withoutTermDates,
   type LeaseRowWithoutBalance,
   type LeaseRowWithoutTermDates,
@@ -285,6 +286,10 @@ export async function syncUnitDetails(params: SyncUnitDetailsParams): Promise<Sy
   // ledger tables, and the four unit columns only the unit PAGE carries.)
   const unitRows: Array<Record<string, unknown>> = [];
   const leaseRows: LeaseRowWithoutBalance[] = [];
+  // Skeleton leases go in their OWN batch. PostgREST builds one statement from
+  // the union of keys in a batch, so mixing a stripped row in with full ones
+  // would put the blanks back for the whole chunk.
+  const skeletonRows: Array<Record<string, unknown>> = [];
   const txRows: ResmanTransactionRow[] = [];
   const residentRows: ResmanResidentRow[] = [];
   const vehicleRows: ResmanLeaseVehicleRow[] = [];
@@ -380,7 +385,18 @@ export async function syncUnitDetails(params: SyncUnitDetailsParams): Promise<Sy
       // history table and the resident page WITHOUT the ledger, so it has no
       // way to know a balance — and mapLease would emit null, which is how
       // every balance in the mirror got wiped. The deep pass owns this column.
-      leaseRows.push(withoutBalance(leaseRow));
+      //
+      // A SKELETON lease is stripped further: it comes from the lease-history
+      // table alone, which knows the status, the term, the move-out date and
+      // the rent, and nothing else. Writing its blanks over the deep pass's
+      // work wiped the leasing agent, approval status and every date on 40 of
+      // the 45 applications — permanently, since a Pending lease that already
+      // has deep_synced_at is skipped by the deep pass thereafter.
+      if (leaseData._skeleton === true) {
+        skeletonRows.push(withoutUnobservedFields(withoutBalance(leaseRow)));
+      } else {
+        leaseRows.push(withoutBalance(leaseRow));
+      }
 
       const leaseId = str(leaseData, "leaseId");
       txRows.push(...mapLedgerRows(dictArray(leaseData["ledger"]), { leaseId, unitId, propertyId }));
@@ -414,6 +430,10 @@ export async function syncUnitDetails(params: SyncUnitDetailsParams): Promise<Sy
     upsertMirror(supabase, "resman_floorplans", stampSynced([...floorplansById.values()]), { conflictColumn: "resman_floorplan_id" }),
     upsertMirror(supabase, "resman_leases", asRows(leaseRows), { conflictColumn: "resman_lease_id" }),
   ]);
+  // Separate statement, so the stripped key set stays stripped.
+  const sOut = await upsertMirror(supabase, "resman_leases", skeletonRows, {
+    conflictColumn: "resman_lease_id",
+  });
   // Units join wave 2: `resman_floorplan_id` points at resman_floorplans, so
   // those rows have to land first. No delete-missing — this pass only enriches
   // units the roster job owns and must never remove one.
@@ -437,7 +457,7 @@ export async function syncUnitDetails(params: SyncUnitDetailsParams): Promise<Sy
     scraped,
     failed,
     unitsEnriched: uOut.upserted,
-    leases: lOut.upserted,
+    leases: lOut.upserted + sOut.upserted,
     transactions: tOut.upserted,
     residents: rOut.upserted,
     vehicles: vOut.upserted,

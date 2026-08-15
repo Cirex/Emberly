@@ -18,9 +18,9 @@
  *  - firstLateMonth: "YYYY-MM" of the first late payment, null/absent when
  *    the tenant has never been late.
  *
- * A renewal proxy is intentionally omitted: it would need per-lease renewal
- * linkage (or reliable end/start chaining) that the synced data doesn't
- * carry yet, so status/endDate/marketRent are not part of this input.
+ *  - isRenewal: whether this lease renews a sitting resident rather than
+ *    bringing a new one in. Derive it with `isRenewalLease` (below) or supply
+ *    it directly; absent means "treat as a move-in".
  */
 export interface AgentLeaseInput {
   leasingAgent: string;
@@ -31,6 +31,58 @@ export interface AgentLeaseInput {
   residentRent?: number | null;
   evicted?: boolean;
   firstLateMonth?: string | null;
+  isRenewal?: boolean;
+}
+
+/**
+ * Days a lease's term must start AFTER the resident moved in before it counts
+ * as a renewal rather than a new tenancy.
+ *
+ * A new move-in's term starts the day they get the keys; a renewal's term
+ * starts a year or more later while `move_in_date` keeps pointing at the
+ * ORIGINAL move-in, because ResMan carries it forward. The gap is what
+ * separates them, and in the mirror it is not a judgement call — of 1,042
+ * leases carrying both dates, 653 start within a day of move-in and 379 start
+ * 200+ days after. Only 10 land anywhere in between, so the threshold has a
+ * month of slack on either side of anything real.
+ *
+ * Corroborated against statuses the classifier never sees: all 29 Pending
+ * Renewal and both Month to Month leases come out renewals, and all 113 Denied
+ * applications come out move-ins.
+ */
+export const RENEWAL_MIN_GAP_DAYS = 31;
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Whether a lease renews a sitting resident. False when either date is missing
+ * — an unknown is treated as a new tenancy, which is the conservative side:
+ * it attributes the lease to the agent's screening rather than excusing it.
+ */
+export function isRenewalLease(lease: {
+  startDate?: string | null;
+  moveInDate?: string | null;
+}): boolean {
+  const start = lease.startDate ? localDateMs(lease.startDate) : null;
+  const moveIn = lease.moveInDate ? localDateMs(lease.moveInDate) : null;
+  if (start === null || moveIn === null) return false;
+  return (start - moveIn) / DAY_MS > RENEWAL_MIN_GAP_DAYS;
+}
+
+/** One side of the move-in / renewal split. */
+export interface AgentSplit {
+  /** Leases of this kind attributed to the agent (all-time). */
+  total: number;
+  /** Leases of this kind whose signing date falls in the window. */
+  signed: number;
+  /** Currently active leases of this kind. */
+  active: number;
+  /** Active leases of this kind with balance > 0. */
+  delinquentCount: number;
+  /** Sum of those balances. */
+  delinquentBalance: number;
+  /** delinquentBalance / sum of this kind's active rent (0 when rent sum is 0). */
+  delinquencyLoad: number;
 }
 
 export interface AgentStat {
@@ -49,7 +101,23 @@ export interface AgentStat {
   delinquentBalance: number;
   /** delinquentBalance / sum of active leases' residentRent (0 when rent sum is 0). */
   delinquencyLoad: number;
-  /** Share of move-ins whose first late payment came within 3 months (0 when no dated move-ins). */
+  /**
+   * The same active-lease delinquency, split by what the agent actually did.
+   *
+   * A move-in is the agent's own screening decision; a renewal is a resident
+   * someone else placed, whom this agent chose to keep. Blending them hides
+   * both signals — across the property, move-ins run 34% delinquent at $1,123
+   * average while renewals run 24% at $567, so an agent's blended number moves
+   * mostly with their renewal share rather than their judgement.
+   */
+  moveIn: AgentSplit;
+  renewal: AgentSplit;
+  /**
+   * Share of MOVE-INS whose first late payment came within 3 months (0 when no
+   * dated move-ins). Renewals are excluded from the denominator: a renewal's
+   * move-in date is the original one, often years back, so it could never
+   * default "early" and only diluted the rate.
+   */
   earlyDefaultRate: number;
   /** True when leasesSigned < LOW_VOLUME_THRESHOLD — rates are noisy, downrank visually. */
   lowVolume: boolean;
@@ -106,6 +174,14 @@ export function buildAgentStats(leases: AgentLeaseInput[], opts: AgentStatsOptio
   const now = new Date(opts.nowMs);
   const windowStartMs = new Date(now.getFullYear(), now.getMonth() - opts.windowMonths, now.getDate()).getTime();
 
+  interface SplitAcc {
+    total: number;
+    signed: number;
+    active: number;
+    delinquentCount: number;
+    delinquentBalance: number;
+    activeRentSum: number;
+  }
   interface Acc {
     total: number;
     signed: number;
@@ -114,9 +190,20 @@ export function buildAgentStats(leases: AgentLeaseInput[], opts: AgentStatsOptio
     delinquentCount: number;
     delinquentBalance: number;
     activeRentSum: number;
-    moveIns: number;
+    /** Denominator of earlyDefaultRate: dated MOVE-INS only, never renewals. */
+    datedMoveIns: number;
     earlyDefaults: number;
+    moveIn: SplitAcc;
+    renewal: SplitAcc;
   }
+  const emptySplit = (): SplitAcc => ({
+    total: 0,
+    signed: 0,
+    active: 0,
+    delinquentCount: 0,
+    delinquentBalance: 0,
+    activeRentSum: 0,
+  });
   const byAgent = new Map<string, Acc>();
 
   for (const lease of leases) {
@@ -132,37 +219,62 @@ export function buildAgentStats(leases: AgentLeaseInput[], opts: AgentStatsOptio
         delinquentCount: 0,
         delinquentBalance: 0,
         activeRentSum: 0,
-        moveIns: 0,
+        datedMoveIns: 0,
         earlyDefaults: 0,
+        moveIn: emptySplit(),
+        renewal: emptySplit(),
       };
       byAgent.set(agent, acc);
     }
 
+    const isRenewal = lease.isRenewal === true;
+    const split = isRenewal ? acc.renewal : acc.moveIn;
+
     acc.total += 1;
+    split.total += 1;
     if (lease.evicted) acc.evictions += 1;
 
     const signedRaw = lease.applicationDate ?? lease.moveInDate;
     const signedMs = signedRaw ? localDateMs(signedRaw) : null;
-    if (signedMs !== null && signedMs >= windowStartMs) acc.signed += 1;
+    if (signedMs !== null && signedMs >= windowStartMs) {
+      acc.signed += 1;
+      split.signed += 1;
+    }
 
     if (lease.isCurrentLease) {
       acc.active += 1;
-      if (typeof lease.residentRent === "number" && lease.residentRent > 0) acc.activeRentSum += lease.residentRent;
+      split.active += 1;
+      if (typeof lease.residentRent === "number" && lease.residentRent > 0) {
+        acc.activeRentSum += lease.residentRent;
+        split.activeRentSum += lease.residentRent;
+      }
       if (typeof lease.balance === "number" && lease.balance > 0) {
         acc.delinquentCount += 1;
         acc.delinquentBalance += lease.balance;
+        split.delinquentCount += 1;
+        split.delinquentBalance += lease.balance;
       }
     }
 
-    const moveInIdx = lease.moveInDate ? monthIndex(lease.moveInDate) : null;
+    // Early default is a screening signal, so only a real move-in can have one.
+    const moveInIdx = !isRenewal && lease.moveInDate ? monthIndex(lease.moveInDate) : null;
     if (moveInIdx !== null) {
-      acc.moveIns += 1;
+      acc.datedMoveIns += 1;
       const lateIdx = lease.firstLateMonth ? monthIndex(lease.firstLateMonth) : null;
       if (lateIdx !== null && lateIdx - moveInIdx >= 0 && lateIdx - moveInIdx <= EARLY_DEFAULT_MONTHS) {
         acc.earlyDefaults += 1;
       }
     }
   }
+
+  const finishSplit = (s: SplitAcc): AgentSplit => ({
+    total: s.total,
+    signed: s.signed,
+    active: s.active,
+    delinquentCount: s.delinquentCount,
+    delinquentBalance: s.delinquentBalance,
+    delinquencyLoad: s.activeRentSum > 0 ? s.delinquentBalance / s.activeRentSum : 0,
+  });
 
   const stats: AgentStat[] = [...byAgent.entries()].map(([agent, a]) => ({
     agent,
@@ -173,7 +285,9 @@ export function buildAgentStats(leases: AgentLeaseInput[], opts: AgentStatsOptio
     delinquentCount: a.delinquentCount,
     delinquentBalance: a.delinquentBalance,
     delinquencyLoad: a.activeRentSum > 0 ? a.delinquentBalance / a.activeRentSum : 0,
-    earlyDefaultRate: a.moveIns > 0 ? a.earlyDefaults / a.moveIns : 0,
+    moveIn: finishSplit(a.moveIn),
+    renewal: finishSplit(a.renewal),
+    earlyDefaultRate: a.datedMoveIns > 0 ? a.earlyDefaults / a.datedMoveIns : 0,
     lowVolume: a.signed < LOW_VOLUME_THRESHOLD,
   }));
 

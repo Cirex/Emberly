@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
-import type { AgentStat } from "@emberly/core";
+import type { AgentSplit, AgentStat } from "@emberly/core";
 import { ListFooter, MeterBar, MONEY_COLORS, Pill } from "@/components/delinquency/bits";
 import { fmtMoneyCompact, fmtPercent } from "@/components/delinquency/format";
 
@@ -34,6 +34,34 @@ function Meter({ label, display, ratio }: { label: string; display: string; rati
       </View>
       <MeterBar ratio={pinned} dangerAt={DANGER_AT} />
     </View>
+  );
+}
+
+/**
+ * One side of the move-in / renewal split. An agent with no active leases of
+ * this kind gets a flat, empty track rather than a 0% bar — no leases is not
+ * the same as no delinquency, and the meter should not pay them for it.
+ */
+function SplitMeter({
+  label,
+  split,
+  emptyLabel,
+}: {
+  label: string;
+  split: AgentSplit;
+  emptyLabel: string;
+}) {
+  if (split.active === 0) {
+    return (
+      <Meter label={label} display={emptyLabel} ratio={0} />
+    );
+  }
+  return (
+    <Meter
+      label={`${label} · ${split.active}`}
+      display={`${fmtPercent(split.delinquencyLoad)} · ${fmtMoneyCompact(split.delinquentBalance)}`}
+      ratio={split.delinquencyLoad / METER_SCALE.delinquencyLoad}
+    />
   );
 }
 
@@ -118,10 +146,25 @@ function AgentCard({
             display={`${fmtPercent(stat.evictionRate)} · ${stat.evictions}`}
             ratio={stat.evictionRate / METER_SCALE.evictionRate}
           />
-          <Meter
-            label={t("delinquency.agents.delinquencyLoad")}
-            display={`${fmtPercent(stat.delinquencyLoad)} · ${fmtMoneyCompact(stat.delinquentBalance)}`}
-            ratio={stat.delinquencyLoad / METER_SCALE.delinquencyLoad}
+          {/*
+            Delinquency load, split by what the agent actually decided: a
+            move-in is their own screening call, a renewal is a resident
+            someone else placed whom they chose to keep. Property-wide the two
+            behave nothing alike — move-ins run 34% delinquent at $1,123
+            average against renewals' 24% at $567 — so one blended bar moves
+            mostly with an agent's renewal share rather than their judgement.
+            A book with none of a kind shows a flat "none" rather than a 0%
+            that reads like a perfect score.
+          */}
+          <SplitMeter
+            label={t("delinquency.agents.loadMoveIns")}
+            split={stat.moveIn}
+            emptyLabel={t("delinquency.agents.splitNone")}
+          />
+          <SplitMeter
+            label={t("delinquency.agents.loadRenewals")}
+            split={stat.renewal}
+            emptyLabel={t("delinquency.agents.splitNone")}
           />
           <Meter
             label={t("delinquency.agents.earlyDefault")}

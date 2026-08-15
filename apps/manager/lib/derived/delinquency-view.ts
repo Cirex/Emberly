@@ -3,6 +3,7 @@ import {
   agingBucket,
   buildAgentStats,
   delinquencyPriority,
+  isRenewalLease,
   netPosition,
   verdictFor,
   type AgentLeaseInput,
@@ -547,6 +548,9 @@ export function agentLeaseInputs(
       residentRent: lease.residentRent ?? null,
       evicted,
       firstLateMonth: summaryByLease.get(lease.id)?.firstLateMonth ?? null,
+      // A renewal keeps the ORIGINAL move-in date while its term starts a year
+      // on, so the gap between the two is what tells them apart.
+      isRenewal: isRenewalLease({ startDate: lease.startDate, moveInDate: lease.moveInDate }),
     };
   });
 }

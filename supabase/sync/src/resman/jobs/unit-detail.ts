@@ -21,8 +21,11 @@ import { mapLedgerRows } from "../scrapers/ledger";
 import {
   isDeniedLease,
   isPendingLease,
+  leaseBalanceFromLedger,
   mapLease,
+  withoutBalance,
   withoutTermDates,
+  type LeaseRowWithoutBalance,
   type LeaseRowWithoutTermDates,
 } from "../scrapers/leases";
 import { mapResidents } from "../scrapers/residents";
@@ -261,7 +264,7 @@ export async function syncUnitDetails(params: SyncUnitDetailsParams): Promise<Sy
 
   // Accumulators. (Unit-row fields are owned by the all-units / unit-info jobs;
   // this pass only seeds buildings/floorplans and the lease/resident/ledger tables.)
-  const leaseRows: ResmanLeaseRow[] = [];
+  const leaseRows: LeaseRowWithoutBalance[] = [];
   const txRows: ResmanTransactionRow[] = [];
   const residentRows: ResmanResidentRow[] = [];
   const vehicleRows: ResmanLeaseVehicleRow[] = [];
@@ -328,7 +331,12 @@ export async function syncUnitDetails(params: SyncUnitDetailsParams): Promise<Sy
       const leaseRow = mapLease(leaseData, { unitId, unitNumber, propertyId, isMostRecent });
       // A one-time terminal capture carries its proof; skeletons stay unstamped.
       if (leaseData._deepCaptured === true) leaseRow.deep_synced_at = new Date().toISOString();
-      leaseRows.push(leaseRow);
+
+      // Balance is STRIPPED here, never written. This pass reads the lease
+      // history table and the resident page WITHOUT the ledger, so it has no
+      // way to know a balance — and mapLease would emit null, which is how
+      // every balance in the mirror got wiped. The deep pass owns this column.
+      leaseRows.push(withoutBalance(leaseRow));
 
       const leaseId = str(leaseData, "leaseId");
       txRows.push(...mapLedgerRows(dictArray(leaseData["ledger"]), { leaseId, unitId, propertyId }));
@@ -655,6 +663,18 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
   // withoutTermDates(). Every row here goes through it, which is what keeps the
   // upsert batch uniform.
   const leaseRows: LeaseRowWithoutTermDates[] = [];
+  /**
+   * Balance-only lease rows for the ledger tier, written as their OWN upsert.
+   *
+   * A ledger-tier pass read no lease fields, so it must not join the full
+   * batch: PostgREST builds one statement from the union of a batch's keys, and
+   * a two-column row mixed in with full ones would write nulls over everything
+   * else (the same trap withoutTermDates exists for). As a separate batch the
+   * statement's column set is exactly {resman_lease_id, balance}, so nothing
+   * else is touched. These lease ids were read from this table moments earlier,
+   * so the ON CONFLICT branch is the only one that ever fires.
+   */
+  const balanceRows: Array<{ resman_lease_id: string; balance: number }> = [];
   const txRows: ResmanTransactionRow[] = [];
   const residentRows: ResmanResidentRow[] = [];
   const vehicleRows: ResmanLeaseVehicleRow[] = [];
@@ -674,8 +694,13 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
     // empty dict would write blanks over the very data the first full capture
     // went and got — the mapper coerces absent keys to ""/null and the upsert
     // overwrites. So it contributes transactions and nothing else.
+    const leaseLedger = mapLedgerRows(dictArray(data["ledger"]), { leaseId, unitId, propertyId });
+
     if (tier === "ledger") {
-      txRows.push(...mapLedgerRows(dictArray(data["ledger"]), { leaseId, unitId, propertyId }));
+      txRows.push(...leaseLedger);
+      // The ledger is the whole reason this tier exists, so the lease's balance
+      // must move with it. Only the two columns are sent — see balanceRows.
+      balanceRows.push({ resman_lease_id: leaseId, balance: leaseBalanceFromLedger(leaseLedger) });
       continue;
     }
 
@@ -686,8 +711,11 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
       isMostRecent: lease.is_most_recent_lease,
     });
     leaseRow.deep_synced_at = new Date().toISOString();
+    // The detail page carries no Balance field, so mapLease always produced
+    // null here. The ledger has it — see leaseBalanceFromLedger.
+    leaseRow.balance = leaseBalanceFromLedger(leaseLedger);
     leaseRows.push(withoutTermDates(leaseRow));
-    txRows.push(...mapLedgerRows(dictArray(data["ledger"]), { leaseId, unitId, propertyId }));
+    txRows.push(...leaseLedger);
     const mapped = mapResidents(dictArray(data["residents"]), { leaseId });
     residentRows.push(...mapped.residents);
     for (const v of mapped.vehicles) {
@@ -707,6 +735,10 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
   const lOut = await upsertMirror(supabase, "resman_leases", asRows(leaseRows), {
     conflictColumn: "resman_lease_id",
   });
+  // Separate batch on purpose — see balanceRows.
+  const bOut = await upsertMirror(supabase, "resman_leases", asRows(balanceRows), {
+    conflictColumn: "resman_lease_id",
+  });
   const rOut = await upsertMirror(supabase, "resman_residents", asRows(residentRows), {
     conflictColumn: "resman_person_lease_id",
   });
@@ -724,7 +756,7 @@ export async function syncLeaseDetails(params: SyncLeaseDetailsParams): Promise<
     scraped,
     failed,
     skipped,
-    leasesUpserted: lOut.upserted,
+    leasesUpserted: lOut.upserted + bOut.upserted,
     transactions: tOut.upserted,
     residents: rOut.upserted,
     vehicles: vOut.upserted,

@@ -140,6 +140,60 @@ export function withoutTermDates(row: ResmanLeaseRow): LeaseRowWithoutTermDates 
   return rest;
 }
 
+/** A lease row with `balance` removed — see `withoutBalance`. */
+export type LeaseRowWithoutBalance = Omit<ResmanLeaseRow, "balance">;
+
+/**
+ * Strip `balance` from a lease row, for the SHALLOW pass.
+ *
+ * Same trap as `withoutTermDates`, one column over. `unit-details` reads the
+ * lease-history table and the resident page WITHOUT the ledger, so it never
+ * sees a balance — but `mapLease` cannot tell "I did not look" from "there is
+ * no balance" and emits null, which the upsert writes over whatever the deep
+ * pass had recorded. Only the pass that actually reads the ledger may write
+ * this column.
+ *
+ * Apply uniformly across the batch: PostgREST builds one statement from the
+ * union of a batch's keys, so a single unstripped row puts the nulls back for
+ * every row in it.
+ */
+export function withoutBalance(row: ResmanLeaseRow): LeaseRowWithoutBalance {
+  const { balance: _balance, ...rest } = row;
+  return rest;
+}
+
+/**
+ * A lease's current balance, taken from its ledger.
+ *
+ * `mapLease` reads the balance from the detail page's `Balance` field, and that
+ * field is not on the page — so every deep scrape wrote null and all 1,252
+ * leases in the mirror carried a null balance. The delinquency view papered
+ * over it by falling back to `unit.balance` for CURRENT leases, which left
+ * every ended tenancy reporting an open balance of zero and understated the
+ * bad-debt figures on the agent P&L.
+ *
+ * The ledger already has the answer and is already scraped. Each entry carries
+ * the running balance after it, and `ledger_sequence` (assigned newest-highest
+ * by mapLedgerRows) is the only reliable ordering — dates tie, and several
+ * entries routinely share one. So the newest entry's balance IS the lease
+ * balance. Checked against the four largest debtors on the property: the last
+ * entry matched `resman_units.balance` to the cent (8165.75, 6640.20, 6349.40,
+ * 6238.20), while naively summing charges minus credits was $300 out on three
+ * of them — an opening balance the visible entries do not carry.
+ *
+ * No ledger means no money has ever moved on the lease, which is a balance of
+ * zero, not "unknown". Never null: a lease always has a balance.
+ */
+export function leaseBalanceFromLedger(
+  ledgerRows: readonly { balance: number | null; ledger_sequence: number }[],
+): number {
+  let newest: { balance: number | null; ledger_sequence: number } | null = null;
+  for (const row of ledgerRows) {
+    if (newest === null || row.ledger_sequence > newest.ledger_sequence) newest = row;
+  }
+  return newest?.balance ?? 0;
+}
+
 export function mapLease(
   leaseData: Record<string, unknown>,
   ctx: { unitId: string; unitNumber: string; propertyId: string; isMostRecent: boolean },

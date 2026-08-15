@@ -81,9 +81,34 @@ test("the lease-details job strips term dates from every row it writes", () => {
 test("the unit-details job still writes term dates — it reads the history table", () => {
   // The opposite requirement, in the same file. unit-details is the ONLY source
   // of the lease term, and stripping there would mean nothing ever writes it.
+  // It DOES strip balance (see the next test), so what is pinned here is the
+  // absence of the term-date strip specifically, not the absence of all strips.
   const body = jobBody("syncUnitDetails");
-  assert.match(body, /leaseRows\.push\(leaseRow\)/);
   assert.doesNotMatch(body, /withoutTermDates/);
+});
+
+test("the unit-details job strips BALANCE — it never reads a ledger", () => {
+  // The mirror image of the term-date rule, one column over. This pass reads
+  // the lease-history table and the resident page without the ledger, so it
+  // cannot know a balance; mapLease emits null and the upsert would write it
+  // over whatever the deep pass recorded. That is how all 1,252 leases ended up
+  // with a null balance. Only the pass that reads the ledger may write it.
+  const body = jobBody("syncUnitDetails");
+  assert.match(body, /leaseRows\.push\(withoutBalance\(leaseRow\)\)/);
+  assert.doesNotMatch(
+    body,
+    /leaseRows\.push\(\s*leaseRow,?\s*\)/,
+    "a raw leaseRow push here would reintroduce a null balance",
+  );
+});
+
+test("the lease-details job writes a balance derived from the ledger", () => {
+  // The pass that DOES read the ledger owns the column, on both tiers: a full
+  // scrape sets it on the lease row, and a ledger-only refresh sends a
+  // balance-only row (its own upsert batch, so no other column is touched).
+  const body = jobBody("syncLeaseDetails");
+  assert.match(body, /leaseRow\.balance = leaseBalanceFromLedger\(leaseLedger\)/);
+  assert.match(body, /balanceRows\.push\(\{[^}]*leaseBalanceFromLedger\(leaseLedger\)/);
 });
 
 test("the synthetic history row still declares null dates — the reason the strip exists", () => {

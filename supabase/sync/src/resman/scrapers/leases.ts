@@ -213,6 +213,13 @@ export function mapLease(
     // was approved — there is no approval-date field on any page.
     approved_date: parseLedgerDate(str(leaseData, "approvedDate")),
     approved_by: str(leaseData, "approvedBy"),
+    // The start date the lease FIRST had, and how many times it has moved —
+    // both from the Activity Log. A desired move-in that keeps sliding looks
+    // identical to a firm one without them.
+    original_start_date: parseLedgerDate(str(leaseData, "originalStartDate")),
+    start_date_changes: numOrNull(leaseData["startDateChanges"]) ?? 0,
+    lease_sent_date: parseLedgerDate(str(leaseData, "leaseSentDate")),
+    lease_voided_date: parseLedgerDate(str(leaseData, "leaseVoidedDate")),
     application_date: parseLedgerDate(str(leaseData, "applicationDate")),
     signed_date: parseLedgerDate(str(leaseData, "leaseSignedDate")),
     start_date: parseLedgerDate(str(leaseData, "leaseStartDate")),

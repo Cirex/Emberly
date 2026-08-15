@@ -13,7 +13,8 @@ type LeaseRow = Database["public"]["Tables"]["resman_leases"]["Row"];
 /** The resman_leases columns the manager payload carries. */
 export const MANAGER_LEASE_COLUMNS =
   "resman_lease_id, resman_unit_id, unit_number, status, approval_status, approved_date, application_date, " +
-  "signed_date, start_date, end_date, move_in_date, move_out_date, leasing_agent, " +
+  "signed_date, start_date, original_start_date, start_date_changes, lease_sent_date, "
+  + "end_date, move_in_date, move_out_date, leasing_agent, " +
   "market_rent, resident_rent, balance, is_current_lease, is_most_recent_lease";
 
 export type ManagerLeaseRow = Pick<
@@ -27,6 +28,9 @@ export type ManagerLeaseRow = Pick<
   | "application_date"
   | "signed_date"
   | "start_date"
+  | "original_start_date"
+  | "start_date_changes"
+  | "lease_sent_date"
   | "end_date"
   | "move_in_date"
   | "move_out_date"
@@ -49,6 +53,9 @@ export interface ManagerLeasePayload {
   applicationDate: string | null;
   signedDate: string | null;
   startDate: string | null;
+  originalStartDate: string | null;
+  startDateChanges: number;
+  leaseSentDate: string | null;
   endDate: string | null;
   moveInDate: string | null;
   moveOutDate: string | null;
@@ -71,6 +78,9 @@ export function managerLeasePayload(row: ManagerLeaseRow): ManagerLeasePayload {
     applicationDate: row.application_date,
     signedDate: row.signed_date,
     startDate: row.start_date,
+    originalStartDate: row.original_start_date,
+    startDateChanges: row.start_date_changes ?? 0,
+    leaseSentDate: row.lease_sent_date,
     endDate: row.end_date,
     moveInDate: row.move_in_date,
     moveOutDate: row.move_out_date,

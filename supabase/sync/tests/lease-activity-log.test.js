@@ -3,8 +3,14 @@ const test = require("node:test");
 
 const {
   isApplicationLeaseStatus,
-  parseActivityLogApproval,
+  parseActivityLog,
 } = require("../src/resman/scrapers/unit-detail");
+
+/** The approval half of the log, kept in the shape the old tests asserted. */
+const parseActivityLogApproval = (html) => {
+  const f = parseActivityLog(html);
+  return f.approvedDate === null ? null : { date: f.approvedDate, by: f.approvedBy };
+};
 const { mapLease } = require("../src/resman/scrapers/leases");
 
 /**
@@ -106,4 +112,96 @@ test("a lease with no approval leaves the date null and the name empty", () => {
   );
   assert.equal(row.approved_date, null);
   assert.equal(row.approved_by, "");
+});
+
+// ── The rest of the log, free with the same request ─────────────────────────
+
+/**
+ * The Activity Log page is already being fetched for the approval date, and it
+ * carries the rest of the leasing story. Measured across the 45 application
+ * leases on this property (797 rows):
+ *
+ *   Online Application ......... 35 (78%), and 31 of those leases have NO
+ *                                application_date on the resident page
+ *   lease Start Date changed ... 36 (80%), 121 events, 35 of 36 moved LATER
+ *                                (median 39 days, worst 196)
+ *   Signature package sent 7 · signed 2 · voided 2
+ */
+
+test("the Online Application event dates the application", () => {
+  const html = HEADER + row("7/13/2026 10:02:11 AM", "Online Application", "Anyone Home");
+  assert.equal(parseActivityLog(html).onlineApplicationDate, "2026-07-13");
+});
+
+test("the ORIGINAL start date survives every later change", () => {
+  // Newest-first, so the last row is the first change and holds the date the
+  // lease originally had. This resident's move-in slid 8/07 → 8/21 → 9/01.
+  const html =
+    HEADER +
+    row("8/10/2026 4:12:12 PM", "The lease Start Date was changed from 08/21/2026 to 09/01/2026", "Nicole Jones") +
+    row("8/7/2026 9:34:50 AM", "The lease Start Date was changed from 08/07/2026 to 08/21/2026", "Nicole Jones");
+  const f = parseActivityLog(html);
+  assert.equal(f.startDateChanges, 2);
+  assert.equal(f.originalStartDate, "2026-08-07");
+});
+
+test("a lease whose date never moved reports zero, not null", () => {
+  const f = parseActivityLog(HEADER + row("7/1/2026 9:00:00 AM", "Online Application", "Anyone Home"));
+  assert.equal(f.startDateChanges, 0);
+  assert.equal(f.originalStartDate, null);
+});
+
+test("END date changes are not counted — they ride along with every start change", () => {
+  // 115 End Date events accompany the 121 Start Date ones. Counting both would
+  // roughly double every slip count.
+  const html =
+    HEADER +
+    row("8/10/2026 4:12:12 PM", "The lease End Date was changed from 08/20/2027 to 08/31/2027", "Nicole Jones") +
+    row("8/10/2026 4:12:12 PM", "The lease Start Date was changed from 08/21/2026 to 09/01/2026", "Nicole Jones");
+  assert.equal(parseActivityLog(html).startDateChanges, 1);
+});
+
+test("signature package sent, signed and voided are each picked up", () => {
+  const html =
+    HEADER +
+    row("7/20/2026 8:00:00 AM", "Signature package Emberly NEW was voided", "Nicias Teal") +
+    row("7/18/2026 1:00:00 PM", "Signature package Emberly NEW was signed on 7/18/2026", "Nicias Teal") +
+    row("7/17/2026 4:16:56 PM", "Signature package Emberly NEW was sent to Mamadou Saliou Diallo", "Nicias Teal");
+  const f = parseActivityLog(html);
+  assert.equal(f.leaseSentDate, "2026-07-17");
+  assert.equal(f.leaseSignedDate, "2026-07-18");
+  assert.equal(f.leaseVoidedDate, "2026-07-20");
+});
+
+test("the other signing wording is understood too", () => {
+  const html = HEADER + row("6/2/2026 11:00:00 AM", "Resident(s) Eddie Wells signed their lease for unit 3714 DU-2", "Nicole Jones");
+  assert.equal(parseActivityLog(html).leaseSignedDate, "2026-06-02");
+});
+
+test("'was signed on <date>' beats the row timestamp when they differ", () => {
+  // The package can be reconciled days after it was actually signed.
+  const html = HEADER + row("7/25/2026 9:00:00 AM", "Signature package Emberly NEW was signed on 7/18/2026", "Nicias Teal");
+  assert.equal(parseActivityLog(html).leaseSignedDate, "2026-07-18");
+});
+
+test("an empty log yields all-nulls and no counts", () => {
+  const f = parseActivityLog(HEADER);
+  assert.equal(f.approvedDate, null);
+  assert.equal(f.onlineApplicationDate, null);
+  assert.equal(f.originalStartDate, null);
+  assert.equal(f.startDateChanges, 0);
+  assert.equal(f.leaseSentDate, null);
+  assert.equal(f.leaseSignedDate, null);
+  assert.equal(f.leaseVoidedDate, null);
+});
+
+test("the page's own dates are not overwritten by the log", () => {
+  // Source-of-truth rule: the log fills a BLANK, it never second-guesses a
+  // date ResMan states outright.
+  const source = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "..", "src", "resman", "scrapers", "unit-detail.ts"),
+    "utf8",
+  );
+  assert.match(source, /if \(lease\.applicationDate === undefined\)/);
+  assert.match(source, /if \(lease\.leaseSignedDate === undefined\)/);
 });

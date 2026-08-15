@@ -156,9 +156,17 @@ export function PipelineDetailSheet({
     if (step.key === "moveIn" && step.dateMs !== null && step.state !== "done") {
       // An application's date is the one the prospect ASKED for (ResMan holds
       // it as the lease start), not a confirmed arrival. Say which it is.
-      return row.moveInIsDesired
+      const base = row.moveInIsDesired
         ? t("leasing.sheet.desiredMoveIn", { date: formatDay(step.dateMs) })
         : t("leasing.sheet.scheduled", { date: formatDay(step.dateMs) });
+      // A date that has moved reads as firm without saying so.
+      if (row.moveInSlips > 0 && row.originalMoveInMs !== null) {
+        return `${base} · ${t("leasing.sheet.movedFrom", {
+          count: row.moveInSlips,
+          date: formatDay(row.originalMoveInMs),
+        })}`;
+      }
+      return base;
     }
     return step.dateMs !== null ? formatDay(step.dateMs) : "";
   };

@@ -1279,6 +1279,10 @@ export interface Database {
           approval_status: string;
           approved_date: string | null;
           approved_by: string;
+          original_start_date: string | null;
+          start_date_changes: number;
+          lease_sent_date: string | null;
+          lease_voided_date: string | null;
           application_date: string | null;
           signed_date: string | null;
           start_date: string | null;
@@ -1313,6 +1317,10 @@ export interface Database {
           approval_status?: string;
           approved_date?: string | null;
           approved_by?: string;
+          original_start_date?: string | null;
+          start_date_changes?: number;
+          lease_sent_date?: string | null;
+          lease_voided_date?: string | null;
           application_date?: string | null;
           signed_date?: string | null;
           start_date?: string | null;
@@ -1347,6 +1355,10 @@ export interface Database {
           approval_status?: string;
           approved_date?: string | null;
           approved_by?: string;
+          original_start_date?: string | null;
+          start_date_changes?: number;
+          lease_sent_date?: string | null;
+          lease_voided_date?: string | null;
           application_date?: string | null;
           signed_date?: string | null;
           start_date?: string | null;

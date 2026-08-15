@@ -409,10 +409,23 @@ export async function scrapeLease(
   // approval is history the Pipeline never shows, and spending a request per
   // lease on all ~640 full-tier leases to fetch it would be most of a sync.
   if (isApplicationLeaseStatus(String(lease.status ?? ""))) {
-    const approval = await scrapeLeaseApproval(leaseRow.leaseID, http);
-    if (approval !== null) {
-      lease.approvedDate = approval.date;
-      if (approval.by.length > 0) lease.approvedBy = approval.by;
+    const log = await scrapeActivityLog(leaseRow.leaseID, http);
+    assignIfPresent(lease, "approvedDate", log.approvedDate);
+    if (log.approvedBy.length > 0) lease.approvedBy = log.approvedBy;
+    assignIfPresent(lease, "originalStartDate", log.originalStartDate);
+    if (log.startDateChanges > 0) lease.startDateChanges = log.startDateChanges;
+    assignIfPresent(lease, "leaseSentDate", log.leaseSentDate);
+    assignIfPresent(lease, "leaseVoidedDate", log.leaseVoidedDate);
+    // The PAGE wins where it has a value; the log only fills a blank. Both
+    // application date and signed date are absent from the page on most
+    // applications (2 of 45 carry an application date), and the log is the
+    // only record of them — but where ResMan states a date, it is the source
+    // of truth and must not be second-guessed by a log line.
+    if (lease.applicationDate === undefined) {
+      assignIfPresent(lease, "applicationDate", log.onlineApplicationDate);
+    }
+    if (lease.leaseSignedDate === undefined) {
+      assignIfPresent(lease, "leaseSignedDate", log.leaseSignedDate);
     }
   }
 
@@ -1178,10 +1191,61 @@ export function parseVehiclesTab(html: string): Record<string, unknown>[] {
  * lease that was approved, transferred and re-approved should report when it
  * was first approved rather than the most recent administrative echo.
  */
-export function parseActivityLogApproval(
-  html: string,
-): { date: string; by: string } | null {
-  let found: { date: string; by: string } | null = null;
+export interface ActivityLogFacts {
+  /** "approved for move in" — the approval, and who recorded it. */
+  approvedDate: string | null;
+  approvedBy: string;
+  /** The "Online Application" event: when the application actually arrived. */
+  onlineApplicationDate: string | null;
+  /** The FIRST start date the lease ever had, before any change. */
+  originalStartDate: string | null;
+  /** How many times the start date has been moved. */
+  startDateChanges: number;
+  /** A signature package went out to the applicant. */
+  leaseSentDate: string | null;
+  /** The lease was signed (either wording ResMan uses). */
+  leaseSignedDate: string | null;
+  /** A signature package was voided — a deal in trouble. */
+  leaseVoidedDate: string | null;
+}
+
+const EMPTY_FACTS: ActivityLogFacts = {
+  approvedDate: null,
+  approvedBy: "",
+  onlineApplicationDate: null,
+  startDateChanges: 0,
+  originalStartDate: null,
+  leaseSentDate: null,
+  leaseSignedDate: null,
+  leaseVoidedDate: null,
+};
+
+/**
+ * Everything worth having from a lease's Activity Log, in ONE pass over HTML
+ * we are already fetching.
+ *
+ * The log is the only machine-emitted record of how an application moved.
+ * Measured across the 45 application leases on this property (797 rows):
+ *
+ *   Online Application ........ 35 (78%) — and 31 of those leases have NO
+ *                               application_date on the page, so this is the
+ *                               only place the applied date exists for them
+ *   lease Start Date changed .. 36 (80%) — 121 events; 35 of 36 moved LATER,
+ *                               median 39 days, worst 196. A desired move-in
+ *                               that keeps sliding looks identical to a firm
+ *                               one on the board without this.
+ *   approved for move in ...... the approval date
+ *   Signature package sent .... 7 · signed 2 · VOIDED 2
+ *
+ * Rows are newest-first. Every field therefore keeps the EARLIEST match (the
+ * loop overwrites as it descends into older rows), which is what "when did
+ * this first happen" means; `startDateChanges` counts them all.
+ */
+export function parseActivityLog(html: string): ActivityLogFacts {
+  const facts: ActivityLogFacts = { ...EMPTY_FACTS };
+  // The oldest "changed from X" line holds the date the lease originally had.
+  let oldestStartChange: string | null = null;
+
   for (const row of rmsMatches(TR_PATTERN, html)) {
     if (row.length <= 1) continue;
     const cells = rmsMatches(TD_TH_PATTERN, row[1])
@@ -1189,23 +1253,59 @@ export function parseActivityLogApproval(
       .map((m) => trimmedForCell(stripTags(m[1])));
     if (cells.length < 2) continue;
     const [timestamp, activity] = cells;
-    // "approved for move in" is the specific event. A bare /approv/ would also
-    // catch "approval status changed" and denial lines that mention approval.
-    if (!/\bapproved for move in\b/i.test(activity)) continue;
-    const date = normalizeDate(timestamp.split(/\s+/)[0] ?? "");
-    if (date === null) continue;
-    found = { date, by: cells.length > 2 ? cells[2] : "" };
+    if (/^Timestamp$/i.test(timestamp)) continue;
+    const when = normalizeDate(timestamp.split(/\s+/)[0] ?? "");
+    if (when === null) continue;
+
+    // "approved for move in" specifically. A bare /approv/ would also catch
+    // "the lease Approval Status was changed…" and date the approval from an
+    // administrative edit rather than the decision.
+    if (/\bapproved for move in\b/i.test(activity)) {
+      facts.approvedDate = when;
+      facts.approvedBy = cells.length > 2 ? cells[2] : "";
+      continue;
+    }
+    if (/^Online Application$/i.test(activity)) {
+      facts.onlineApplicationDate = when;
+      continue;
+    }
+    if (/\bSignature package\b.*\bwas sent to\b/i.test(activity)) {
+      facts.leaseSentDate = when;
+      continue;
+    }
+    if (/\bwas voided\b/i.test(activity)) {
+      facts.leaseVoidedDate = when;
+      continue;
+    }
+    // Two wordings: "…was signed on 8/1/2026" and "Resident(s) X signed their
+    // lease for unit Y". The former carries the signing date in its own text,
+    // which beats the row timestamp when they differ.
+    const signedOn = /\bwas signed on\s+(\S+)/i.exec(activity);
+    if (signedOn !== null) {
+      facts.leaseSignedDate = normalizeDate(signedOn[1]) ?? when;
+      continue;
+    }
+    if (/\bsigned their lease for unit\b/i.test(activity)) {
+      facts.leaseSignedDate = when;
+      continue;
+    }
+    const startChange = /\blease Start Date was changed from\s+(\S+)\s+to\b/i.exec(activity);
+    if (startChange !== null) {
+      facts.startDateChanges += 1;
+      oldestStartChange = normalizeDate(startChange[1]) ?? oldestStartChange;
+    }
   }
-  return found;
+
+  facts.originalStartDate = oldestStartChange;
+  return facts;
 }
 
-/** Fetch + parse a lease's Activity Log approval line. One extra request. */
-export async function scrapeLeaseApproval(
+/** Fetch + parse a lease's Activity Log. One extra request per lease. */
+export async function scrapeActivityLog(
   leaseId: string,
   http: ResManScrapeHttp,
-): Promise<{ date: string; by: string } | null> {
-  const html = await http.getText(`/ActivityLog/ActivityLog?objectID=${leaseId}`);
-  return parseActivityLogApproval(html);
+): Promise<ActivityLogFacts> {
+  return parseActivityLog(await http.getText(`/ActivityLog/ActivityLog?objectID=${leaseId}`));
 }
 
 /** Fetch + parse the combined "Employment & Other Income" tab. */

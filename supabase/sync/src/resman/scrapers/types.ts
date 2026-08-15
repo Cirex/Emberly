@@ -100,6 +100,14 @@ export interface ResmanLeaseRow {
   approved_date: string | null;
   /** The staff member the Activity Log credits with the approval. */
   approved_by: string;
+  /** The start date the lease FIRST had, before any change (Activity Log). */
+  original_start_date: string | null;
+  /** How many times the start date has moved. */
+  start_date_changes: number;
+  /** When a signature package went out. */
+  lease_sent_date: string | null;
+  /** When a signature package was voided — a deal in trouble. */
+  lease_voided_date: string | null;
   application_date: string | null;
   signed_date: string | null;
   start_date: string | null;

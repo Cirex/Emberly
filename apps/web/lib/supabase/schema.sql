@@ -787,6 +787,10 @@ create table if not exists public.resman_leases (
   approval_status text not null default '',
   approved_date date,                             -- from the Activity Log; ResMan has no approval-date field
   approved_by text not null default '',           -- the staff member the Activity Log credits
+  original_start_date date,                       -- the first start date the lease had, before any change
+  start_date_changes integer not null default 0,  -- how many times the desired move-in has moved
+  lease_sent_date date,                           -- signature package sent (Activity Log)
+  lease_voided_date date,                         -- signature package voided (Activity Log)
   application_date date,
   signed_date date,
   start_date date,

@@ -279,6 +279,14 @@ export interface PipelineRow {
    * imply otherwise. 40 of the 45 Pending/Approved leases have only this.
    */
   moveInIsDesired: boolean;
+  /**
+   * How many times the desired move-in has been pushed, and where it started.
+   * 80% of applications on this property have moved theirs at least once —
+   * 35 of 36 to a LATER date, median 39 days — so a date that keeps sliding
+   * otherwise looks exactly like a firm one.
+   */
+  moveInSlips: number;
+  originalMoveInMs: number | null;
   /** Unit availability from the mirror (isReadyAvailability). */
   ready: boolean;
   /** Day the unit becomes available when not ready — null when unknown. */
@@ -308,6 +316,8 @@ export function buildPipelineRows(
       classification: facts?.classification ?? "",
       moveInMs,
       moveInIsDesired: parseDay(lease.moveInDate) === null && moveInMs !== null,
+      moveInSlips: lease.startDateChanges ?? 0,
+      originalMoveInMs: parseDay(lease.originalStartDate ?? null),
       // UPCOMING arrivals only. This was |days| <= 7, which counted a resident
       // who moved in six days ago as "moving in this week" — so the hot band,
       // the This-week chip and the Move-ins-this-week metric all mixed people

@@ -190,6 +190,8 @@ export const PIPELINE_STAGE_ORDER: readonly PipelineStage[] = [
 
 /** A move-in this many days AHEAD is "this week". Past arrivals are not. */
 export const PIPELINE_IMMINENT_DAYS = 7;
+/** …and this far ahead is "next week": the second seven days, 8-14. */
+export const PIPELINE_NEXT_WEEK_DAYS = 14;
 /** Freshly moved-in leases stay on the board this many days. */
 export const PIPELINE_MOVED_IN_KEEP_DAYS = 7;
 /** Without an explicit pipeline status, application activity this recent still qualifies. */
@@ -250,6 +252,8 @@ export interface PipelineRow {
   moveInMs: number | null;
   /** Move-in is UPCOMING and within PIPELINE_IMMINENT_DAYS (the top band). */
   imminent: boolean;
+  /** Move-in lands in the SECOND seven days — after `imminent`, never both. */
+  nextWeek: boolean;
   /** Unit availability from the mirror (isReadyAvailability). */
   ready: boolean;
   /** Day the unit becomes available when not ready — null when unknown. */
@@ -268,6 +272,9 @@ export function buildPipelineRows(
     const stage = pipelineStageOf(lease, nowMs);
     if (stage === null) continue;
     const moveInMs = parseDay(lease.moveInDate) ?? parseDay(lease.startDate);
+    // Positive = still ahead of us. 0 or negative means they already arrived,
+    // which is the movedIn stage's business, not an upcoming-arrival band's.
+    const daysUntilMoveIn = moveInMs === null ? null : calendarDaysBetween(today, moveInMs);
     const facts = unitsByNumber.get(lease.unitNumber);
     rows.push({
       lease,
@@ -281,10 +288,13 @@ export function buildPipelineRows(
       // who had already arrived in with people who had not. A move-in dated
       // today is not imminent either: it has happened, so it belongs to the
       // moved-in band.
-      imminent:
-        moveInMs !== null &&
-        calendarDaysBetween(today, moveInMs) > 0 &&
-        calendarDaysBetween(today, moveInMs) <= PIPELINE_IMMINENT_DAYS,
+      imminent: daysUntilMoveIn !== null && daysUntilMoveIn > 0 && daysUntilMoveIn <= PIPELINE_IMMINENT_DAYS,
+      // The second seven days. Exclusive with `imminent` by construction, so
+      // the two bands can never show the same row twice.
+      nextWeek:
+        daysUntilMoveIn !== null &&
+        daysUntilMoveIn > PIPELINE_IMMINENT_DAYS &&
+        daysUntilMoveIn <= PIPELINE_NEXT_WEEK_DAYS,
       // A unit the household already occupies is trivially "ready" for them —
       // the readiness question only bites before move-in.
       ready: stage === "movedIn" ? true : (facts?.ready ?? true),
@@ -293,6 +303,7 @@ export function buildPipelineRows(
   }
   rows.sort((a, b) => {
     if (a.imminent !== b.imminent) return a.imminent ? -1 : 1;
+    if (a.nextWeek !== b.nextWeek) return a.nextWeek ? -1 : 1;
     const stageDelta =
       PIPELINE_STAGE_ORDER.indexOf(a.stage) - PIPELINE_STAGE_ORDER.indexOf(b.stage);
     if (stageDelta !== 0) return stageDelta;

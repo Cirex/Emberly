@@ -390,8 +390,11 @@ export default function LeasingScreen() {
     // residents who have their keys sit in their own band below it rather
     // than padding out this week's arrivals.
     const imminent = visiblePipeline.filter((r) => r.imminent);
+    const nextWeek = visiblePipeline.filter((r) => r.nextWeek);
     const movedIn = visiblePipeline.filter((r) => r.stage === "movedIn");
-    const rest = visiblePipeline.filter((r) => !r.imminent && r.stage !== "movedIn");
+    const rest = visiblePipeline.filter(
+      (r) => !r.imminent && !r.nextWeek && r.stage !== "movedIn",
+    );
     const rowViews = (rows: PipelineRow[]) =>
       rows.map((r, i) => (
         <PipelineRowView
@@ -406,6 +409,13 @@ export default function LeasingScreen() {
     return (
       <View style={{ gap: 4 }}>
         {band(t("leasing.bands.pendingMoveIn", { count: imminent.length }), true, rowViews(imminent), "imminent")}
+        {/*
+          Next week is deliberately NOT hot. It is the look-ahead — units that
+          have to be ready in the second week — and painting it the same as
+          this week's arrivals would flatten the distinction the top band
+          exists to draw.
+        */}
+        {band(t("leasing.bands.pendingMoveInNextWeek", { count: nextWeek.length }), false, rowViews(nextWeek), "nextWeek")}
         {band(t("leasing.bands.movedIn", { count: movedIn.length, keepDays: PIPELINE_MOVED_IN_KEEP_DAYS }), false, rowViews(movedIn), "movedIn")}
         {PIPELINE_STAGE_ORDER.filter((stage) => stage !== "movedIn").map((stage) => {
           const rows = rest.filter((r) => r.stage === stage);

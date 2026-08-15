@@ -304,6 +304,60 @@ describe("pipeline", () => {
     expect(byUnit.get("3735 CC-8")?.imminent).toBe(false);
   });
 
+  test("next week is the SECOND seven days, never overlapping this week", () => {
+    const rows = buildPipelineRows(
+      [
+        lease({ unitNumber: "0212", status: "Pending", signedDate: day(-3), moveInDate: day(7) }),
+        lease({ unitNumber: "1114", status: "Pending", signedDate: day(-3), moveInDate: day(8) }),
+        lease({ unitNumber: "3735 CC-8", status: "Pending", signedDate: day(-3), moveInDate: day(14) }),
+      ],
+      units,
+      NOW,
+    );
+    const byUnit = new Map(rows.map((r) => [r.lease.unitNumber, r]));
+    // Day 7 is the last day of this week, day 8 the first of next.
+    expect(byUnit.get("0212")?.imminent).toBe(true);
+    expect(byUnit.get("0212")?.nextWeek).toBe(false);
+    expect(byUnit.get("1114")?.imminent).toBe(false);
+    expect(byUnit.get("1114")?.nextWeek).toBe(true);
+    expect(byUnit.get("3735 CC-8")?.nextWeek).toBe(true);
+  });
+
+  test("day 15 is beyond next week and falls back to its funnel stage", () => {
+    const [row] = buildPipelineRows(
+      [lease({ unitNumber: "0212", status: "Pending", signedDate: day(-3), moveInDate: day(15) })],
+      units,
+      NOW,
+    );
+    expect(row.imminent).toBe(false);
+    expect(row.nextWeek).toBe(false);
+    expect(row.stage).toBe("signed");
+  });
+
+  test("an arrived resident is in neither upcoming band", () => {
+    const [row] = buildPipelineRows(
+      [lease({ unitNumber: "0212", status: "Current", moveInDate: day(-3) })],
+      units,
+      NOW,
+    );
+    expect(row.imminent).toBe(false);
+    expect(row.nextWeek).toBe(false);
+    expect(row.stage).toBe("movedIn");
+  });
+
+  test("this week sorts above next week, which sorts above the rest", () => {
+    const rows = buildPipelineRows(
+      [
+        lease({ unitNumber: "3735 CC-8", status: "Pending", signedDate: day(-3), moveInDate: day(20) }),
+        lease({ unitNumber: "1114", status: "Pending", signedDate: day(-3), moveInDate: day(10) }),
+        lease({ unitNumber: "0212", status: "Pending", signedDate: day(-3), moveInDate: day(2) }),
+      ],
+      units,
+      NOW,
+    );
+    expect(rows.map((r) => r.lease.unitNumber)).toEqual(["0212", "1114", "3735 CC-8"]);
+  });
+
   test("the two groups never overlap, so no row can appear in both bands", () => {
     // The board renders `imminent` and `stage === "movedIn"` as separate
     // bands and subtracts both from the funnel. If a row could satisfy both,
@@ -318,7 +372,10 @@ describe("pipeline", () => {
       NOW,
     );
     for (const row of rows) {
-      expect(row.imminent && row.stage === "movedIn").toBe(false);
+      // At most one of the three band predicates may hold, or the row renders
+      // more than once on the board.
+      const groups = [row.imminent, row.nextWeek, row.stage === "movedIn"].filter(Boolean);
+      expect(groups.length).toBeLessThanOrEqual(1);
     }
     expect(rows.filter((r) => r.stage === "movedIn")).toHaveLength(2);
     expect(rows.filter((r) => r.imminent)).toHaveLength(1);

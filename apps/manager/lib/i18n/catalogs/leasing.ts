@@ -146,6 +146,7 @@ const en = {
     },
     bands: {
       pendingMoveIn: "Pending move-in · this week · {{count}}",
+      pendingMoveInNextWeek: "Pending move-in · next week · {{count}}",
       movedIn: "Moved in · last {{keepDays}} days · {{count}}",
       inFlight: "In flight · {{count}}",
       expires30: "Expires ≤ 30 days · {{count}}",
@@ -511,6 +512,7 @@ const es: typeof en = {
     },
     bands: {
       pendingMoveIn: "Entrada pendiente · esta semana · {{count}}",
+      pendingMoveInNextWeek: "Entrada pendiente · próxima semana · {{count}}",
       movedIn: "Ya entraron · últimos {{keepDays}} días · {{count}}",
       inFlight: "En proceso · {{count}}",
       expires30: "Vence ≤ 30 días · {{count}}",

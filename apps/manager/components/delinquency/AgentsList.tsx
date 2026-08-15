@@ -186,10 +186,19 @@ export function AgentsList({
   stats,
   selectedAgent,
   onSelect,
+  unattributedLeases = 0,
+  unattributedEvictions = 0,
 }: {
   stats: AgentStat[];
   selectedAgent: string | null;
   onSelect: (stat: AgentStat) => void;
+  /**
+   * Leases ResMan records no leasing agent on. They are in no scorecard —
+   * buildAgentStats skips a blank agent — so without saying so the page reads
+   * as the whole property when it is only the attributable part of it.
+   */
+  unattributedLeases?: number;
+  unattributedEvictions?: number;
 }) {
   const { t } = useTranslation();
   // Ranks count only ranked (non-low-volume) books.
@@ -216,6 +225,14 @@ export function AgentsList({
               onPress={() => onSelect(stat)}
             />
           ))}
+          {unattributedLeases > 0 ? (
+            <ListFooter>
+              {t("delinquency.agents.unattributed", {
+                leases: unattributedLeases,
+                evictions: unattributedEvictions,
+              })}
+            </ListFooter>
+          ) : null}
           <ListFooter>{t("delinquency.footer.agents")}</ListFooter>
         </>
       )}

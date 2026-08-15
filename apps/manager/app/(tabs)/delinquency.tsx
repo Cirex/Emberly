@@ -259,7 +259,6 @@ export default function DelinquencyScreen() {
         },
       ];
     }
-    const attributed = leases.filter((l) => l.leasingAgent.trim() !== "").length;
     return [
       {
         value: String(agentBoard.totalSigned),
@@ -270,7 +269,12 @@ export default function DelinquencyScreen() {
         value: fmtPercent(agentBoard.overallEvictionRate),
         tint: MONEY_COLORS.bad,
         label: t("delinquency.metrics.evictionRate"),
-        caption: t("delinquency.metrics.evictionOf", { evictions: agentBoard.totalEvictions, total: attributed }),
+        // Over TENANCIES, and counting every eviction — including the ones on
+        // leases with no agent recorded, which no scorecard below can show.
+        caption: t("delinquency.metrics.evictionOf", {
+          evictions: agentBoard.totalEvictions,
+          total: agentBoard.totalTenancies,
+        }),
       },
       {
         value: fmtPercent(agentBoard.overallDelinquencyLoad),
@@ -294,7 +298,13 @@ export default function DelinquencyScreen() {
     ) : mode === "tenants" ? (
       <TenantsList bands={bands} selectedLeaseId={split ? selectedLeaseId : null} onSelect={onSelectTenant} />
     ) : (
-      <AgentsList stats={agentBoard.stats} selectedAgent={selectedAgent} onSelect={onSelectAgent} />
+      <AgentsList
+        stats={agentBoard.stats}
+        selectedAgent={selectedAgent}
+        onSelect={onSelectAgent}
+        unattributedLeases={agentBoard.unattributedLeases}
+        unattributedEvictions={agentBoard.unattributedEvictions}
+      />
     );
 
   const tenantDetailBody = (

@@ -558,9 +558,17 @@ export function agentLeaseInputs(
 export interface AgentBoard {
   stats: AgentStat[];
   totalSigned: number;
+  /** EVERY eviction on the property, including leases with no agent recorded. */
   totalEvictions: number;
+  /** totalEvictions over tenancies that actually started. */
   overallEvictionRate: number;
   overallDelinquencyLoad: number;
+  /** Tenancies (a lease someone moved into) — the eviction-rate denominator. */
+  totalTenancies: number;
+  /** Leases carrying no leasing agent, so absent from every scorecard above. */
+  unattributedLeases: number;
+  /** Evictions among them — the share of the problem no scorecard shows. */
+  unattributedEvictions: number;
 }
 
 /** Agents mode header + scorecard list, via @emberly/core's buildAgentStats. */
@@ -574,18 +582,35 @@ export function buildAgentBoard(
   const inputs = agentLeaseInputs(leases, units, summaries, actions);
   const stats = buildAgentStats(inputs, opts);
   const totalSigned = stats.reduce((acc, s) => acc + s.leasesSigned, 0);
-  const totalEvictions = stats.reduce((acc, s) => acc + s.evictions, 0);
-  const totalLeases = inputs.filter((i) => i.leasingAgent.trim() !== "").length;
   const delinquentBalance = stats.reduce((acc, s) => acc + s.delinquentBalance, 0);
   const activeRent = inputs
     .filter((i) => i.isCurrentLease && i.leasingAgent.trim() !== "")
     .reduce((acc, i) => acc + Math.max(0, i.residentRent ?? 0), 0);
+
+  // The property's eviction figure counts EVERY eviction, not just the ones a
+  // scorecard could claim. buildAgentStats skips leases with no leasing agent,
+  // and ResMan only began recording one recently — 87% of leases starting in
+  // 2026 carry an agent against 12% of 2025's — so summing the scorecards hid
+  // 98 of the property's 153 evictions and reported 7.8% where the real figure
+  // is 12.6%.
+  //
+  // The denominator is tenancies, not leases: a denied or cancelled
+  // application was never a tenancy and could never have ended in an eviction,
+  // so counting it only dilutes the rate.
+  const tenancy = (i: AgentLeaseInput) => (i.moveInDate ?? "").trim() !== "";
+  const tenancies = inputs.filter(tenancy);
+  const totalEvictions = inputs.filter((i) => i.evicted === true).length;
+  const unattributed = inputs.filter((i) => i.leasingAgent.trim() === "");
+
   return {
     stats,
     totalSigned,
     totalEvictions,
-    overallEvictionRate: totalLeases > 0 ? totalEvictions / totalLeases : 0,
+    overallEvictionRate: tenancies.length > 0 ? totalEvictions / tenancies.length : 0,
     overallDelinquencyLoad: activeRent > 0 ? delinquentBalance / activeRent : 0,
+    totalTenancies: tenancies.length,
+    unattributedLeases: unattributed.length,
+    unattributedEvictions: unattributed.filter((i) => i.evicted === true).length,
   };
 }
 

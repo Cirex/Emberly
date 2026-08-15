@@ -11,6 +11,7 @@ import {
   agentLeaseInputs,
   agingDistribution,
   assembleTenantPnl,
+  buildAgentBoard,
   buildBalancesBoard,
   buildTimeline,
   firstLateDelayBucket,
@@ -406,6 +407,59 @@ describe("agentLeaseInputs / agentDrillIn", () => {
     const inputs = agentLeaseInputs(leases, units, [summary({ leaseId: "L1", firstLateMonth: "2024-05" })], actions);
     expect(inputs.map((i) => i.evicted)).toEqual([true, true, true, false]);
     expect(inputs[0].firstLateMonth).toBe("2024-05");
+  });
+
+  /**
+   * The property's eviction figure has to count every eviction, not just the
+   * ones a scorecard can claim.
+   *
+   * buildAgentStats skips a lease with a blank agent, and ResMan only started
+   * recording an agent recently — 87% of leases starting in 2026 carry one
+   * against 12% of 2025's. Summing the scorecards therefore reported 55 of the
+   * property's 153 evictions and a 7.8% rate where the true figure is 12.6%,
+   * and the gap was invisible because the unattributed book is rendered
+   * nowhere.
+   */
+  test("property eviction totals count unattributed leases too", () => {
+    const leases = [
+      lease({ id: "L1", leasingAgent: "DJ", status: "Evicted", isCurrentLease: false }),
+      lease({ id: "L2", leasingAgent: "", status: "Evicted", isCurrentLease: false }),
+      lease({ id: "L3", leasingAgent: "", status: "Under Eviction", isCurrentLease: false }),
+      lease({ id: "L4", leasingAgent: "DJ" }),
+    ];
+    const board = buildAgentBoard(leases, [], [], [], { windowMonths: 12, nowMs: NOW });
+
+    expect(board.totalEvictions).toBe(3);
+    expect(board.unattributedLeases).toBe(2);
+    expect(board.unattributedEvictions).toBe(2);
+    // Only DJ gets a scorecard, and it shows the one eviction DJ owns — the
+    // per-agent numbers are unchanged, it is the PROPERTY total that was wrong.
+    expect(board.stats.map((s) => s.agent)).toEqual(["DJ"]);
+    expect(board.stats[0].evictions).toBe(1);
+  });
+
+  test("the eviction rate is over tenancies — an application was never one", () => {
+    // A denied or cancelled application never became a tenancy and could never
+    // have ended in an eviction, so counting it only dilutes the rate.
+    const leases = [
+      lease({ id: "L1", status: "Evicted", isCurrentLease: false }),
+      lease({ id: "L2" }),
+      lease({ id: "L3", status: "Denied", moveInDate: null, isCurrentLease: false }),
+      lease({ id: "L4", status: "Cancelled", moveInDate: null, isCurrentLease: false }),
+    ];
+    const board = buildAgentBoard(leases, [], [], [], { windowMonths: 12, nowMs: NOW });
+    expect(board.totalTenancies).toBe(2);
+    expect(board.overallEvictionRate).toBe(0.5);
+  });
+
+  test("no tenancies at all is a rate of zero, not a divide by zero", () => {
+    const board = buildAgentBoard(
+      [lease({ id: "L1", moveInDate: null, isCurrentLease: false })],
+      [], [], [],
+      { windowMonths: 12, nowMs: NOW },
+    );
+    expect(board.totalTenancies).toBe(0);
+    expect(board.overallEvictionRate).toBe(0);
   });
 
   test("firstLateDelayBucket maps month deltas to the six histogram buckets", () => {

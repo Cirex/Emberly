@@ -99,17 +99,41 @@ export function recentLeaseOrFilter(cutoffIsoDate: string): string {
   );
 }
 
-/** Leases from the last 24 months (or still current), newest start first. */
+/** PostgREST caps an unranged select at 1000 rows; page the window out. */
+export const MANAGER_LEASE_PAGE_SIZE = 1000;
+/** Hard stop on paging, so a runaway table can never spin the request. */
+const MAX_PAGES = 25;
+
+/**
+ * Leases from the last 24 months (or still current), newest start first.
+ *
+ * PAGED, and not cosmetically: the window is 1,216 leases on this property and
+ * an unranged select silently returned the first 1000, so 216 leases — whole
+ * applications and current residencies — never reached the manager app's
+ * boards at all. The ordering is by start_date, which is NOT unique, so the
+ * lease id is appended as a tiebreak to make the sort total; offset paging over
+ * a non-total order can drop a row from one page and repeat it on the next
+ * (the same lesson listResource learned on work-orders).
+ */
 export async function listManagerLeases(
   client: UntypedSupabase,
   nowMs: number = Date.now(),
 ): Promise<ManagerLeasePayload[]> {
   const cutoff = monthsAgoIsoDate(nowMs, 24);
-  const { data, error } = await client
-    .from("resman_leases")
-    .select(MANAGER_LEASE_COLUMNS)
-    .or(recentLeaseOrFilter(cutoff))
-    .order("start_date", { ascending: false });
-  if (error) throw new Error(error.message);
-  return ((data ?? []) as ManagerLeaseRow[]).map(managerLeasePayload);
+  const rows: ManagerLeaseRow[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = page * MANAGER_LEASE_PAGE_SIZE;
+    const { data, error } = await client
+      .from("resman_leases")
+      .select(MANAGER_LEASE_COLUMNS)
+      .or(recentLeaseOrFilter(cutoff))
+      .order("start_date", { ascending: false })
+      .order("resman_lease_id", { ascending: true })
+      .range(from, from + MANAGER_LEASE_PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const batch = (data ?? []) as ManagerLeaseRow[];
+    rows.push(...batch);
+    if (batch.length < MANAGER_LEASE_PAGE_SIZE) break;
+  }
+  return rows.map(managerLeasePayload);
 }

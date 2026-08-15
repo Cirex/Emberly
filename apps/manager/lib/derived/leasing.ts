@@ -176,34 +176,24 @@ export function primaryTenantName(facts: UnitFacts | undefined): string {
   return facts?.tenantNames[0] ?? "";
 }
 
-/**
- * "Aug 31". The flag labels below are literal strings (like work-insights'
- * bucket labels) rather than i18n keys, so their dates are spelled the same
- * way — no locale reaches this engine, and the tests stay deterministic.
- */
-const MONTH_ABBR = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-function shortDayLabel(ms: number): string {
-  const d = new Date(ms);
-  return `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`;
-}
-
 /** Something about the UNIT that stands between an applicant and their keys. */
 export interface UnitObstacle {
   /**
    * WHICH obstacle, as a token rather than as prose. The three wordings are
    * not recoverable from anything else on the row (`ready` cannot separate
    * "occupied" from "not ready" — an occupied unit is usually both), so
-   * without this the UI can only echo `label`, and `label` is English. The
-   * pipeline row translates by this key and localizes the date itself from
-   * `row.dateAvailableMs`.
+   * without it the UI could not tell the three apart at all.
    */
   kind: "occupied" | "notReady" | "notReadyAvail";
   /** bad = nothing scheduled to fix it; warn = not ready but dated. */
   tone: "bad" | "warn";
-  /** English fallback for any surface that has no catalog. */
-  label: string;
+  /**
+   * i18n key under `leasing.flags`, and the values its phrase interpolates.
+   * `dateAvailableMs` travels as a NUMBER — the engine has no locale, and a
+   * date it spelled itself would reach a Spanish reader in English.
+   */
+  labelKey: string;
+  labelParams?: Record<string, unknown>;
 }
 
 /**
@@ -220,14 +210,15 @@ export interface UnitObstacle {
 export function unitObstacleOf(facts: UnitFacts | undefined): UnitObstacle | null {
   // An unknown unit states nothing — never an invented blocker.
   if (!facts) return null;
-  if (facts.occupied) return { kind: "occupied", tone: "bad", label: "Unit occupied" };
+  if (facts.occupied) return { kind: "occupied", tone: "bad", labelKey: "unitOccupied" };
   if (facts.ready) return null;
   const availMs = parseDay(facts.dateAvailable);
-  if (availMs === null) return { kind: "notReady", tone: "bad", label: "Unit not ready" };
+  if (availMs === null) return { kind: "notReady", tone: "bad", labelKey: "unitNotReady" };
   return {
     kind: "notReadyAvail",
     tone: "warn",
-    label: `Unit not ready · avail ${shortDayLabel(availMs)}`,
+    labelKey: "unitNotReadyAvail",
+    labelParams: { dateMs: availMs },
   };
 }
 
@@ -511,7 +502,16 @@ export interface PipelineRowFlag {
   key: string;
   /** bad = red, warn = amber, info = blue (a fact, not a fault). */
   tone: "bad" | "warn" | "info";
-  label: string;
+  /**
+   * i18n key under `leasing.flags`, with the values the phrase interpolates.
+   *
+   * The engine returns a KEY, never a sentence. It used to spell each label in
+   * English and the row then re-derived the same numbers to feed the catalog,
+   * so every flag's parameters were computed twice, in two files, free to
+   * drift. A key plus its params is computed once, here, where the rule lives.
+   */
+  labelKey: string;
+  labelParams?: Record<string, unknown>;
 }
 
 /**
@@ -536,35 +536,47 @@ export function pipelineRowFlags(row: PipelineRow, nowMs: number): PipelineRowFl
     flags.push({
       key: "overdue",
       tone: "bad",
-      label: `Overdue ${calendarDaysBetween(row.moveInMs, today)}d`,
+      labelKey: "overdue",
+      labelParams: { days: calendarDaysBetween(row.moveInMs, today) },
     });
   }
 
   // A voided signature means the executed lease was pulled back — the tracker
   // draws the Signed node slashed, and the flag says why in words.
   if (parseDay(row.lease.leaseVoidedDate) !== null) {
-    flags.push({ key: "voided", tone: "bad", label: "Signature voided" });
+    flags.push({ key: "voided", tone: "bad", labelKey: "voided" });
   }
 
   if (row.noMovementDays !== null && row.noMovementDays >= PIPELINE_STALE_WARN_DAYS) {
     flags.push({
       key: "noMovement",
       tone: row.noMovementDays >= PIPELINE_STALE_BAD_DAYS ? "bad" : "warn",
-      label: `No movement ${row.noMovementDays}d`,
+      labelKey: "noMovement",
+      labelParams: { days: row.noMovementDays },
     });
   }
 
   // Missing entirely — never "a $0 deposit", which is a number nobody entered.
   if (row.depositAmount === null) {
-    flags.push({ key: "noDeposit", tone: "warn", label: "No deposit" });
+    flags.push({ key: "noDeposit", tone: "warn", labelKey: "noDeposit" });
   }
 
   if (row.unitObstacle !== null) {
-    flags.push({ key: "unitObstacle", tone: row.unitObstacle.tone, label: row.unitObstacle.label });
+    flags.push({
+      key: "unitObstacle",
+      tone: row.unitObstacle.tone,
+      labelKey: row.unitObstacle.labelKey,
+      labelParams: row.unitObstacle.labelParams,
+    });
   }
 
   if (row.moveInSlips >= PIPELINE_SLIP_FLAG_COUNT) {
-    flags.push({ key: "dateMoved", tone: "info", label: `Date moved ${row.moveInSlips}×` });
+    flags.push({
+      key: "dateMoved",
+      tone: "info",
+      labelKey: "dateMoved",
+      labelParams: { times: row.moveInSlips },
+    });
   }
 
   return flags;

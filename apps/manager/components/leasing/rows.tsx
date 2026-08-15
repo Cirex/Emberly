@@ -212,51 +212,26 @@ const FLAG_COLOR: Record<PipelineRowFlag["tone"], string> = {
 };
 
 /**
- * The flag in the manager's language. `pipelineRowFlags` owns every RULE about
- * which flags fire — this only re-words them: the engine is locale-free by
- * design and spells its labels in English, so the row translates by the flag's
- * key and re-reads the SAME numbers off the row the engine was handed. Nothing
- * is recomputed except the overdue day count, which is a subtraction, not a
- * rule.
+ * The flag in the manager's language.
  *
- * `flag.label` is the fallback, so a flag this catalog has no key for still
- * reaches the screen in English rather than vanishing.
+ * One line, because `pipelineRowFlags` now returns an i18n key and the values
+ * it interpolates. This used to be a switch that re-derived each flag's
+ * numbers from the row — the same day counts the engine had just computed —
+ * which meant every flag's parameters existed in two files and could drift.
+ *
+ * The one thing the engine cannot hand over ready-made is a formatted date: it
+ * has no locale, so `unitNotReadyAvail` carries `dateMs` and the date is
+ * spelled here, in the reader's locale.
  */
 function flagLabel(
   flag: PipelineRowFlag,
-  row: PipelineRow,
-  todayMs: number,
   t: (k: string, o?: Record<string, unknown>) => string,
 ): string {
-  switch (flag.key) {
-    case "overdue":
-      return row.moveInMs === null
-        ? flag.label
-        : t("leasing.flags.overdue", { days: calendarDaysBetween(row.moveInMs, todayMs) });
-    case "voided":
-      return t("leasing.flags.voided");
-    case "noMovement":
-      return row.noMovementDays === null
-        ? flag.label
-        : t("leasing.flags.noMovement", { days: row.noMovementDays });
-    case "noDeposit":
-      return t("leasing.flags.noDeposit");
-    case "dateMoved":
-      return t("leasing.flags.dateMoved", { times: row.moveInSlips });
-    case "unitObstacle": {
-      // The engine tags WHICH obstacle; the date is re-formatted here from the
-      // same `dateAvailableMs` the engine parsed, so it lands in the reader's
-      // locale instead of the engine's "Aug 31".
-      const obstacle = row.unitObstacle;
-      if (obstacle === null) return flag.label;
-      if (obstacle.kind === "occupied") return t("leasing.flags.unitOccupied");
-      if (obstacle.kind === "notReady" || row.dateAvailableMs === null)
-        return t("leasing.flags.unitNotReady");
-      return t("leasing.flags.unitNotReadyAvail", { date: formatDay(row.dateAvailableMs) });
-    }
-    default:
-      return flag.label;
+  const params = flag.labelParams;
+  if (params !== undefined && typeof params.dateMs === "number") {
+    return t(`leasing.flags.${flag.labelKey}`, { ...params, date: formatDay(params.dateMs) });
   }
+  return t(`leasing.flags.${flag.labelKey}`, params);
 }
 
 export function PipelineRowView({
@@ -413,7 +388,7 @@ export function PipelineRowView({
               numberOfLines={1}
               style={{ fontSize: 10.5, fontWeight: "800", color: FLAG_COLOR[flag.tone] }}
             >
-              {flagLabel(flag, row, today, t)}
+              {flagLabel(flag, t)}
             </Text>
           </View>
         ))}

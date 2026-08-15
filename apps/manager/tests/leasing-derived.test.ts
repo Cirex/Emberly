@@ -638,17 +638,22 @@ describe("pipeline row exceptions", () => {
     expect(
       rowFor({ status: "Pending", startDate: day(10) }, withUnit({ occupied: true, occupancy_status: "Occupied" }))
         .unitObstacle,
-    ).toEqual({ kind: "occupied", tone: "bad", label: "Unit occupied" });
+    ).toEqual({ kind: "occupied", tone: "bad", labelKey: "unitOccupied" });
     expect(
       rowFor({ status: "Pending", startDate: day(10) }, withUnit({ occupancy_status: "Vacant", availability: "Not Ready" }))
         .unitObstacle,
-    ).toEqual({ kind: "notReady", tone: "bad", label: "Unit not ready" });
+    ).toEqual({ kind: "notReady", tone: "bad", labelKey: "unitNotReady" });
     expect(
       rowFor(
         { status: "Pending", startDate: day(10) },
         withUnit({ occupancy_status: "Vacant", availability: "Not Ready", date_available: day(41) }),
       ).unitObstacle,
-    ).toEqual({ kind: "notReadyAvail", tone: "warn", label: "Unit not ready · avail Aug 31" });
+    ).toEqual({
+      kind: "notReadyAvail",
+      tone: "warn",
+      labelKey: "unitNotReadyAvail",
+      labelParams: { dateMs: parseDay(day(41)) },
+    });
     // Vacant and ready: 41 of the 47 applications, and nothing to report.
     expect(rowFor({ status: "Pending", startDate: day(10) }).unitObstacle).toBeNull();
     // A unit the mirror does not have invents nothing.
@@ -681,11 +686,11 @@ describe("pipeline row exceptions", () => {
       "overdue", "voided", "noMovement", "noDeposit", "unitObstacle", "dateMoved",
     ]);
     // The desired move-in was six days ago and nobody has arrived.
-    expect(flags[0]).toEqual({ key: "overdue", tone: "bad", label: "Overdue 6d" });
-    expect(flags[1].label).toBe("Signature voided");
-    expect(flags[2]).toEqual({ key: "noMovement", tone: "bad", label: "No movement 50d" });
-    expect(flags[3]).toEqual({ key: "noDeposit", tone: "warn", label: "No deposit" });
-    expect(flags[5]).toEqual({ key: "dateMoved", tone: "info", label: "Date moved 6×" });
+    expect(flags[0]).toEqual({ key: "overdue", tone: "bad", labelKey: "overdue", labelParams: { days: 6 } });
+    expect(flags[1]).toEqual({ key: "voided", tone: "bad", labelKey: "voided" });
+    expect(flags[2]).toEqual({ key: "noMovement", tone: "bad", labelKey: "noMovement", labelParams: { days: 50 } });
+    expect(flags[3]).toEqual({ key: "noDeposit", tone: "warn", labelKey: "noDeposit" });
+    expect(flags[5]).toEqual({ key: "dateMoved", tone: "info", labelKey: "dateMoved", labelParams: { times: 6 } });
   });
 
   test("no-movement is amber from three weeks, red from six, silent before", () => {
@@ -693,7 +698,7 @@ describe("pipeline row exceptions", () => {
       pipelineRowFlags(rowFor({ status: "Pending", applicationDate: day(age), startDate: day(20) }), NOW);
     const stale = (age: number) => flagsAt(age).find((f) => f.key === "noMovement") ?? null;
     expect(stale(-20)).toBeNull();
-    expect(stale(-21)).toEqual({ key: "noMovement", tone: "warn", label: "No movement 21d" });
+    expect(stale(-21)).toEqual({ key: "noMovement", tone: "warn", labelKey: "noMovement", labelParams: { days: 21 } });
     expect(stale(-44)?.tone).toBe("warn");
     expect(stale(-45)?.tone).toBe("bad");
   });

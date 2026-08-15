@@ -560,6 +560,21 @@ export const ALWAYS_FULL_SCRAPE_STATUSES = [
   "notice",
   "eviction",
   "month to month",
+  // An application IN FLIGHT belongs here too. It is not a settled record: the
+  // desired move-in moves (80% of applications on this property have already
+  // pushed theirs, median 39 days), the approval lands, the signature package
+  // goes out, gets signed or gets voided — and an application captured once
+  // and then frozen reports the state it had on the day it was first seen.
+  //
+  // It also cost us the repair path: because these were skipped after one
+  // capture, the 40 leases the skeleton write blanked could never heal
+  // themselves. An application is re-read every run until it moves in
+  // (Current) or dies (Denied / Cancelled), at which point the statuses below
+  // take over.
+  "pending",
+  "approved",
+  "applicant",
+  "prospect",
 ];
 
 /** The PostgREST `or=` expression selecting leases worth reading at all. */
@@ -574,27 +589,22 @@ export function qualifyingLeaseOrFilter(): string {
 }
 
 /**
- * Statuses for an application that NEVER became a tenancy. Once captured they
- * are finished — there is no ledger that can move, because no rent was ever
- * charged against them — so they are skipped entirely on later runs.
+ * Statuses for an application that is DEAD — it never became a tenancy and
+ * never will. Once captured they are finished: there is no ledger that can
+ * move, because no rent was ever charged against them, so they are skipped
+ * entirely on later runs.
  *
- * Contrast the ended-tenancy statuses (Former, Evicted, Renewed…), which do
+ * Only the two terminal outcomes are here. A live application (Pending,
+ * Approved, Applicant, Prospect) is re-read every run instead — see
+ * ALWAYS_FULL_SCRAPE_STATUSES — because it keeps changing right up until the
+ * resident moves in or the application is turned down.
+ *
+ * Contrast the ended-TENANCY statuses (Former, Evicted, Renewed…), which do
  * keep a moving ledger: collections, write-offs and final-account activity
  * continue for months after the resident has gone. Those fall through to the
  * ledger tier.
- *
- * ORDER MATTERS: "Pending Renewal" contains "pending", so this list is only
- * consulted AFTER ALWAYS_FULL_SCRAPE_STATUSES has had its say. A renewal is a
- * live negotiation, not a dead application.
  */
-export const NO_LEDGER_STATUSES = [
-  "pending",
-  "denied",
-  "cancel",
-  "approved",
-  "applicant",
-  "prospect",
-];
+export const NO_LEDGER_STATUSES = ["denied", "cancel"];
 
 export type LeaseScrapeTier = "full" | "ledger" | "skip";
 
@@ -604,7 +614,7 @@ export type LeaseScrapeTier = "full" | "ledger" | "skip";
  * `full`   — never deep-captured (nothing is known beyond the shallow
  *            skeleton), or somebody still lives in the unit so the fields move.
  * `ledger` — captured, tenancy ended: the money still moves, nothing else does.
- * `skip`   — captured, and it was an application that never became a tenancy.
+ * `skip`   — captured, and the application was turned down or cancelled.
  *            Finished. No further requests, ever.
  *
  * The `deep_synced_at === null` check comes first and has no status condition,

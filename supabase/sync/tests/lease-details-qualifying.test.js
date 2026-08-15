@@ -109,11 +109,17 @@ test("statuses where someone still lives in the unit stay FULL on every run", ()
     );
   }
   assert.deepEqual(ALWAYS_FULL_SCRAPE_STATUSES, [
+    // Live residencies…
     "current",
     "pending renewal",
     "notice",
     "eviction",
     "month to month",
+    // …and live applications, which change until they move in or are denied.
+    "pending",
+    "approved",
+    "applicant",
+    "prospect",
   ]);
 });
 
@@ -140,26 +146,61 @@ test("an ENDED TENANCY drops to ledger-only — the money still moves", () => {
   }
 });
 
-test("a FINISHED APPLICATION is skipped entirely — no tenancy, so no ledger", () => {
-  // These never became a tenancy, so no rent was ever charged against them and
-  // there is no ledger that can move. Once captured they cost zero requests.
-  for (const status of ["Pending", "Denied", "Cancelled", "Approved", "Applicant", "Prospect"]) {
+/**
+ * A LIVE APPLICATION IS RE-READ EVERY RUN, until it moves in or is turned down.
+ *
+ * It was captured once and then frozen, which meant the board reported the
+ * state the application had on the day it was first seen. That is wrong for
+ * exactly the fields a leasing manager watches: 80% of applications on this
+ * property have already moved their desired move-in (median 39 days later),
+ * approvals land, signature packages go out, get signed, or get voided.
+ *
+ * It also removed the only repair path. When the skeleton write blanked the
+ * leasing agent and dates on 40 applications, the deep pass would not look at
+ * them again — because they were already `deep_synced_at` — so the damage was
+ * permanent until a manual re-queue.
+ */
+test("a LIVE application is re-read every run — it is not a settled record", () => {
+  const CAPTURED = "2026-08-01T00:00:00Z";
+  for (const status of ["Pending", "Approved", "Applicant", "Prospect"]) {
     assert.equal(
-      leaseScrapeTier({ status, deep_synced_at: "2026-08-01T00:00:00Z" }),
-      "skip",
-      `${status} must be finished after one capture`,
+      leaseScrapeTier({ status, deep_synced_at: CAPTURED }),
+      "full",
+      `${status} keeps changing until move-in or denial`,
     );
   }
 });
 
-test("'Pending Renewal' is a live negotiation, NOT a finished application", () => {
-  // The ordering trap: "Pending Renewal" contains "pending", which is a
-  // NO_LEDGER_STATUSES key. ALWAYS_FULL must be consulted first or every
-  // renewal on the property silently stops being read.
+test("a DEAD application is skipped entirely — no tenancy, so no ledger", () => {
+  // Only the two terminal outcomes. These never became a tenancy, so no rent
+  // was ever charged against them and there is no ledger that can move.
+  for (const status of ["Denied", "Cancelled"]) {
+    assert.equal(
+      leaseScrapeTier({ status, deep_synced_at: "2026-08-01T00:00:00Z" }),
+      "skip",
+      `${status} is finished`,
+    );
+  }
+  assert.deepEqual([...NO_LEDGER_STATUSES].sort(), ["cancel", "denied"]);
+});
+
+test("the application lifecycle: read every run, then stop at the outcome", () => {
+  const CAPTURED = "2026-08-01T00:00:00Z";
+  // Applied, still in flight — read every run…
+  assert.equal(leaseScrapeTier({ status: "Pending", deep_synced_at: CAPTURED }), "full");
+  assert.equal(leaseScrapeTier({ status: "Approved", deep_synced_at: CAPTURED }), "full");
+  // …then one of the two endings.
+  assert.equal(leaseScrapeTier({ status: "Current", deep_synced_at: CAPTURED }), "full", "moved in");
+  assert.equal(leaseScrapeTier({ status: "Denied", deep_synced_at: CAPTURED }), "skip", "turned down");
+});
+
+test("'Pending Renewal' is a live negotiation and stays full", () => {
+  // The old ordering trap — "Pending Renewal" contains "pending" — is now
+  // harmless, since both are full. Pinned anyway: if "pending" ever moves back
+  // to the skip list, renewals must not be caught by it.
   const CAPTURED = "2026-08-01T00:00:00Z";
   assert.equal(leaseScrapeTier({ status: "Pending Renewal", deep_synced_at: CAPTURED }), "full");
-  assert.equal(leaseScrapeTier({ status: "Pending", deep_synced_at: CAPTURED }), "skip");
-  assert.ok(NO_LEDGER_STATUSES.includes("pending"), "the overlapping key really is there");
+  assert.equal(NO_LEDGER_STATUSES.includes("pending"), false, "no longer a skip key");
 });
 
 test("a Former lease: exactly ONE full scrape, then ledger forever", () => {

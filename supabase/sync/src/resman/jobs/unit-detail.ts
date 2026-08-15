@@ -354,6 +354,11 @@ export async function syncUnitDetails(params: SyncUnitDetailsParams): Promise<Sy
     // null here is safe precisely because this pass is the sole writer.
     unitRows.push({
       resman_unit_id: unitId,
+      // Required even though every unit already exists. `upsert` is
+      // INSERT ... ON CONFLICT DO UPDATE, and Postgres builds the insert tuple
+      // BEFORE it resolves the conflict — so a NOT NULL column with no default
+      // fails the whole chunk on a row that was only ever going to update.
+      resman_property_id: propertyId,
       resman_floorplan_id: floorplanId.length > 0 ? floorplanId : null,
       pets_permitted: boolOrNull(data["petsPermitted"]),
       affordable_unit: boolOrNull(data["affordableUnit"]),

@@ -67,6 +67,30 @@ test("the unit-details job writes the four unit columns only its scrape can see"
   assert.match(body, /upsertMirror\(supabase, "resman_units", unitRows/);
 });
 
+test("the enrichment row carries every NOT NULL column that has no default", () => {
+  // `upsert` is INSERT ... ON CONFLICT DO UPDATE, and Postgres builds the
+  // insert tuple BEFORE resolving the conflict. So a partial-column upsert
+  // against rows that all already exist still has to satisfy every NOT NULL
+  // constraint that has no default — omitting resman_property_id failed all
+  // 391 rows of a chunk and aborted the run after 891 clean scrapes.
+  const required = [];
+  const table = /create table if not exists public\.resman_units \(([\s\S]*?)\n\);/.exec(
+    fs.readFileSync(SCHEMA, "utf8"),
+  );
+  assert.ok(table, "resman_units must be in schema.sql");
+  for (const line of table[1].split("\n")) {
+    const column = /^\s*(\w+)\s+[\w()]+.*\bnot null\b/.exec(line);
+    if (column && !/\bdefault\b/.test(line)) required.push(column[1]);
+  }
+  assert.ok(required.length > 0, "the scan must actually find constraints");
+
+  const literal = /unitRows\.push\(\{([\s\S]*?)\}\);/.exec(jobBody("syncUnitDetails"));
+  assert.ok(literal);
+  for (const column of required) {
+    assert.match(literal[1], new RegExp(`\\b${column}:`), `${column} is NOT NULL with no default`);
+  }
+});
+
 test("the unit upsert never deletes — the roster job owns which units exist", () => {
   // This pass sees only the units it managed to scrape. A delete-missing here
   // would remove every unit a partial run skipped.

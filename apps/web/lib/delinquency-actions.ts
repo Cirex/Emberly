@@ -106,20 +106,56 @@ export function delinquencyActionPayload(row: DelinquencyActionSelect): Delinque
   };
 }
 
+/**
+ * How many unit ids may ride in one `.in(...)` filter.
+ *
+ * PostgREST takes its filters in the query string, so an `.in()` list is spent
+ * URL budget: a UUID plus its separator is ~37 characters, and the server
+ * rejects a request line past ~8KB with a bare `414 Request URI Too Long`.
+ *
+ * This is not hypothetical. The board qualifies every unit that owes money or
+ * carries a collections note — 234 of them on this property — which built a
+ * 9,380-character URL, 414'd, and took the whole delinquency endpoint down
+ * with a 500. The failure was load-dependent and silent: it worked until
+ * delinquency grew past ~200 units, then the Money board simply went blank.
+ *
+ * 150 keeps the longest request near 5.5KB with generous headroom for the
+ * select list and the other filters. `units/details` learned the same lesson
+ * the other way, by reading whole tables instead of building `.in()` lists.
+ */
+export const ACTION_UNIT_ID_CHUNK = 150;
+
 /** Non-deleted actions for the given units, newest first. */
 export async function listDelinquencyActionsForUnits(
   client: UntypedSupabase,
   unitIds: readonly string[],
 ): Promise<DelinquencyActionPayload[]> {
   if (unitIds.length === 0) return [];
-  const { data, error } = await client
-    .from("delinquency_actions")
-    .select(DELINQUENCY_ACTION_COLUMNS)
-    .in("resman_unit_id", unitIds as string[])
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false });
-  if (error) throw new Error(error.message);
-  return ((data ?? []) as DelinquencyActionSelect[]).map(delinquencyActionPayload);
+
+  const chunks: string[][] = [];
+  for (let i = 0; i < unitIds.length; i += ACTION_UNIT_ID_CHUNK) {
+    chunks.push(unitIds.slice(i, i + ACTION_UNIT_ID_CHUNK) as string[]);
+  }
+
+  const batches = await Promise.all(
+    chunks.map(async (ids) => {
+      const { data, error } = await client
+        .from("delinquency_actions")
+        .select(DELINQUENCY_ACTION_COLUMNS)
+        .in("resman_unit_id", ids)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return (data ?? []) as DelinquencyActionSelect[];
+    }),
+  );
+
+  // Each chunk is sorted; the concatenation is not. Re-sort so the caller
+  // still gets one newest-first timeline across every unit.
+  return batches
+    .flat()
+    .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""))
+    .map(delinquencyActionPayload);
 }
 
 export interface DelinquencyActionInput {

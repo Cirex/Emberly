@@ -501,7 +501,13 @@ test("GET leases returns the 24-month window as camelCase DTOs", async () => {
 
   const [op] = operations;
   assert.deepEqual(op.filters, [["or", recentLeaseOrFilter(monthsAgoIsoDate(Date.now(), 24))]]);
-  assert.deepEqual(op.orderBy, [["start_date", { ascending: false }]]);
+  // start_date is NOT unique, and the read is paged. Offset paging over a
+  // non-total order can drop a row from one page and repeat it on the next, so
+  // the lease id rides along as a tiebreak to make the sort total.
+  assert.deepEqual(op.orderBy, [
+    ["start_date", { ascending: false }],
+    ["resman_lease_id", { ascending: true }],
+  ]);
 });
 
 // --- GET /manager/delinquency ---------------------------------------------

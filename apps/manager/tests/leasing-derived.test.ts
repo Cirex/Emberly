@@ -257,6 +257,73 @@ describe("pipeline", () => {
     expect(rows[1].imminent).toBe(false);
   });
 
+  /**
+   * "Moved in" and "pending move-in" are different states and the board must
+   * not blend them.
+   *
+   * `imminent` was |days| <= 7, so a resident who already had their keys read
+   * as "moving in this week". Takierya Moss in 1818 VI-2 moved in on
+   * 2026-08-08 and was still sitting in the hot arrivals band a week later,
+   * beside households who had not arrived at all.
+   */
+  test("a past move-in is NOT imminent — it has already happened", () => {
+    const [row] = buildPipelineRows(
+      [lease({ unitNumber: "0212", status: "Current", signedDate: day(-8), moveInDate: day(-7) })],
+      units,
+      NOW,
+    );
+    expect(row.stage).toBe("movedIn");
+    expect(row.imminent).toBe(false);
+  });
+
+  test("a move-in dated TODAY counts as moved in, not as an upcoming arrival", () => {
+    // The keys are handed over; there is nothing left to prepare for.
+    const [row] = buildPipelineRows(
+      [lease({ unitNumber: "0212", status: "Current", signedDate: day(-2), moveInDate: day(0) })],
+      units,
+      NOW,
+    );
+    expect(row.stage).toBe("movedIn");
+    expect(row.imminent).toBe(false);
+  });
+
+  test("only upcoming move-ins inside the window are imminent", () => {
+    const rows = buildPipelineRows(
+      [
+        lease({ unitNumber: "0212", status: "Pending", signedDate: day(-3), moveInDate: day(1) }),
+        lease({ unitNumber: "1114", status: "Pending", signedDate: day(-3), moveInDate: day(7) }),
+        lease({ unitNumber: "3735 CC-8", status: "Pending", signedDate: day(-3), moveInDate: day(8) }),
+      ],
+      units,
+      NOW,
+    );
+    const byUnit = new Map(rows.map((r) => [r.lease.unitNumber, r]));
+    expect(byUnit.get("0212")?.imminent).toBe(true);
+    // The boundary day is still this week; one day past the window is not.
+    expect(byUnit.get("1114")?.imminent).toBe(true);
+    expect(byUnit.get("3735 CC-8")?.imminent).toBe(false);
+  });
+
+  test("the two groups never overlap, so no row can appear in both bands", () => {
+    // The board renders `imminent` and `stage === "movedIn"` as separate
+    // bands and subtracts both from the funnel. If a row could satisfy both,
+    // it would render twice.
+    const rows = buildPipelineRows(
+      [
+        lease({ unitNumber: "0212", status: "Current", moveInDate: day(-3) }),
+        lease({ unitNumber: "1114", status: "Pending", signedDate: day(-1), moveInDate: day(3) }),
+        lease({ unitNumber: "3735 CC-8", status: "Current", moveInDate: day(0) }),
+      ],
+      units,
+      NOW,
+    );
+    for (const row of rows) {
+      expect(row.imminent && row.stage === "movedIn").toBe(false);
+    }
+    expect(rows.filter((r) => r.stage === "movedIn")).toHaveLength(2);
+    expect(rows.filter((r) => r.imminent)).toHaveLength(1);
+  });
+
   test("rows carry unit readiness and the available date; movedIn is trivially ready", () => {
     const readyUnits = unitFactsIndex([
       unit({ number: "3735 CC-8", availability: "Not Ready", date_available: day(6) }),

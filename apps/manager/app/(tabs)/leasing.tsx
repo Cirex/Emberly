@@ -39,6 +39,7 @@ import {
   buildVacancyRows,
   expiringByMonth,
   isAwaitingSignature,
+  PIPELINE_MOVED_IN_KEEP_DAYS,
   PIPELINE_STAGE_ORDER,
   unitFactsOf,
   unitFactsIndex,
@@ -382,8 +383,15 @@ export default function LeasingScreen() {
     // The approved artifact's banding: imminent move-ins pinned on top (hot),
     // then one band per stage, later stages first — a shaped funnel instead of
     // the old flat "in flight" bucket.
+    //
+    // Arrived and not-yet-arrived are kept apart. `imminent` is upcoming-only
+    // and `movedIn` is the stage for anyone already in the unit, so the two
+    // are mutually exclusive: the hot band is strictly "who lands next", and
+    // residents who have their keys sit in their own band below it rather
+    // than padding out this week's arrivals.
     const imminent = visiblePipeline.filter((r) => r.imminent);
-    const rest = visiblePipeline.filter((r) => !r.imminent);
+    const movedIn = visiblePipeline.filter((r) => r.stage === "movedIn");
+    const rest = visiblePipeline.filter((r) => !r.imminent && r.stage !== "movedIn");
     const rowViews = (rows: PipelineRow[]) =>
       rows.map((r, i) => (
         <PipelineRowView
@@ -397,8 +405,9 @@ export default function LeasingScreen() {
     if (visiblePipeline.length === 0) return emptyState;
     return (
       <View style={{ gap: 4 }}>
-        {band(t("leasing.bands.moveInThisWeek", { count: imminent.length }), true, rowViews(imminent), "imminent")}
-        {PIPELINE_STAGE_ORDER.map((stage) => {
+        {band(t("leasing.bands.pendingMoveIn", { count: imminent.length }), true, rowViews(imminent), "imminent")}
+        {band(t("leasing.bands.movedIn", { count: movedIn.length, keepDays: PIPELINE_MOVED_IN_KEEP_DAYS }), false, rowViews(movedIn), "movedIn")}
+        {PIPELINE_STAGE_ORDER.filter((stage) => stage !== "movedIn").map((stage) => {
           const rows = rest.filter((r) => r.stage === stage);
           return band(
             `${t(`leasing.stages.${stage}`)} · ${rows.length}`,

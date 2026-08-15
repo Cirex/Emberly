@@ -188,7 +188,7 @@ export const PIPELINE_STAGE_ORDER: readonly PipelineStage[] = [
   "movedIn", "signed", "leaseSent", "approved", "screening", "application",
 ];
 
-/** A move-in within this many days (either side of today) is "this week". */
+/** A move-in this many days AHEAD is "this week". Past arrivals are not. */
 export const PIPELINE_IMMINENT_DAYS = 7;
 /** Freshly moved-in leases stay on the board this many days. */
 export const PIPELINE_MOVED_IN_KEEP_DAYS = 7;
@@ -248,7 +248,7 @@ export interface PipelineRow {
   tenantName: string;
   classification: string;
   moveInMs: number | null;
-  /** Move-in within ±PIPELINE_IMMINENT_DAYS of today (the top band). */
+  /** Move-in is UPCOMING and within PIPELINE_IMMINENT_DAYS (the top band). */
   imminent: boolean;
   /** Unit availability from the mirror (isReadyAvailability). */
   ready: boolean;
@@ -275,8 +275,16 @@ export function buildPipelineRows(
       tenantName: primaryTenantName(facts),
       classification: facts?.classification ?? "",
       moveInMs,
+      // UPCOMING arrivals only. This was |days| <= 7, which counted a resident
+      // who moved in six days ago as "moving in this week" — so the hot band,
+      // the This-week chip and the Move-ins-this-week metric all mixed people
+      // who had already arrived in with people who had not. A move-in dated
+      // today is not imminent either: it has happened, so it belongs to the
+      // moved-in band.
       imminent:
-        moveInMs !== null && Math.abs(calendarDaysBetween(moveInMs, today)) <= PIPELINE_IMMINENT_DAYS,
+        moveInMs !== null &&
+        calendarDaysBetween(today, moveInMs) > 0 &&
+        calendarDaysBetween(today, moveInMs) <= PIPELINE_IMMINENT_DAYS,
       // A unit the household already occupies is trivially "ready" for them —
       // the readiness question only bites before move-in.
       ready: stage === "movedIn" ? true : (facts?.ready ?? true),

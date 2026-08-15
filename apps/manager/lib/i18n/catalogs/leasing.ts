@@ -145,7 +145,8 @@ const en = {
       raw: "Raw ResMan",
     },
     bands: {
-      moveInThisWeek: "Move-in this week · {{count}}",
+      pendingMoveIn: "Pending move-in · this week · {{count}}",
+      movedIn: "Moved in · last {{keepDays}} days · {{count}}",
       inFlight: "In flight · {{count}}",
       expires30: "Expires ≤ 30 days · {{count}}",
       expiresLater: "31–90 days · {{count}}",
@@ -509,7 +510,8 @@ const es: typeof en = {
       raw: "ResMan sin procesar",
     },
     bands: {
-      moveInThisWeek: "Entrada esta semana · {{count}}",
+      pendingMoveIn: "Entrada pendiente · esta semana · {{count}}",
+      movedIn: "Ya entraron · últimos {{keepDays}} días · {{count}}",
       inFlight: "En proceso · {{count}}",
       expires30: "Vence ≤ 30 días · {{count}}",
       expiresLater: "31–90 días · {{count}}",

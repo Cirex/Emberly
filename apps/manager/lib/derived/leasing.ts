@@ -225,12 +225,29 @@ export function pipelineStageOf(lease: ManagerLease, nowMs: number): PipelineSta
     ms !== null && ms <= today && calendarDaysBetween(ms, today) <= PIPELINE_ACTIVITY_DAYS;
   // A pipeline STATUS on its own is not an application. ResMan carries bare
   // "Pending" lease stubs with no application date, no agent, no move-in and no
-  // approval status — 47 of them on this property — and admitting them on the
-  // status string alone filled the board with rows that could never answer
-  // "who is this, who owns it, when do they land". Qualification now needs
-  // real evidence: a date the sync fills, or an approval the screener set.
+  // approval status, and admitting them on the status string alone filled the
+  // board with rows that could never answer "who is this, who owns it, when do
+  // they land". Qualification needs real evidence: a date the sync fills, or an
+  // approval the screener set.
+  //
+  // A dated lease START is exactly that evidence, and leaving it out was the
+  // rule's own blind spot: it answers "when do they land" better than anything
+  // else on a not-yet-moved-in lease. All 42 Pending leases on this property
+  // carry a start date (39 of them upcoming, out to 2026-12-31) while only 2
+  // carry an application date, because the shallow pass reads the start date
+  // off the lease-history table and the deep pass fills the rest later. So the
+  // board showed 16 rows against 56 real ones, and the 40 it dropped were the
+  // upcoming move-ins — the most actionable rows on the page.
+  //
+  // A past start with no move-in still qualifies while it is recent: that is a
+  // lease that should have commenced and did not, which is worth seeing, not
+  // hiding.
+  const startMs = parseDay(lease.startDate);
+  const upcomingStart = startMs !== null && startMs >= today;
   const qualifies =
     inMs !== null ||
+    upcomingStart ||
+    recentActivity(startMs) ||
     recentActivity(signedMs) ||
     recentActivity(appliedMs) ||
     (isPipelineStatus(lease.status) &&

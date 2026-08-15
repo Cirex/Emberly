@@ -239,6 +239,81 @@ describe("pipeline", () => {
     expect(pipelineStageOf(lease({ status: "Pending", approvalStatus: "Screening" }), NOW)).toBe("screening");
   });
 
+  /**
+   * A dated lease START is evidence of a real application.
+   *
+   * The bare-stub rule required a move-in date, a recent application/signing,
+   * or an approval status — and left out the start date, which is the one
+   * date a Pending lease reliably has. The shallow pass reads it off the
+   * lease-history table; the deep pass fills applicant name, agent and
+   * application date later. Measured on this property: all 42 Pending leases
+   * carry a start date and only 2 carry an application date, so the board
+   * showed 16 rows against 56 real ones — and every row it dropped was an
+   * upcoming move-in, the most actionable kind.
+   */
+  test("a Pending lease with only an upcoming start date is a real application", () => {
+    const stage = pipelineStageOf(
+      lease({
+        status: "Pending",
+        approvalStatus: "",
+        applicationDate: null,
+        signedDate: null,
+        startDate: day(12),
+        moveInDate: null,
+      }),
+      NOW,
+    );
+    expect(stage).toBe("application");
+  });
+
+  test("it still lands in the upcoming bands, dated by its start", () => {
+    // buildPipelineRows falls back to startDate for the move-in date, so these
+    // rows carry a real date and band like any other arrival.
+    const rows = buildPipelineRows(
+      [
+        lease({ unitNumber: "0212", status: "Pending", applicationDate: null, startDate: day(3), moveInDate: null }),
+        lease({ unitNumber: "1114", status: "Pending", applicationDate: null, startDate: day(10), moveInDate: null }),
+      ],
+      units,
+      NOW,
+    );
+    const byUnit = new Map(rows.map((r) => [r.lease.unitNumber, r]));
+    expect(byUnit.get("0212")?.imminent).toBe(true);
+    expect(byUnit.get("1114")?.nextWeek).toBe(true);
+  });
+
+  test("a recently-lapsed start with no move-in still shows — it is overdue, not gone", () => {
+    const stage = pipelineStageOf(
+      lease({ status: "Pending", approvalStatus: "", applicationDate: null, signedDate: null, startDate: day(-10), moveInDate: null }),
+      NOW,
+    );
+    expect(stage).toBe("application");
+  });
+
+  test("a truly bare stub is still kept off the board", () => {
+    // The protection the rule exists for: no dates at all, nothing to act on.
+    const stage = pipelineStageOf(
+      lease({
+        status: "Pending",
+        approvalStatus: "",
+        applicationDate: null,
+        signedDate: null,
+        startDate: null,
+        moveInDate: null,
+      }),
+      NOW,
+    );
+    expect(stage).toBeNull();
+  });
+
+  test("a long-dead start date does not resurrect a stub", () => {
+    const stage = pipelineStageOf(
+      lease({ status: "Pending", approvalStatus: "", applicationDate: null, signedDate: null, startDate: day(-400), moveInDate: null }),
+      NOW,
+    );
+    expect(stage).toBeNull();
+  });
+
   test("rows join tenants, band imminent move-ins first, sort by stage then date", () => {
     const rows = buildPipelineRows(
       [

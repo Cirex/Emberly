@@ -351,8 +351,7 @@ export interface TrackerStep {
    * skip  — passed WITHOUT ResMan recording it (dashed ring in the mockup).
    */
   state: "done" | "now" | "todo" | "skip";
-  /** The date the stage happened / is scheduled, when the mirror has one.
-   *  Approval carries no date column in ResMan — always null. */
+  /** The date the stage happened / is scheduled, when the mirror has one. */
   dateMs: number | null;
 }
 
@@ -384,7 +383,10 @@ export function pipelineTrackerSteps(row: PipelineRow): TrackerStep[] {
 
   const dates: Record<TrackerStepKey, number | null> = {
     applied: parseDay(lease.applicationDate),
-    approved: null,
+    // The approval date comes from ResMan's Activity Log — there is no
+    // approval-date field on any page — so it is present only once the deep
+    // scrape has read it, and null before that rather than fabricated.
+    approved: parseDay(lease.approvedDate ?? null),
     signed: parseDay(lease.signedDate),
     moveIn: row.moveInMs,
   };

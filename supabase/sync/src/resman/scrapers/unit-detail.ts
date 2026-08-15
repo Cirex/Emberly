@@ -147,6 +147,21 @@ export function isTerminalLeaseStatus(status: string): boolean {
 }
 
 /**
+ * A lease that is still an APPLICATION — the states the leasing Pipeline
+ * shows. Used to decide which leases are worth the extra Activity Log request
+ * that carries the approval date.
+ *
+ * "Pending Renewal" is excluded on purpose: a renewing resident never applied,
+ * so there is no approval to find and the request would be wasted.
+ */
+const APPLICATION_LEASE_STATUS_PREFIXES = ["pending", "approved", "applicant", "prospect"];
+export function isApplicationLeaseStatus(status: string): boolean {
+  const s = status.trim().toLowerCase();
+  if (s.includes("renewal")) return false;
+  return APPLICATION_LEASE_STATUS_PREFIXES.some((prefix) => s.startsWith(prefix));
+}
+
+/**
  * Scrape a single unit's detail page + lease history into the unit dict.
  * Port of `ResManUnitDetailScraper.scrapeUnit`.
  *
@@ -389,6 +404,18 @@ export async function scrapeLease(
     "moveInDate",
     normalizeDate(fields["Move-in date"] ?? labelForValue("MoveInDate", primaryHTML)),
   );
+  // The approval DATE, from the Activity Log — one extra request, and only
+  // for a lease that could still be an application. A settled residency's
+  // approval is history the Pipeline never shows, and spending a request per
+  // lease on all ~640 full-tier leases to fetch it would be most of a sync.
+  if (isApplicationLeaseStatus(String(lease.status ?? ""))) {
+    const approval = await scrapeLeaseApproval(leaseRow.leaseID, http);
+    if (approval !== null) {
+      lease.approvedDate = approval.date;
+      if (approval.by.length > 0) lease.approvedBy = approval.by;
+    }
+  }
+
   // `renewalDate` is NOT read: there is no `for="RenewalDate"` node on the
   // page, checked against a Pending Renewal lease. ResMan does not surface it
   // here, so the column stays null rather than pretending.
@@ -1128,6 +1155,57 @@ export function parseVehiclesTab(html: string): Record<string, unknown>[] {
     }
   }
   return out;
+}
+
+/**
+ * The Activity Log line recording that an application was approved, or null
+ * when the log holds none.
+ *
+ * ResMan has no approval-date FIELD anywhere — the resident page carries
+ * "Approval status" (a bare "Approved"/"Denied") with no date beside it, and
+ * the Applications and Screening Results tabs come back empty on this
+ * property. The Activity Log is the only place the moment is recorded:
+ *
+ *   8/14/2026 11:25:33 AM | Resident(s) Ariauna Williams approved for move in
+ *                           to unit 3714 DU-2 | Natalie Pointer
+ *
+ * Verified identical on every approved lease sampled, and absent on an
+ * application that has not been approved yet — so its presence is itself the
+ * approval signal, and a more reliable one than `approval_status`, which is
+ * blank on the shallow skeletons the unit pass writes.
+ *
+ * The log is newest-first; the EARLIEST matching line is taken, because a
+ * lease that was approved, transferred and re-approved should report when it
+ * was first approved rather than the most recent administrative echo.
+ */
+export function parseActivityLogApproval(
+  html: string,
+): { date: string; by: string } | null {
+  let found: { date: string; by: string } | null = null;
+  for (const row of rmsMatches(TR_PATTERN, html)) {
+    if (row.length <= 1) continue;
+    const cells = rmsMatches(TD_TH_PATTERN, row[1])
+      .filter((m) => m.length > 1)
+      .map((m) => trimmedForCell(stripTags(m[1])));
+    if (cells.length < 2) continue;
+    const [timestamp, activity] = cells;
+    // "approved for move in" is the specific event. A bare /approv/ would also
+    // catch "approval status changed" and denial lines that mention approval.
+    if (!/\bapproved for move in\b/i.test(activity)) continue;
+    const date = normalizeDate(timestamp.split(/\s+/)[0] ?? "");
+    if (date === null) continue;
+    found = { date, by: cells.length > 2 ? cells[2] : "" };
+  }
+  return found;
+}
+
+/** Fetch + parse a lease's Activity Log approval line. One extra request. */
+export async function scrapeLeaseApproval(
+  leaseId: string,
+  http: ResManScrapeHttp,
+): Promise<{ date: string; by: string } | null> {
+  const html = await http.getText(`/ActivityLog/ActivityLog?objectID=${leaseId}`);
+  return parseActivityLogApproval(html);
 }
 
 /** Fetch + parse the combined "Employment & Other Income" tab. */

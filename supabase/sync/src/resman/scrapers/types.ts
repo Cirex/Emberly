@@ -96,6 +96,10 @@ export interface ResmanLeaseRow {
   unit_number: string;
   status: string;
   approval_status: string;
+  /** When the application was approved, from the Activity Log. */
+  approved_date: string | null;
+  /** The staff member the Activity Log credits with the approval. */
+  approved_by: string;
   application_date: string | null;
   signed_date: string | null;
   start_date: string | null;

@@ -12,7 +12,7 @@ type LeaseRow = Database["public"]["Tables"]["resman_leases"]["Row"];
 
 /** The resman_leases columns the manager payload carries. */
 export const MANAGER_LEASE_COLUMNS =
-  "resman_lease_id, resman_unit_id, unit_number, status, approval_status, application_date, " +
+  "resman_lease_id, resman_unit_id, unit_number, status, approval_status, approved_date, application_date, " +
   "signed_date, start_date, end_date, move_in_date, move_out_date, leasing_agent, " +
   "market_rent, resident_rent, balance, is_current_lease, is_most_recent_lease";
 
@@ -23,6 +23,7 @@ export type ManagerLeaseRow = Pick<
   | "unit_number"
   | "status"
   | "approval_status"
+  | "approved_date"
   | "application_date"
   | "signed_date"
   | "start_date"
@@ -44,6 +45,7 @@ export interface ManagerLeasePayload {
   unitNumber: string;
   status: string;
   approvalStatus: string;
+  approvedDate: string | null;
   applicationDate: string | null;
   signedDate: string | null;
   startDate: string | null;
@@ -65,6 +67,7 @@ export function managerLeasePayload(row: ManagerLeaseRow): ManagerLeasePayload {
     unitNumber: row.unit_number,
     status: row.status,
     approvalStatus: row.approval_status,
+    approvedDate: row.approved_date,
     applicationDate: row.application_date,
     signedDate: row.signed_date,
     startDate: row.start_date,

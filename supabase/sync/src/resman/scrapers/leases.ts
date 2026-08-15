@@ -209,6 +209,10 @@ export function mapLease(
     unit_number: ctx.unitNumber,
     status: statusStr,
     approval_status: str(leaseData, "approvalStatus"),
+    // From the Activity Log, the only place ResMan records WHEN an application
+    // was approved — there is no approval-date field on any page.
+    approved_date: parseLedgerDate(str(leaseData, "approvedDate")),
+    approved_by: str(leaseData, "approvedBy"),
     application_date: parseLedgerDate(str(leaseData, "applicationDate")),
     signed_date: parseLedgerDate(str(leaseData, "leaseSignedDate")),
     start_date: parseLedgerDate(str(leaseData, "leaseStartDate")),

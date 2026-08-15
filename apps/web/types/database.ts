@@ -1277,6 +1277,8 @@ export interface Database {
           unit_number: string;
           status: string;
           approval_status: string;
+          approved_date: string | null;
+          approved_by: string;
           application_date: string | null;
           signed_date: string | null;
           start_date: string | null;
@@ -1309,6 +1311,8 @@ export interface Database {
           unit_number?: string;
           status?: string;
           approval_status?: string;
+          approved_date?: string | null;
+          approved_by?: string;
           application_date?: string | null;
           signed_date?: string | null;
           start_date?: string | null;
@@ -1341,6 +1345,8 @@ export interface Database {
           unit_number?: string;
           status?: string;
           approval_status?: string;
+          approved_date?: string | null;
+          approved_by?: string;
           application_date?: string | null;
           signed_date?: string | null;
           start_date?: string | null;

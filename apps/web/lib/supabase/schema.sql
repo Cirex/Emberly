@@ -785,6 +785,8 @@ create table if not exists public.resman_leases (
   unit_number text not null default '',
   status text not null default '',                -- raw ResMan status string
   approval_status text not null default '',
+  approved_date date,                             -- from the Activity Log; ResMan has no approval-date field
+  approved_by text not null default '',           -- the staff member the Activity Log credits
   application_date date,
   signed_date date,
   start_date date,

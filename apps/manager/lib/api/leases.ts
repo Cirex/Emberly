@@ -24,6 +24,7 @@ export const ManagerLeaseSchema = z.object({
   unitNumber: z.string().default(""),
   status: z.string().default(""),
   approvalStatus: z.string().default(""),
+  approvedDate: z.string().nullable().optional(),
   /** All dates are "YYYY-MM-DD" or null. */
   applicationDate: str,
   signedDate: str,

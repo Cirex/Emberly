@@ -271,6 +271,14 @@ export interface PipelineRow {
   imminent: boolean;
   /** Move-in lands in the SECOND seven days — after `imminent`, never both. */
   nextWeek: boolean;
+  /**
+   * True when `moveInMs` came from the lease START rather than a recorded
+   * move-in. On an application the start date IS the desired move-in — it is
+   * the date the prospect asked for and the date the unit must be ready by —
+   * but it is a request, not a confirmed arrival, and the board should not
+   * imply otherwise. 40 of the 45 Pending/Approved leases have only this.
+   */
+  moveInIsDesired: boolean;
   /** Unit availability from the mirror (isReadyAvailability). */
   ready: boolean;
   /** Day the unit becomes available when not ready — null when unknown. */
@@ -299,6 +307,7 @@ export function buildPipelineRows(
       tenantName: primaryTenantName(facts),
       classification: facts?.classification ?? "",
       moveInMs,
+      moveInIsDesired: parseDay(lease.moveInDate) === null && moveInMs !== null,
       // UPCOMING arrivals only. This was |days| <= 7, which counted a resident
       // who moved in six days ago as "moving in this week" — so the hot band,
       // the This-week chip and the Move-ins-this-week metric all mixed people
@@ -331,7 +340,7 @@ export function buildPipelineRows(
 
 // ── Pipeline tracker ────────────────────────────────────────────────────────
 
-export type TrackerStepKey = "applied" | "screened" | "approved" | "signed" | "moveIn";
+export type TrackerStepKey = "applied" | "approved" | "signed" | "moveIn";
 
 export interface TrackerStep {
   key: TrackerStepKey;
@@ -339,52 +348,51 @@ export interface TrackerStep {
    * done  — the stage happened;
    * now   — the stage the application is waiting on;
    * todo  — not reached yet;
-   * skip  — passed WITHOUT ResMan recording it (dashed ring in the mockup):
-   *         the application is approved or beyond but no screening status was
-   *         ever observed, so "screened" cannot honestly be a solid check.
+   * skip  — passed WITHOUT ResMan recording it (dashed ring in the mockup).
    */
   state: "done" | "now" | "todo" | "skip";
   /** The date the stage happened / is scheduled, when the mirror has one.
-   *  Screening and approval carry no date column in ResMan — always null. */
+   *  Approval carries no date column in ResMan — always null. */
   dateMs: number | null;
 }
 
 /**
- * The five-step funnel tracker under each pipeline row (approved artifact,
- * frame 01). Derived purely from the row: the stage decides how far the green
- * fill reaches; the dates come from the columns the sync fills reliably.
+ * The funnel tracker under each pipeline row (approved artifact, frame 01).
+ * Derived purely from the row: the stage decides how far the green fill
+ * reaches; the dates come from the columns the sync fills reliably.
+ *
+ * SCREENING IS NOT A STEP. The artifact had one, but ResMan gives us no
+ * source for it: `approval_status` holds only "Approved" (1,041 leases),
+ * "Denied" (113) or nothing at all (101) — no screening, review, processing
+ * or verification value appears anywhere in the mirror. So the step could
+ * never be a solid check and rendered as a permanent "skip" on every row,
+ * which reads as a gap in the process rather than a gap in the data. It comes
+ * back the day there is somewhere real to read it from.
  */
 export function pipelineTrackerSteps(row: PipelineRow): TrackerStep[] {
   const { lease, stage } = row;
-  // How many of the five steps are behind the application, per stage.
+  // How many of the four steps are behind the application, per stage.
   const doneThrough: Record<PipelineStage, number> = {
-    application: 1, // applied happened; screening is next
+    application: 1, // applied happened; approval is next
     screening: 1,
-    approved: 3, // applied + screened + approved; signature is next
-    leaseSent: 3, // lease out ≈ still waiting on the signature
-    signed: 4,
-    movedIn: 5,
+    approved: 2, // applied + approved; signature is next
+    leaseSent: 2, // lease out ≈ still waiting on the signature
+    signed: 3,
+    movedIn: 4,
   };
   const done = doneThrough[stage];
-  const screeningObserved = isScreeningApproval(lease.approvalStatus);
 
   const dates: Record<TrackerStepKey, number | null> = {
     applied: parseDay(lease.applicationDate),
-    screened: null,
     approved: null,
     signed: parseDay(lease.signedDate),
     moveIn: row.moveInMs,
   };
 
-  const keys: TrackerStepKey[] = ["applied", "screened", "approved", "signed", "moveIn"];
+  const keys: TrackerStepKey[] = ["applied", "approved", "signed", "moveIn"];
   return keys.map((key, i) => {
-    if (i < done) {
-      // Screening that was never observed in approval_status is a "skip":
-      // the funnel passed through it but ResMan holds no record.
-      const state = key === "screened" && !screeningObserved ? "skip" : "done";
-      return { key, state, dateMs: dates[key] };
-    }
-    return { key, state: i === done ? "now" : "todo", dateMs: dates[key] };
+    if (i < done) return { key, state: "done" as const, dateMs: dates[key] };
+    return { key, state: i === done ? ("now" as const) : ("todo" as const), dateMs: dates[key] };
   });
 }
 

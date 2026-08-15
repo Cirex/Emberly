@@ -107,7 +107,6 @@ const en = {
     },
     tracker: {
       applied: "Applied",
-      screened: "Screened",
       approved: "Approved",
       signed: "Signed",
       moveIn: "Move-in",
@@ -119,7 +118,6 @@ const en = {
       timeline: "Application timeline",
       steps: {
         applied: "Applied",
-        screened: "Screening",
         approved: "Approved",
         signed: "Lease signature",
         moveIn: "Move-in",
@@ -127,6 +125,7 @@ const en = {
       notRecorded: "not recorded by ResMan",
       notSignedYet: "not signed yet",
       scheduled: "scheduled {{date}}",
+      desiredMoveIn: "desired move-in {{date}}",
       approvalStatus: "approval status “{{status}}”",
       facts: "Facts",
       agent: "Leasing agent",
@@ -473,7 +472,6 @@ const es: typeof en = {
     },
     tracker: {
       applied: "Solicitud",
-      screened: "Revisión",
       approved: "Aprobado",
       signed: "Firmado",
       moveIn: "Entrada",
@@ -485,7 +483,6 @@ const es: typeof en = {
       timeline: "Cronología de la solicitud",
       steps: {
         applied: "Solicitud",
-        screened: "Revisión",
         approved: "Aprobado",
         signed: "Firma del contrato",
         moveIn: "Entrada",
@@ -493,6 +490,7 @@ const es: typeof en = {
       notRecorded: "sin registro en ResMan",
       notSignedYet: "aún sin firmar",
       scheduled: "programada {{date}}",
+      desiredMoveIn: "entrada deseada {{date}}",
       approvalStatus: "estado de aprobación “{{status}}”",
       facts: "Datos",
       agent: "Agente de arrendamiento",

@@ -147,7 +147,6 @@ export function PipelineDetailSheet({
 
   const timelineTitle = (step: TrackerStep): string => t(`leasing.sheet.steps.${step.key}`);
   const timelineSub = (step: TrackerStep): string => {
-    if (step.key === "screened" && step.state === "skip") return t("leasing.sheet.notRecorded");
     if (step.key === "approved" && (step.state === "done" || step.state === "now")) {
       return lease.approvalStatus
         ? t("leasing.sheet.approvalStatus", { status: lease.approvalStatus })
@@ -155,7 +154,11 @@ export function PipelineDetailSheet({
     }
     if (step.key === "signed" && step.state === "now") return t("leasing.sheet.notSignedYet");
     if (step.key === "moveIn" && step.dateMs !== null && step.state !== "done") {
-      return t("leasing.sheet.scheduled", { date: formatDay(step.dateMs) });
+      // An application's date is the one the prospect ASKED for (ResMan holds
+      // it as the lease start), not a confirmed arrival. Say which it is.
+      return row.moveInIsDesired
+        ? t("leasing.sheet.desiredMoveIn", { date: formatDay(step.dateMs) })
+        : t("leasing.sheet.scheduled", { date: formatDay(step.dateMs) });
     }
     return step.dateMs !== null ? formatDay(step.dateMs) : "";
   };

@@ -484,24 +484,33 @@ describe("pipeline", () => {
       NOW,
     );
     const steps = pipelineTrackerSteps(rows[0]);
-    expect(steps.map((s) => s.key)).toEqual(["applied", "screened", "approved", "signed", "moveIn"]);
-    expect(steps.map((s) => s.state)).toEqual(["done", "skip", "done", "done", "now"]);
+    expect(steps.map((s) => s.key)).toEqual(["applied", "approved", "signed", "moveIn"]);
+    expect(steps.map((s) => s.state)).toEqual(["done", "done", "done", "now"]);
     expect(steps[0].dateMs).toBe(parseDay(day(-12)));
-    expect(steps[3].dateMs).toBe(parseDay(day(-3)));
-    expect(steps[4].dateMs).toBe(parseDay(day(4)));
-    // Screening and approval have no date column in the mirror — never fabricated.
+    expect(steps[2].dateMs).toBe(parseDay(day(-3)));
+    expect(steps[3].dateMs).toBe(parseDay(day(4)));
+    // Approval has no date column in the mirror — never fabricated.
     expect(steps[1].dateMs).toBeNull();
-    expect(steps[2].dateMs).toBeNull();
   });
 
-  test("tracker: screening observed in approval_status is a solid check, not a skip", () => {
+  /**
+   * Screening is NOT a tracker step. ResMan gives no source for it:
+   * `approval_status` holds only "Approved" (1,041 leases), "Denied" (113) or
+   * nothing (101) — no screening, review, processing or verification value
+   * exists anywhere in the mirror. The step could therefore never be a solid
+   * check and rendered a permanent "skip" on every row, which reads as a gap
+   * in the process rather than a gap in the data.
+   */
+  test("tracker: there is no screening step, and nothing renders as a skip", () => {
     const rows = buildPipelineRows(
-      [lease({ unitNumber: "0212", status: "Pending", approvalStatus: "Screening", applicationDate: day(-2), moveInDate: day(10) })],
+      [lease({ unitNumber: "0212", status: "Pending", approvalStatus: "Approved", applicationDate: day(-2), moveInDate: day(10) })],
       units,
       NOW,
     );
     const steps = pipelineTrackerSteps(rows[0]);
-    expect(steps.map((s) => s.state)).toEqual(["done", "now", "todo", "todo", "todo"]);
+    expect(steps.map((s) => s.key)).not.toContain("screened");
+    expect(steps).toHaveLength(4);
+    expect(steps.map((s) => s.state)).not.toContain("skip");
   });
 
   test("tracker: an application awaiting signature waits on the signed step", () => {
@@ -511,19 +520,22 @@ describe("pipeline", () => {
       NOW,
     );
     const steps = pipelineTrackerSteps(rows[0]);
-    expect(steps[3].state).toBe("now");
+    // applied · approved · SIGNED · move-in — signature is index 2 now that
+    // the unsourced screening step is gone.
+    expect(steps[2].key).toBe("signed");
+    expect(steps[2].state).toBe("now");
     expect(isAwaitingSignature(rows[0].stage)).toBe(true);
   });
 
-  test("tracker: moved in is five solid (or skip) checks", () => {
+  test("tracker: moved in is four solid checks", () => {
     const rows = buildPipelineRows(
       [lease({ unitNumber: "0212", status: "Current", approvalStatus: "Approved", signedDate: day(-9), moveInDate: day(-2) })],
       units,
       NOW,
     );
-    for (const step of pipelineTrackerSteps(rows[0])) {
-      expect(["done", "skip"]).toContain(step.state);
-    }
+    const steps = pipelineTrackerSteps(rows[0]);
+    expect(steps).toHaveLength(4);
+    for (const step of steps) expect(step.state).toBe("done");
   });
 });
 

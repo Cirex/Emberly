@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BarColumns } from "@/components/leasing/BarColumns";
+import { MovementBoardView } from "@/components/leasing/MovementBoard";
 import { BandHeader, QuickChips, type QuickChip } from "@/components/leasing/primitives";
 import {
   ExpirationRowView,
@@ -49,6 +50,7 @@ import {
   type PipelineStage,
   type ScoreMetric,
 } from "@/lib/derived/leasing";
+import { buildMovementBoard } from "@/lib/derived/movement";
 import { PipelineDetailSheet } from "@/components/leasing/PipelineDetailSheet";
 import { buildLeasingAgentBoard, buildLeasingAgentMetrics } from "@/lib/derived/leasing-agents";
 import { isClosedWorkOrder } from "@emberly/core";
@@ -151,6 +153,10 @@ export default function LeasingScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [leases, unitsIdx],
   );
+  const movementBoard = useMemo(
+    () => buildMovementBoard(leases, unitFactsList, nowMs),
+    [leases, unitFactsList, nowMs],
+  );
   const forecastRows = useMemo(
     () => buildForecastRows(leases, unitFactsList, nowMs),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -225,7 +231,7 @@ export default function LeasingScreen() {
   const modeCounts: Record<ScreenMode, number> = {
     pipeline: pipelineRows.length,
     expirations: expirationRows.length,
-    forecast: forecastRows.length,
+    forecast: movementBoard.arrivals + movementBoard.departures,
     vacancy: vacancyRows.length,
     runway: runway.leasable.length,
     renewals: renewalsBoard.total,
@@ -485,16 +491,10 @@ export default function LeasingScreen() {
     );
   };
 
-  const forecastBody = () => (
-    <View style={{ maxWidth: wide ? 640 : undefined }}>
-      <AppCardSurface kind="panel" style={{ overflow: "hidden" }}>
-        <ForecastTable rows={forecastRows} />
-      </AppCardSurface>
-      <Text className="text-muted dark:text-white/50" style={{ fontSize: 10.5, marginTop: 8, textAlign: "center" }}>
-        {t("leasing.forecast.caption")}
-      </Text>
-    </View>
-  );
+  // Occupancy Movement. Not a forecast — nothing here predicts; it counts who
+  // arrived, who left, and what is booked. See lib/derived/movement.ts for why
+  // the raw move-in and move-out dates could not be counted directly.
+  const forecastBody = () => <MovementBoardView board={movementBoard} />;
 
   // ── Renewals mode ─────────────────────────────────────────────────────────
   // The bumped nonce remounts the sheet with fresh state on every open.

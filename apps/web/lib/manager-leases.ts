@@ -14,7 +14,7 @@ type LeaseRow = Database["public"]["Tables"]["resman_leases"]["Row"];
 export const MANAGER_LEASE_COLUMNS =
   "resman_lease_id, resman_unit_id, unit_number, status, approval_status, approved_date, application_date, " +
   "signed_date, start_date, original_start_date, start_date_changes, lease_sent_date, lease_voided_date, "
-  + "deposit_amount, deposit_logged_date, end_date, move_in_date, move_out_date, leasing_agent, " +
+  + "deposit_amount, deposit_logged_date, end_date, move_in_date, move_out_date, reason_for_leaving, leasing_agent, " +
   "market_rent, resident_rent, balance, is_current_lease, is_most_recent_lease";
 
 export type ManagerLeaseRow = Pick<
@@ -37,6 +37,7 @@ export type ManagerLeaseRow = Pick<
   | "end_date"
   | "move_in_date"
   | "move_out_date"
+  | "reason_for_leaving"
   | "leasing_agent"
   | "market_rent"
   | "resident_rent"
@@ -67,6 +68,8 @@ export interface ManagerLeasePayload {
   endDate: string | null;
   moveInDate: string | null;
   moveOutDate: string | null;
+  /** ResMan's departure reason. Blank on applications that never arrived. */
+  reasonForLeaving: string;
   leasingAgent: string;
   marketRent: number | null;
   residentRent: number | null;
@@ -95,6 +98,7 @@ export function managerLeasePayload(row: ManagerLeaseRow): ManagerLeasePayload {
     endDate: row.end_date,
     moveInDate: row.move_in_date,
     moveOutDate: row.move_out_date,
+    reasonForLeaving: row.reason_for_leaving ?? "",
     leasingAgent: row.leasing_agent,
     marketRent: row.market_rent,
     residentRent: row.resident_rent,

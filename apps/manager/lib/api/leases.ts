@@ -35,6 +35,8 @@ export const ManagerLeaseSchema = z.object({
   endDate: str,
   moveInDate: str,
   moveOutDate: str,
+  /** ResMan's departure reason; blank on applications that never arrived. */
+  reasonForLeaving: z.string().default(""),
   leasingAgent: z.string().default(""),
   marketRent: num,
   residentRent: num,

@@ -570,6 +570,7 @@ test("GET leases returns the 24-month window as camelCase DTOs", async () => {
       endDate: "2027-05-31",
       moveInDate: "2026-06-01",
       moveOutDate: null,
+      reasonForLeaving: "",
       leasingAgent: "Dana Agent",
       marketRent: 1200,
       residentRent: 1150,

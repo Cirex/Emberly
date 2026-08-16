@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { AgingBucket, LeaseVerdict } from "@emberly/core";
+import type { ChargeBucket } from "@/lib/api/delinquency";
 import type { NextAction } from "@/lib/derived/delinquency-view";
 
 /**
@@ -28,6 +29,26 @@ export const AGING_COLORS: Record<AgingBucket, string> = {
   "31-60": "#E38736",
   "61-90": "#D1382E",
   "90+": "#7A1F1F",
+};
+
+/**
+ * Ledger-bar segment colors (mockup .b-rent … .b-other).
+ *
+ * Rent owns the alarm color because it is 79% of everything owed and the only
+ * bucket that means the tenancy itself is failing; fees and services step down
+ * from it. These are semantic, not a palette ramp — do not reorder them to
+ * make a bar prettier.
+ */
+export const BUCKET_COLORS: Record<ChargeBucket, string> = {
+  rent: "#D1382E",
+  late: "#B05E14",
+  utility: "#2563B4",
+  legal: "#7A6BC7",
+  insurance: "#70788F",
+  moveout: "#A2A921",
+  // The mockup painted "other" in the same grey as the empty bar track, which
+  // made the segment invisible on the three rows that have one. Nudged darker.
+  other: "#C6CBD8",
 };
 
 type PillTone = "ok" | "good" | "soon" | "late" | "neutral" | "review" | "blue";

@@ -2,7 +2,13 @@ import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
 import {
+  MONTHS_MISSING_CAP,
+  MONTHS_MISSING_CRITICAL,
+  MONTHS_MISSING_WARN,
+} from "@emberly/core";
+import {
   BandHeader,
+  BUCKET_COLORS,
   ListFooter,
   MONEY_COLORS,
   Pill,
@@ -10,7 +16,7 @@ import {
   SUGGESTION_TONES,
 } from "@/components/delinquency/bits";
 import { AgingMeter } from "@/components/delinquency/AgingMeter";
-import { fmtMoney, fmtShortDate } from "@/components/delinquency/format";
+import { fmtMoney, fmtPercent, fmtShortDate } from "@/components/delinquency/format";
 import { isSilent, type BalancesBoard, type QueueRow } from "@/lib/derived/delinquency-view";
 
 export type BalancesFilter = "all" | "ninetyPlus" | "promise" | "eviction" | "silent";
@@ -43,29 +49,159 @@ function rowMatches(row: QueueRow, filter: BalancesFilter): boolean {
 }
 
 /**
+ * THE LEDGER BAR — the open balance, what it is made of, and whether it was
+ * ever being paid. Transcribed from the approved mockup (.lgr / .lgtop / .lgv
+ * / .lgm / .fed / .lgbar / .lgkeys / .lgk).
+ *
+ * Two ordering rules that look arbitrary and are not:
+ *  - segments and their keys stay in CHARGE_BUCKETS order, never sorted by
+ *    value, so a category sits in the same place on every row and the eye can
+ *    compare down the column. The board-level bar sorts by size instead,
+ *    because it has no neighbours to line up with.
+ *  - the paid-of-billed key is always last and always present, even at 0%.
+ */
+function LedgerBar({ row }: { row: QueueRow }) {
+  const { t } = useTranslation();
+  const b = row.breakdown;
+  if (!b) return null;
+
+  const months = b.months;
+  const monthsColor =
+    months === null
+      ? MONEY_COLORS.muted
+      : months >= MONTHS_MISSING_CRITICAL
+        ? MONEY_COLORS.bad
+        : months >= MONTHS_MISSING_WARN
+          ? MONEY_COLORS.warn
+          : MONEY_COLORS.slate;
+  const monthsLabel =
+    months === null
+      ? t("delinquency.row.rentUnknown")
+      : months >= MONTHS_MISSING_CAP
+        ? t("delinquency.row.monthsOfRentCapped", { count: MONTHS_MISSING_CAP })
+        : t("delinquency.row.monthsOfRent", { count: months.toFixed(1) });
+
+  return (
+    <View style={{ marginTop: 7 }}>
+      <View
+        style={{ flexDirection: "row", alignItems: "baseline", gap: 9, marginBottom: 6, flexWrap: "wrap" }}
+      >
+        <Text
+          style={{
+            fontSize: 20,
+            fontWeight: "800",
+            letterSpacing: -0.6,
+            lineHeight: 22,
+            color: MONEY_COLORS.navy,
+            fontVariant: ["tabular-nums"],
+          }}
+        >
+          {fmtMoney(b.balance)}
+        </Text>
+        <Text
+          style={{
+            fontSize: 11.5,
+            fontWeight: months === null ? "600" : "700",
+            color: monthsColor,
+            fontVariant: ["tabular-nums"],
+          }}
+        >
+          {monthsLabel}
+        </Text>
+        {row.legal ? (
+          <Text
+            style={{
+              marginLeft: "auto",
+              fontSize: 9.5,
+              fontWeight: "800",
+              letterSpacing: 0.3,
+              paddingVertical: 2,
+              paddingHorizontal: 7,
+              borderRadius: 5,
+              overflow: "hidden",
+              color: MONEY_COLORS.purple,
+              backgroundColor: "rgba(122,107,199,0.13)",
+            }}
+          >
+            {t("delinquency.row.fedFiled", { date: fmtShortDate(row.legal.filedDate) })}
+          </Text>
+        ) : null}
+      </View>
+
+      <View
+        accessibilityLabel={t("delinquency.row.chargeMix")}
+        style={{
+          flexDirection: "row",
+          height: 11,
+          borderRadius: 6,
+          overflow: "hidden",
+          backgroundColor: "#E3E6ED",
+        }}
+      >
+        {b.slices.map((slice) => (
+          <View
+            key={slice.bucket}
+            style={{ width: `${slice.share * 100}%`, minWidth: 2, backgroundColor: BUCKET_COLORS[slice.bucket] }}
+          />
+        ))}
+      </View>
+
+      <View style={{ flexDirection: "row", flexWrap: "wrap", rowGap: 3, columnGap: 13, marginTop: 6 }}>
+        {b.slices.map((slice) => (
+          <View key={slice.bucket} style={{ flexDirection: "row", alignItems: "center" }}>
+            <View
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: 2,
+                marginRight: 5,
+                backgroundColor: BUCKET_COLORS[slice.bucket],
+              }}
+            />
+            <Text style={{ fontSize: 10, color: MONEY_COLORS.muted, fontVariant: ["tabular-nums"] }}>
+              {t(`delinquency.charges.${slice.bucket}`)}{" "}
+              <Text style={{ color: MONEY_COLORS.slate, fontWeight: "700" }}>{fmtMoney(slice.amount)}</Text>
+            </Text>
+          </View>
+        ))}
+        <Text
+          style={{
+            marginLeft: "auto",
+            fontSize: 10,
+            color: MONEY_COLORS.pos,
+            fontVariant: ["tabular-nums"],
+          }}
+        >
+          {b.billed > 0
+            ? t("delinquency.row.paidOfBilled", {
+                paid: fmtMoney(b.paid),
+                billed: fmtMoney(b.billed),
+                // Deliberately unclamped: an overpaid lease reading 115% is a
+                // fact worth seeing, not a rendering error.
+                rate: fmtPercent(b.collectionRate, 0),
+              })
+            : t("delinquency.row.nothingBilled")}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
  * The one-line story under the unit: how old the debt is, then the strongest
  * dated fact we hold about the case.
  *
- * The legal clause comes off the ledger's attorney/court fees rather than the
- * delinquency note, so it appears on all 151 leases with a filing instead of
- * the 68 whose note happens to mention one. The tail is days since the last
- * payment — the honest staleness clock. It replaced "No action logged", which
- * read as "nobody has done anything" on every row on the board, because the
- * actions table it counted has never had a row written to it.
+ * The tail is days since the last payment — the honest staleness clock. It
+ * replaced "No action logged", which read as "nobody has done anything" on
+ * every row on the board, because the actions table it counted has never had a
+ * row written to it. The FED filing is not repeated here; the bar badges it.
  */
 function RowSubtitle({ row }: { row: QueueRow }) {
   const { t } = useTranslation();
   const parts: string[] = [];
   if (row.bucket) parts.push(row.bucket);
   if (row.unit.timesLate) parts.push(t("delinquency.row.timesLate", { count: row.unit.timesLate ?? 0 }));
-  if (row.legal) {
-    const filed = t("delinquency.row.fedFiled", { date: fmtShortDate(row.legal.filedDate) });
-    parts.push(
-      row.legal.servedDate
-        ? `${filed} · ${t("delinquency.row.served", { date: fmtShortDate(row.legal.servedDate) })}`
-        : filed,
-    );
-  }
+  // The FED filing is NOT repeated here — it has its own badge on the ledger bar.
   if (row.promise && row.promise.state === "broken") {
     parts.push(t("delinquency.row.promiseBroken", { date: fmtShortDate(row.promise.dueDate) }));
   } else if (row.promise && row.promise.state === "open") {
@@ -128,17 +264,29 @@ export function BalanceRow({
         backgroundColor: selected ? "rgba(162,169,33,0.09)" : "transparent",
       }}
     >
-      <View style={{ flex: 1 }}>
-        <Text numberOfLines={1} style={{ fontSize: 13.5, fontWeight: "800", color: MONEY_COLORS.navy }}>
-          {row.unit.unitNumber} · {name}
-        </Text>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
+          <Text numberOfLines={1} style={{ flex: 1, fontSize: 13.5, fontWeight: "800", color: MONEY_COLORS.navy }}>
+            {row.unit.unitNumber} · {name}
+          </Text>
+          <Pill tone={SUGGESTION_TONES[row.suggestion]} label={t(`delinquency.suggestions.${row.suggestion}`)} />
+        </View>
         <RowSubtitle row={row} />
-      </View>
-      <View style={{ alignItems: "flex-end", gap: 3 }}>
-        <Text style={{ fontSize: 13, fontWeight: "800", color: amountColor, fontVariant: ["tabular-nums"] }}>
-          {fmtMoney(row.balance)}
-        </Text>
-        <Pill tone={SUGGESTION_TONES[row.suggestion]} label={t(`delinquency.suggestions.${row.suggestion}`)} />
+        {row.breakdown ? (
+          <LedgerBar row={row} />
+        ) : (
+          <Text
+            style={{
+              marginTop: 6,
+              fontSize: 17,
+              fontWeight: "800",
+              color: amountColor,
+              fontVariant: ["tabular-nums"],
+            }}
+          >
+            {fmtMoney(row.balance)}
+          </Text>
+        )}
       </View>
     </Pressable>
   );

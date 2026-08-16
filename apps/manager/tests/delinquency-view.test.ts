@@ -97,8 +97,11 @@ function summary(over: Partial<LeaseLedgerSummary> & { leaseId: string }): Lease
     concessions: 0,
     writeoffs: 0,
     legalFiledDate: null,
-    legalServedDate: null,
     legalFees: 0,
+    composition: { rent: 0, late: 0, utility: 0, legal: 0, insurance: 0, moveout: 0, other: 0 },
+    owed: 0,
+    credit: 0,
+    rentOwed: 0,
     ...over,
   };
 }
@@ -339,7 +342,7 @@ describe("buildBalancesBoard", () => {
     });
     const quiet = unit({ unitId: "quiet", currentLeaseId: "L-quiet", currentMonthBalance: 300, balance: 300 });
     const legal = legalMap([
-      summary({ leaseId: "L-filed", legalFiledDate: "2026-03-04", legalServedDate: "2026-03-25", legalFees: 280 }),
+      summary({ leaseId: "L-filed", legalFiledDate: "2026-03-04", legalFees: 280 }),
       summary({ leaseId: "L-quiet" }),
     ]);
 
@@ -349,7 +352,7 @@ describe("buildBalancesBoard", () => {
 
     expect(filedRow.band).toBe("needsAction");
     expect(filedRow.suggestion).toBe("awaitCourt");
-    expect(filedRow.legal).toEqual({ filedDate: "2026-03-04", servedDate: "2026-03-25", fees: 280 });
+    expect(filedRow.legal).toEqual({ filedDate: "2026-03-04", fees: 280 });
     // The unfiled twin is identical in every other way and stays a watch item.
     expect(quietRow.band).toBe("currentCycle");
     expect(quietRow.suggestion).toBe("watch");

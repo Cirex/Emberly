@@ -94,6 +94,28 @@ export function agingBucket(unit: AgingColumns): AgingBucket | null {
   return "0-30";
 }
 
+/**
+ * Unpaid rent expressed in months of rent, or null when the monthly rent is
+ * unknown or zero.
+ *
+ * The denominator is the resident's own monthly rent charge, not the market
+ * rent. On a subsidised unit those differ by an order of magnitude — one
+ * resident owes $2,362 against a $157 resident portion — and the resident
+ * portion is the number that says how many times they failed to pay. Callers
+ * should cap the display (12+) so a subsidy case does not dominate a column.
+ */
+export function monthsOfRentMissing(rentOwed: number, monthlyRent: number | null | undefined): number | null {
+  if (typeof monthlyRent !== "number" || monthlyRent <= 0) return null;
+  return Math.max(0, rentOwed) / monthlyRent;
+}
+
+/** At or above this many months missing, a row reads as critical. */
+export const MONTHS_MISSING_CRITICAL = 3;
+/** At or above this many months missing, a row reads as a warning. */
+export const MONTHS_MISSING_WARN = 1.5;
+/** Months missing at or above this are shown as "12+" rather than a figure. */
+export const MONTHS_MISSING_CAP = 12;
+
 /** Deep red painted over any unit flagged for eviction, regardless of balance. */
 export const EVICTION_HEAT_COLOR = "#7A1F1F";
 

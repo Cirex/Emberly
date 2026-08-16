@@ -7,6 +7,7 @@ import {
   tenureBucket,
   delinquencyPriority,
   isRenewalLease,
+  monthsOfRentMissing,
   netPosition,
   verdictFor,
   type AgentLeaseInput,
@@ -15,6 +16,7 @@ import {
   type LeaseVerdict,
   type TenureBucket,
 } from "@emberly/core";
+import { CHARGE_BUCKETS, type ChargeBucket } from "@/lib/api/delinquency";
 import type {
   DelinquencyAction,
   DelinquentUnit,
@@ -49,24 +51,130 @@ const EVICT_RE = /evict/i;
 export interface LegalFacts {
   /** First post-migration attorney/court fee: the FED was filed on this date. */
   filedDate: string;
-  /** First process-server fee, when one exists — the summons was served. */
-  servedDate: string | null;
-  /** Gross legal fees charged to the resident, in dollars. */
+  /** Gross legal cost incurred, in dollars. */
   fees: number;
 }
 
-/** leaseId → {@link LegalFacts}; leases with no filing are absent. */
+/**
+ * leaseId → {@link LegalFacts}; leases with no filing are absent.
+ *
+ * Service of process is deliberately NOT carried. The ledger dates it, and it
+ * never precedes the filing, but it lands on only 63 of 151 filings — thin
+ * enough that a row showing it would imply the other 88 were never served.
+ */
 export function legalMap(summaries: readonly LeaseLedgerSummary[]): Map<string, LegalFacts> {
   const out = new Map<string, LegalFacts>();
   for (const s of summaries) {
     if (!s.legalFiledDate) continue;
-    out.set(s.leaseId, {
-      filedDate: dateOnly(s.legalFiledDate),
-      servedDate: s.legalServedDate ? dateOnly(s.legalServedDate) : null,
-      fees: s.legalFees ?? 0,
-    });
+    out.set(s.leaseId, { filedDate: dateOnly(s.legalFiledDate), fees: s.legalFees ?? 0 });
   }
   return out;
+}
+
+// ---- what a balance is made of ---------------------------------------------
+
+/** One drawable slice of a balance: a bucket, its dollars, and its share. */
+export interface CompositionSlice {
+  bucket: ChargeBucket;
+  amount: number;
+  /** 0..1 of the balance. */
+  share: number;
+}
+
+export interface BalanceBreakdown {
+  /** The authoritative balance the slices add up to. */
+  balance: number;
+  /** Non-zero slices in CHARGE_BUCKETS order, largest bucket first in the bar. */
+  slices: CompositionSlice[];
+  /** Unpaid rent in months of rent, or null when the rent is unknown. */
+  months: number | null;
+  /** Lifetime credits, charges, and the resulting rate (0..1). */
+  paid: number;
+  billed: number;
+  collectionRate: number;
+}
+
+/** Slices under this many dollars are folded away rather than drawn as a sliver. */
+const SLICE_FLOOR = 0.5;
+
+/**
+ * Sum many rows' breakdowns into one. Months add up across units — 275 months
+ * of rent missing across 203 residents — which is the portfolio-scale answer
+ * to the same question each row asks. Rows whose rent is unknown contribute
+ * dollars but no months, so the figure reads "at least".
+ *
+ * Slices come back sorted by share DESCENDING, unlike a row's, which stay in
+ * canonical bucket order. A row is scanned against its neighbours, so a fixed
+ * position per category lets the eye compare down the column; the board bar
+ * has no neighbours and is read left-to-right as a ranking.
+ */
+export function sumBreakdowns(rows: readonly (BalanceBreakdown | null)[]): BalanceBreakdown {
+  const dollars = new Map<ChargeBucket, number>();
+  let balance = 0;
+  let months = 0;
+  let anyMonths = false;
+  let paid = 0;
+  let billed = 0;
+  for (const row of rows) {
+    if (!row) continue;
+    balance += row.balance;
+    paid += row.paid;
+    billed += row.billed;
+    if (row.months !== null) {
+      months += row.months;
+      anyMonths = true;
+    }
+    for (const slice of row.slices) dollars.set(slice.bucket, (dollars.get(slice.bucket) ?? 0) + slice.amount);
+  }
+  const slices: CompositionSlice[] = [];
+  for (const bucket of CHARGE_BUCKETS) {
+    const amount = dollars.get(bucket) ?? 0;
+    if (amount < SLICE_FLOOR) continue;
+    slices.push({ bucket, amount, share: balance > 0 ? amount / balance : 0 });
+  }
+  slices.sort((a, b) => b.amount - a.amount);
+  return {
+    balance,
+    slices,
+    months: anyMonths ? months : null,
+    paid,
+    billed,
+    collectionRate: billed > 0 ? paid / billed : 1,
+  };
+}
+
+/**
+ * Turn a lease's ledger summary into the row's bar.
+ *
+ * FIFO gives the SHAPE of the debt; ResMan's own balance is the authority on
+ * the total, and the two disagree by more than a dollar on 24 of the 226
+ * leases that owe. Scaling the shares to `balance` means the bar always adds
+ * up to the number printed beside it — the alternative is a bar that visibly
+ * contradicts its own total.
+ */
+export function balanceBreakdown(
+  summary: LeaseLedgerSummary | undefined,
+  balance: number,
+  monthlyRent: number | null | undefined,
+): BalanceBreakdown | null {
+  if (!summary) return null;
+  const owed = summary.owed ?? 0;
+  const scale = owed > 0 && balance > 0 ? balance / owed : 0;
+  const slices: CompositionSlice[] = [];
+  for (const bucket of CHARGE_BUCKETS) {
+    const amount = (summary.composition?.[bucket] ?? 0) * scale;
+    if (amount < SLICE_FLOOR) continue;
+    slices.push({ bucket, amount, share: balance > 0 ? amount / balance : 0 });
+  }
+  const billed = summary.billed ?? 0;
+  return {
+    balance,
+    slices,
+    months: monthsOfRentMissing((summary.rentOwed ?? 0) * scale, monthlyRent),
+    paid: summary.collected ?? 0,
+    billed,
+    collectionRate: billed > 0 ? (summary.collected ?? 0) / billed : 1,
+  };
 }
 
 /**
@@ -283,6 +391,8 @@ export interface QueueRow {
   tenure: TenureBucket | null;
   /** The ledger's eviction record, or null when no filing exists. */
   legal: LegalFacts | null;
+  /** What the balance is made of; null when the lease has no ledger yet. */
+  breakdown: BalanceBreakdown | null;
   /**
    * Days since the last payment landed, or null when the resident has never
    * paid. This is the honest staleness clock: the alternative — days since
@@ -315,6 +425,8 @@ export interface BalancesBoard {
    * equal to the row count on every board ever rendered.
    */
   silentCount: number;
+  /** Every row's breakdown summed — the board-level composition bar. */
+  totals: BalanceBreakdown;
   promiseCount: number;
   ninetyPlusCount: number;
   noActionCount: number;
@@ -341,6 +453,13 @@ export function buildBalancesBoard(
   moveInByUnit: ReadonlyMap<string, string> = new Map(),
   /** leaseId → the ledger's eviction record, from {@link legalMap}. */
   legalByLease: ReadonlyMap<string, LegalFacts> = new Map(),
+  /**
+   * leaseId → its ledger summary, for the balance breakdown, and unitId → the
+   * resident's monthly rent, for "how many months of rent is this?". Both are
+   * joined by the caller from data it already holds.
+   */
+  summaryByLease: ReadonlyMap<string, LeaseLedgerSummary> = new Map(),
+  rentByUnit: ReadonlyMap<string, number> = new Map(),
 ): BalancesBoard {
   const promiseStatuses = promiseStatusByLease(actions, lastPaymentByLease, nowMs);
 
@@ -407,6 +526,11 @@ export function buildBalancesBoard(
       tenureDays,
       tenure: tenureDays === null ? null : tenureBucket(tenureDays),
       legal,
+      breakdown: balanceBreakdown(
+        summaryByLease.get(leaseId),
+        balance,
+        rentByUnit.get(unit.unitId) ?? null,
+      ),
       daysSincePayment: daysBetweenDays(lastPaymentByLease.get(leaseId), nowMs),
     };
   });
@@ -447,6 +571,7 @@ export function buildBalancesBoard(
     ninetyPlusCount: rows.filter((r) => r.bucket === "90+").length,
     noActionCount: rows.filter((r) => r.noActionEver).length,
     silentCount: rows.filter(isSilent).length,
+    totals: sumBreakdowns(rows.map((r) => r.breakdown)),
   };
 }
 

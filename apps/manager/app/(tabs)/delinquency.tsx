@@ -99,9 +99,22 @@ export default function DelinquencyScreen() {
     }
     return out;
   }, [leases]);
+  const summaryByLease = useMemo(() => new Map(summaries.map((s) => [s.leaseId, s])), [summaries]);
+  // The resident's OWN monthly rent, which on a subsidised unit is a fraction
+  // of market — and is the right denominator for "months of rent missing".
+  const rentByUnit = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const lease of leases) {
+      if (!lease.unitId || !lease.isCurrentLease) continue;
+      const rent = lease.residentRent ?? lease.marketRent ?? null;
+      if (typeof rent === "number" && rent > 0) out.set(lease.unitId, rent);
+    }
+    return out;
+  }, [leases]);
   const board = useMemo(
-    () => buildBalancesBoard(units, actions, lastPayment, nowMs, moveInByUnit, legal),
-    [units, actions, lastPayment, nowMs, moveInByUnit, legal],
+    () =>
+      buildBalancesBoard(units, actions, lastPayment, nowMs, moveInByUnit, legal, summaryByLease, rentByUnit),
+    [units, actions, lastPayment, nowMs, moveInByUnit, legal, summaryByLease, rentByUnit],
   );
   const pnls = useMemo(
     () => assembleTenantPnl({ leases, units, summaries, actions, nowMs }),

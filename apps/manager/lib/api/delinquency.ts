@@ -114,6 +114,37 @@ export async function deleteDelinquencyAction(config: StaffConfig, id: string): 
 
 // ---- lease ledger ----------------------------------------------------------
 
+/**
+ * Charge buckets, mirroring CHARGE_BUCKETS in apps/web/lib/manager-ledger.ts.
+ * Order is meaningful: it is the order segments stack and keys are listed.
+ */
+export const CHARGE_BUCKETS = [
+  "rent",
+  "late",
+  "utility",
+  "legal",
+  "insurance",
+  "moveout",
+  "other",
+] as const;
+export type ChargeBucket = (typeof CHARGE_BUCKETS)[number];
+
+const bucketNum = z.number().default(0);
+const BalanceCompositionSchema = z.object({
+  rent: bucketNum,
+  late: bucketNum,
+  utility: bucketNum,
+  legal: bucketNum,
+  insurance: bucketNum,
+  moveout: bucketNum,
+  other: bucketNum,
+});
+export type BalanceComposition = z.infer<typeof BalanceCompositionSchema>;
+
+export function emptyComposition(): BalanceComposition {
+  return { rent: 0, late: 0, utility: 0, legal: 0, insurance: 0, moveout: 0, other: 0 };
+}
+
 export const LeaseLedgerSummarySchema = z.object({
   leaseId: z.string(),
   billed: z.number(),
@@ -126,10 +157,16 @@ export const LeaseLedgerSummarySchema = z.object({
   writeoffs: z.number(),
   /** First post-migration attorney/court fee — the machine's FED-filed date. */
   legalFiledDate: z.string().nullable().default(null),
-  /** First process-server fee — the summons was served on this date. */
-  legalServedDate: z.string().nullable().default(null),
-  /** Gross legal fees charged, in dollars. */
+  /** Gross legal cost incurred, reversed-to-collections charges included. */
   legalFees: z.number().default(0),
+  /** The open balance split by what it was billed for; sums to `owed`. */
+  composition: BalanceCompositionSchema.default(() => emptyComposition()),
+  /** Sum of `composition` — never negative. */
+  owed: z.number().default(0),
+  /** Unapplied credit on the account. */
+  credit: z.number().default(0),
+  /** Unpaid rent charges only. */
+  rentOwed: z.number().default(0),
 });
 export type LeaseLedgerSummary = z.infer<typeof LeaseLedgerSummarySchema>;
 

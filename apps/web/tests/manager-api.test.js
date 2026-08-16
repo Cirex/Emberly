@@ -40,6 +40,7 @@ const { delinquencyActionActor } = require("../lib/delinquency-actions");
 const { isDelinquentUnit } = require("../lib/manager-delinquency");
 const { monthsAgoIsoDate, recentLeaseOrFilter } = require("../lib/manager-leases");
 const {
+  chargeBucketOf,
   isConcessionEntry,
   isWriteoffEntry,
   summarizeLedgerEntries,
@@ -333,8 +334,12 @@ test("summarizeLedgerEntries aggregates one row per lease", () => {
       concessions: 0,
       writeoffs: 0,
       legalFiledDate: null,
-      legalServedDate: null,
       legalFees: 0,
+      // FIFO leaves only the unpaid March rent charge open.
+      composition: { rent: 300, late: 0, utility: 0, legal: 0, insurance: 0, moveout: 0, other: 0 },
+      owed: 300,
+      credit: 0,
+      rentOwed: 300,
     },
     {
       leaseId: "lease-2",
@@ -345,16 +350,21 @@ test("summarizeLedgerEntries aggregates one row per lease", () => {
       concessions: 150,
       writeoffs: 550,
       legalFiledDate: null,
-      legalServedDate: null,
       legalFees: 0,
+      // The write-off credit drains every open charge; nothing is left owing.
+      composition: { rent: 0, late: 0, utility: 0, legal: 0, insurance: 0, moveout: 0, other: 0 },
+      owed: 0,
+      credit: 0,
+      rentOwed: 0,
     },
   ]);
 });
 
-test("summarizeLedgerEntries: no dated balances means no late month", () => {
+test("summarizeLedgerEntries rounds money and stays under the late threshold", () => {
   const [summary] = summarizeLedgerEntries([
-    ledgerEntry({ charges: 100.105 }),
-    ledgerEntry({ date: "2026-01-05", credits: 50.100000001, balance: null }),
+    ledgerEntry({ date: "2026-01-01", charges: 100.105, balance: 100.105 }),
+    // Month-end balance of 50 is exactly AT the threshold, which is exclusive.
+    ledgerEntry({ date: "2026-01-05", credits: 50.100000001, balance: 50 }),
   ]);
   assert.deepEqual(summary, {
     leaseId: "lease-1",
@@ -365,9 +375,39 @@ test("summarizeLedgerEntries: no dated balances means no late month", () => {
     concessions: 0,
     writeoffs: 0,
     legalFiledDate: null,
-    legalServedDate: null,
     legalFees: 0,
+    // 100.105 charged less 50.100000001 paid, rounded: 50.00.
+    composition: { rent: 50, late: 0, utility: 0, legal: 0, insurance: 0, moveout: 0, other: 0 },
+    owed: 50,
+    credit: 0,
+    rentOwed: 50,
   });
+});
+
+test("summarizeLedgerEntries skips a lease whose rows are all outside the rent ledger", () => {
+  // A null running balance is ResMan's marker for the deposit sub-ledger. A
+  // lease made only of those has no income statement, and emitting a zeroed
+  // summary would hand it a tenant P&L reading "collected 100% of $0".
+  assert.deepEqual(
+    summarizeLedgerEntries([
+      ledgerEntry({ date: "2026-01-01", category: "SECD", charges: 300, balance: null }),
+      ledgerEntry({ date: "2026-01-05", category: "SECD", credits: 300, balance: null }),
+    ]),
+    [],
+  );
+});
+
+test("chargeBucketOf reads codes first and never files insurance as legal", () => {
+  // DMG-WVR is renter's insurance and its label contains the word "Legal".
+  assert.equal(chargeBucketOf("DMG-WVR"), "insurance");
+  assert.equal(chargeBucketOf("Renters Legal Liability"), "insurance");
+  assert.equal(chargeBucketOf("ATTYCH"), "legal");
+  assert.equal(chargeBucketOf("Attorney's Fees / Court Fees"), "legal");
+  assert.equal(chargeBucketOf("RENTCH"), "rent");
+  assert.equal(chargeBucketOf("Rent"), "rent");
+  assert.equal(chargeBucketOf("LATECH"), "late");
+  assert.equal(chargeBucketOf("Late Fees"), "late");
+  assert.equal(chargeBucketOf("Sub Pmt"), "other");
 });
 
 test("summarizeLedgerEntries dates the eviction from ATTYCH fees", () => {
@@ -387,7 +427,6 @@ test("summarizeLedgerEntries dates the eviction from ATTYCH fees", () => {
     ledgerEntry({ date: "2026-04-02", charges: -45, category: "ATTYCH", ledger_description: "Reversed to collections PROCESS SERVER" }),
   ]);
   assert.equal(summary.legalFiledDate, "2026-03-04");
-  assert.equal(summary.legalServedDate, "2026-03-25");
   assert.equal(summary.legalFees, 280);
 });
 
@@ -398,7 +437,6 @@ test("summarizeLedgerEntries reports no filing when ATTYCH only lands on the ope
     ledgerEntry({ date: "2026-03-01", charges: 800, balance: 1935 }),
   ]);
   assert.equal(summary.legalFiledDate, null);
-  assert.equal(summary.legalServedDate, null);
   assert.equal(summary.legalFees, 0);
 });
 
@@ -896,8 +934,11 @@ test("GET ledger-summary aggregates the paged transaction mirror", async () => {
       concessions: 0,
       writeoffs: 0,
       legalFiledDate: null,
-      legalServedDate: null,
       legalFees: 0,
+      composition: { rent: 0, late: 0, utility: 0, legal: 0, insurance: 0, moveout: 0, other: 0 },
+      owed: 0,
+      credit: 0,
+      rentOwed: 0,
     },
   ]);
 

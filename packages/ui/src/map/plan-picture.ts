@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import {
   BlurStyle,
   PaintStyle,
@@ -209,17 +210,49 @@ function nightColor(c: string): string {
 /** SVG's default font stack for the map; iOS ships Avenir Next. */
 const DEFAULT_FAMILY = "Avenir Next";
 
+/**
+ * The map was drawn on iOS, so its 1,764 text ops ask for "Avenir Next" (and
+ * "Georgia" on 8 of them). Android ships neither.
+ *
+ * That is not a cosmetic fallback — it is why every label vanished on Android
+ * while the paths kept drawing. Skia's matchFont does:
+ *
+ *     const typeface = fontMgr.matchFamilyStyle(family, style);
+ *     return Skia.Font(typeface, size);
+ *
+ * and matchFamilyStyle returns NULL for a family the platform doesn't have.
+ * Skia.Font(null, size) is a valid object that draws zero glyphs, so the map
+ * rendered perfectly minus every unit number and street name, with no error.
+ *
+ * Mapping to families Android actually has restores the text. Metrics differ
+ * from Avenir Next, so letter-spaced labels sit a little differently there —
+ * visible text with slightly different spacing beats no text.
+ */
+const ANDROID_FAMILY: Record<string, string> = {
+  "Avenir Next": "sans-serif",
+  Georgia: "serif",
+};
+
+/** The requested family, remapped to one this platform can actually resolve. */
+function resolveFamily(requested: string): string {
+  if (Platform.OS !== "android") return requested;
+  return ANDROID_FAMILY[requested] ?? "sans-serif";
+}
+
 const fontCache = new Map<string, SkFont>();
 function fontFor(op: Op): SkFont {
   const key = `${op.ff ?? ""}|${op.fs}|${op.fw ?? 400}|${op.it ?? 0}`;
   let font = fontCache.get(key);
   if (!font) {
-    font = matchFont({
-      fontFamily: op.ff ?? DEFAULT_FAMILY,
+    const style = {
       fontSize: op.fs,
-      fontStyle: op.it ? "italic" : "normal",
+      fontStyle: (op.it ? "italic" : "normal") as "italic" | "normal",
       fontWeight: String(op.fw ?? 400) as "400",
-    });
+    };
+    font = matchFont({ ...style, fontFamily: resolveFamily(op.ff ?? DEFAULT_FAMILY) });
+    // Belt and braces: any future unknown family would otherwise draw nothing
+    // at all, silently. An empty family asks the manager for its default.
+    if (font.getTypeface() === null) font = matchFont({ ...style, fontFamily: "" });
     fontCache.set(key, font);
   }
   return font;

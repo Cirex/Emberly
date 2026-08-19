@@ -22,7 +22,7 @@ import {
 } from "@shopify/react-native-skia";
 import { useColorScheme } from "nativewind";
 import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
-import { Pressable, TextInput, View } from "react-native";
+import { Platform, Pressable, TextInput, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
@@ -81,8 +81,12 @@ const CAM_PILL_GAP = 5;
 
 let camLabelFontCache: SkFont | null = null;
 function camLabelFont(): SkFont {
+  // Android has no "Avenir Next", and Skia's matchFont answers an unknown
+  // family with a NULL typeface that draws zero glyphs rather than falling
+  // back — which is why the camera pills lost their names there. Same fix as
+  // the map scene itself; see resolveFamily in @emberly/ui's plan-picture.ts.
   camLabelFontCache ??= matchFont({
-    fontFamily: "Avenir Next",
+    fontFamily: Platform.OS === "android" ? "sans-serif-medium" : "Avenir Next",
     fontSize: CAM_LABEL_SIZE,
     fontStyle: "normal",
     fontWeight: "600",

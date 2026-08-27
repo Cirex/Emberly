@@ -7,7 +7,7 @@ import "@/lib/i18n";
 
 import "../global.css";
 
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider, useRouter, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme, vars } from "nativewind";
 import { PropsWithChildren, useEffect } from "react";
@@ -70,6 +70,19 @@ function RootLayout() {
   // condition that mounts the protected stack: navigating any earlier (cold
   // start from a killed app) would push before the route exists.
   useEmergencyNotificationResponses(hydrated && signedIn);
+
+  // A genuinely dead ResMan session sends the tech to sign-in to restore it —
+  // their edits queue in the outbox until then, and the session only reads
+  // "expired" on a real login bounce, never on a bad network (a no-signal
+  // basement must never look like a sign-out).
+  const resmanStatus = useResManSession((s) => s.status);
+  const router = useRouter();
+  const pathname = usePathname();
+  useEffect(() => {
+    if (hydrated && signedIn && resmanStatus === "expired" && pathname !== "/sign-in") {
+      router.push("/sign-in");
+    }
+  }, [hydrated, signedIn, resmanStatus, pathname, router]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

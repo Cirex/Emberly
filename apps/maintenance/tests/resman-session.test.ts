@@ -107,8 +107,14 @@ describe("probeSession", () => {
     const home = (async () =>
       response("https://multisouth.myresman.com/", "<html>home</html>")) as unknown as typeof fetch;
     const bounced = (async () => response(LOGIN_URL, LOGIN_HTML)) as unknown as typeof fetch;
-    expect(await probeSession(home)).toBe(true);
-    expect(await probeSession(bounced)).toBe(false);
+    expect(await probeSession(home)).toBe("active");
+    expect(await probeSession(bounced)).toBe("expired");
+    const offline = (async () => {
+      throw new Error("offline");
+    }) as unknown as typeof fetch;
+    // Offline is NOT expired — treating it as expired would kick a tech in a
+    // no-signal basement to a login screen they cannot use.
+    expect(await probeSession(offline)).toBe("unreachable");
   });
 });
 

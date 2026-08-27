@@ -62,7 +62,6 @@ export const WorkOrderListSchema = z.object({
 });
 export type WorkOrderList = z.infer<typeof WorkOrderListSchema>;
 
-
 /**
  * Exactly the columns this module parses, derived from the schema so a field
  * added to one cannot go missing from the other.
@@ -111,7 +110,8 @@ export async function listWorkOrders(
   const res = await fetch(`${config.baseUrl}/api/resman/work-orders?${q.toString()}`, {
     headers: { Authorization: `Bearer ${config.token}` },
   });
-  if (res.status === 401 || res.status === 403) throw new Error("Not authorized for the ResMan API");
+  if (res.status === 401 || res.status === 403)
+    throw new Error("Not authorized for the ResMan API");
   if (!res.ok) throw new Error(`Failed to load work orders (${res.status})`);
   return WorkOrderListSchema.parse(await res.json());
 }
@@ -196,14 +196,29 @@ export async function closeWorkOrder(
   _config: StaffConfig,
   completedAt?: string,
 ): Promise<CloseResponse> {
+  // Coalesce: if this work order also has a pending EDIT (typed notes, a
+  // reassignment), fold it into the close so ResMan gets ONE update instead
+  // of two form replays. On success the edit is acked as delivered by this
+  // request — but only if it still holds exactly what was folded in.
+  const { usePendingEdits } = await import("@/lib/stores/pending-edits");
+  const pendingEdit = usePendingEdits.getState().pending[id];
+  const folded = pendingEdit && !pendingEdit.acked ? pendingEdit.patch : undefined;
   const result = await writeDirect({
     workOrderId: id,
     kind: "close",
-    patch: { ...(note ? { note } : {}), ...(completedAt ? { completedAt } : {}) },
+    patch: {
+      ...(folded?.technician !== undefined ? { technicianName: folded.technician } : {}),
+      ...(folded?.description !== undefined ? { description: folded.description } : {}),
+      ...(folded?.completionNotes !== undefined ? { completionNotes: folded.completionNotes } : {}),
+      ...(folded?.scheduledAt !== undefined ? { scheduledAt: folded.scheduledAt } : {}),
+      ...(note ? { note } : {}),
+      ...(completedAt ? { completedAt } : {}),
+    },
     expectedUnitId: null,
   });
-  if (!result) return { ok: true, queued: false, stub: false }; // refused — consumed
-  if (!result.ok) throw new Error(result.detail);
+  if (result && !result.ok) throw new Error(result.detail);
+  // Close delivered (or refused-consumed); the folded edit went with it.
+  if (folded) usePendingEdits.getState().ackDelivered(id, folded);
   return { ok: true, queued: false, stub: false };
 }
 

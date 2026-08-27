@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { EmberlyBrandLogo } from "@emberly/ui";
 import { GlassSurface } from "@/components/ui/GlassSurface";
+import { useAccentPalette } from "@/lib/hooks/use-accent";
 import { capture, identify } from "@/lib/analytics";
 import { signInWithResman } from "@/lib/api/auth";
 import { registerForEmergencyPush } from "@/lib/push";
@@ -37,6 +38,7 @@ export default function SignIn() {
   const router = useRouter();
   const { t } = useTranslation();
   const config = useConfig();
+  const palette = useAccentPalette();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [revealed, setRevealed] = useState(false);
@@ -231,9 +233,10 @@ export default function SignIn() {
                       height: 52,
                       alignItems: "center",
                       justifyContent: "center",
-                      // Olive at partial alpha so the blur reads through — the
-                      // glass tint, not a solid fill.
-                      backgroundColor: "rgba(162,169,33,0.72)",
+                      // Accent at partial alpha so the blur reads through —
+                      // the glass tint, not a solid fill (never hardcoded
+                      // olive: the accent theme owns this color).
+                      backgroundColor: `${palette.fill}B8`,
                     }}
                   >
                     <Text style={{ color: "#0B1020", fontSize: 16, fontWeight: "700" }}>

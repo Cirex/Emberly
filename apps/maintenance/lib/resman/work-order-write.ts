@@ -39,7 +39,11 @@ function pageHttp(fetchImpl: FetchLike): ResManPageHttp {
         credentials: "include",
         headers: { accept: "text/html,application/xhtml+xml", "user-agent": BROWSER_UA },
       });
-      return { status: response.status, finalUrl: response.url || url, text: await response.text() };
+      return {
+        status: response.status,
+        finalUrl: response.url || url,
+        text: await response.text(),
+      };
     },
     async postForm(url, body) {
       const response = await fetchImpl(url, {
@@ -52,7 +56,11 @@ function pageHttp(fetchImpl: FetchLike): ResManPageHttp {
         },
         body,
       });
-      return { status: response.status, finalUrl: response.url || url, text: await response.text() };
+      return {
+        status: response.status,
+        finalUrl: response.url || url,
+        text: await response.text(),
+      };
     },
   };
 }
@@ -73,11 +81,16 @@ export async function writeWorkOrderDirect(
   if (session.status !== "active") {
     // Short-circuit before any network: the pending stores retry every sync
     // tick, and hammering ResMan's login redirect helps nobody. verify() is
-    // cheap and rescues the common cookies-outlived-the-restart case.
+    // cheap and rescues the common cookies-outlived-the-restart case — and it
+    // distinguishes a genuinely dead session (bounced to login → the layout
+    // kicks to sign-in) from an unreachable ResMan (offline → plain retry,
+    // NEVER a sign-out).
     const alive = await session.verify(fetchImpl);
     if (!alive) {
-      session.markExpired();
-      throw new ResManSessionExpiredError();
+      if (useResManSession.getState().status === "expired") {
+        throw new ResManSessionExpiredError();
+      }
+      throw new Error("ResMan unreachable — will retry");
     }
   }
 
@@ -104,9 +117,13 @@ export async function writeWorkOrderDirect(
               } catch {
                 return { error: "employee list unreachable" };
               }
-              if (response.status !== 200) return { error: `employee list HTTP ${response.status}` };
+              if (response.status !== 200)
+                return { error: `employee list HTTP ${response.status}` };
               try {
-                return resolveTechnician(parseEmployeeList(JSON.parse(await response.text())), wantedName);
+                return resolveTechnician(
+                  parseEmployeeList(JSON.parse(await response.text())),
+                  wantedName,
+                );
               } catch {
                 return { error: "employee list did not parse" };
               }

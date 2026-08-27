@@ -693,7 +693,10 @@ function mutate(controls: FormControl[], request: WorkOrderWriteRequest, now: Da
     targets.set(name, value);
   };
 
-  if (request.kind === "edit") {
+  /** The plain field edits — applied for BOTH kinds, so a close can carry an
+   *  accompanying edit (typed notes, a reassignment) as ONE ResMan update
+   *  instead of two form replays. */
+  const applyEditFields = (): void => {
     if (patch.description !== undefined) {
       const description = requireControl(controls, "Description");
       if (description.kind === "input" && description.type === "hidden") {
@@ -710,9 +713,6 @@ function mutate(controls: FormControl[], request: WorkOrderWriteRequest, now: Da
       }
       set("AssignedToPersonID", patch.technicianPersonId);
     }
-    if (patch.completionNotes !== undefined) {
-      set("CompletedNotes", patch.completionNotes);
-    }
     if (patch.scheduledAt !== undefined) {
       if (patch.scheduledAt === null) {
         set("ScheduledDate", "");
@@ -726,6 +726,13 @@ function mutate(controls: FormControl[], request: WorkOrderWriteRequest, now: Da
         set("ScheduledDate_Date", formatResManDate(when));
       }
     }
+  };
+
+  if (request.kind === "edit") {
+    applyEditFields();
+    if (patch.completionNotes !== undefined) {
+      set("CompletedNotes", patch.completionNotes);
+    }
   } else {
     // close — replays what the page's own completedClosed() does: stamp the
     // completion date, set Status=Completed, and fill CompletedBy from the
@@ -735,11 +742,14 @@ function mutate(controls: FormControl[], request: WorkOrderWriteRequest, now: Da
       throw new WorkOrderWriteRefused(`completedAt is not a date: ${patch.completedAt}`);
     }
     // A work order the office already Closed is out of the technician's hands
-    // entirely — the close (and its note) is done history, not ours to amend.
+    // entirely — the close (and its folded edits) is done history, not ours.
     const status = currentStatus(controls);
     if (status === "Closed") {
       return { allowed, targets };
     }
+    // Folded edit fields FIRST — so a reassignment lands before the
+    // CompletedBy fill reads the assignee.
+    applyEditFields();
     // One that is already Completed keeps its original completion stamp —
     // a retried close must not move history — but a corrected note may land.
     const alreadyDone = status === "Completed";
@@ -748,8 +758,12 @@ function mutate(controls: FormControl[], request: WorkOrderWriteRequest, now: Da
       set("CompletedDate_Date", formatResManDate(completedAt));
       set("Status", "Completed"); // setControlValue proves the option exists
     }
+    // The close's own note wins over folded typed notes — it is the newer
+    // statement; typed notes apply when the close carried none.
     if (patch.note) {
       set("CompletedNotes", patch.note);
+    } else if (patch.completionNotes !== undefined) {
+      set("CompletedNotes", patch.completionNotes);
     }
     const completedBy = requireControl(controls, "CompletedByPersonID");
     if ((controlWireValue(completedBy) ?? "") === "") {

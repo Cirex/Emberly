@@ -281,6 +281,68 @@ test("edit: description is sanitized to ResMan's own limits (no <>, 248 max)", a
   assert.equal(byName.Description.length, 248);
 });
 
+test("close: folded edit fields land in the SAME update (one POST, not two)", async () => {
+  // The app coalesces a pending notes/reassignment edit into the close so
+  // ResMan gets one form replay. Reassignment applies BEFORE the CompletedBy
+  // fill, so the completion credit follows the new assignee.
+  const technician = "55e3d0ac-69e5-434b-b6fe-23fce4131ffb";
+  let landed = landClose(fixture("16305"), { note: "", completedBy: technician });
+  landed = landed
+    .replace('data-selected-value="7a2f5c20-42af-4e4e-808e-45bd64ae89c2"', `data-selected-value="${technician}"`)
+    .replace(/(name="CompletedNotes"[^>]*>)([^<]*)(<\/textarea>)/, "$1Relit pilot$3");
+  const transport = makeTransport({
+    pages: { [EDIT_URL_16305]: fixture("16305") },
+    pagesAfterPost: { [EDIT_URL_16305]: landed },
+  });
+  const result = await applyWorkOrderWrite({
+    client: makeClient(transport.fetchImpl),
+    request: {
+      workOrderId: WO_16305,
+      kind: "close",
+      patch: {
+        completionNotes: "Relit pilot",
+        technicianPersonId: technician,
+        completedAt: "2026-08-27T00:43:00Z",
+      },
+      expectedUnitId: UNIT_16305,
+    },
+    now: NOW,
+  });
+  assert.equal(result.ok, true);
+  const sent = posts(transport.calls);
+  assert.equal(sent.length, 1, "one POST carries close AND edit");
+  const byName = Object.fromEntries(decodePairs(sent[0].body));
+  assert.equal(byName.Status, "Completed");
+  assert.equal(byName.CompletedNotes, "Relit pilot");
+  assert.equal(byName.AssignedToPersonID, technician);
+  // CompletedBy follows the NEW assignee — reassignment applied first.
+  assert.equal(byName.CompletedByPersonID, technician);
+});
+
+test("close: an explicit close note beats folded typed notes", async () => {
+  const landed = landClose(fixture("16305"), {
+    note: "Final word",
+    completedBy: "7a2f5c20-42af-4e4e-808e-45bd64ae89c2",
+  });
+  const transport = makeTransport({
+    pages: { [EDIT_URL_16305]: fixture("16305") },
+    pagesAfterPost: { [EDIT_URL_16305]: landed },
+  });
+  const result = await applyWorkOrderWrite({
+    client: makeClient(transport.fetchImpl),
+    request: {
+      workOrderId: WO_16305,
+      kind: "close",
+      patch: { note: "Final word", completionNotes: "older draft", completedAt: "2026-08-27T00:43:00Z" },
+      expectedUnitId: UNIT_16305,
+    },
+    now: NOW,
+  });
+  assert.equal(result.ok, true);
+  const byName = Object.fromEntries(decodePairs(posts(transport.calls)[0].body));
+  assert.equal(byName.CompletedNotes, "Final word");
+});
+
 // MARK: - Guards (each one an attack)
 
 test("guard: a Cancelled work order is refused before any POST", async () => {

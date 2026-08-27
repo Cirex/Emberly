@@ -74,21 +74,22 @@ async function withTimeout<T>(
   }
 }
 
-
 /** How the tech signs out of ResMan (from MainMenu.js's #SignOut handler). */
 const SIGN_OUT_PATH = "/Access/SignOut";
 
 export type ResManSessionStatus =
   /** Never established on this device (or explicitly signed out). */
   | "absent"
+  /** A persisted session exists but no probe has answered since launch — the
+   *  cookies may well be alive. Renders as "checking", and must NEVER kick to
+   *  sign-in: every cold start passes through here. */
+  | "unverified"
   /** Established; last check saw an authenticated session. */
   | "active"
   /** A request hit the login redirect — the tech must sign in again. */
   | "expired";
 
-export type EstablishResult =
-  | { ok: true }
-  | { ok: false; reason: "invalid" | "unreachable" };
+export type EstablishResult = { ok: true } | { ok: false; reason: "invalid" | "unreachable" };
 
 /** Pull the (already-encoded) ReturnUrl off the login page URL without the
  *  URL API — React Native's URL support is not something to lean on. */
@@ -189,9 +190,18 @@ export async function performDeviceLogin(
   }
 }
 
-/** One cheap authenticated-or-not probe: does the consumer root serve, or
- *  bounce to login? Bounded — a probe that hangs must not stall a write. */
-export async function probeSession(fetchImpl: FetchLike = fetch): Promise<boolean> {
+/**
+ * One cheap probe of the consumer root, in three honest states: "active"
+ * (served), "expired" (bounced to the login page — genuinely dead),
+ * "unreachable" (network failure/timeout — the session state is UNKNOWN, and
+ * treating that as expired would kick an offline technician to a login screen
+ * they cannot use). Bounded — a probe must never stall a write. A successful
+ * probe also refreshes ResMan's sliding session expiry — the keep-alive rides
+ * on that.
+ */
+export type ProbeResult = "active" | "expired" | "unreachable";
+
+export async function probeSession(fetchImpl: FetchLike = fetch): Promise<ProbeResult> {
   try {
     const response = await withTimeout(
       (signal) =>
@@ -203,12 +213,11 @@ export async function probeSession(fetchImpl: FetchLike = fetch): Promise<boolea
       PROBE_TIMEOUT_MS,
     );
     await response.text(); // drain
-    return !isResManLoginRedirectUrl(response.url || "");
+    return isResManLoginRedirectUrl(response.url || "") ? "expired" : "active";
   } catch {
-    return false;
+    return "unreachable";
   }
 }
-
 
 /**
  * Best-effort server-side sign-out (GET /Access/SignOut), bounded. Never
@@ -265,11 +274,19 @@ interface ResManSessionState {
    *  `fetchImpl` is injectable so the write path (and tests) can thread their
    *  own transport through. */
   verify: (fetchImpl?: FetchLike) => Promise<boolean>;
+  /** Throttled keep-alive: while active, ping ResMan every few minutes so the
+   *  sliding session expiry keeps sliding through a workday. Rides the sync
+   *  tick; a tick inside the throttle window costs nothing. */
+  keepAlive: () => Promise<void>;
   /** Called by the write path when a request hit the login redirect. */
   markExpired: () => void;
   /** GET /Access/SignOut and forget the session. */
   signOut: () => Promise<void>;
 }
+
+/** Keep-alive throttle — module-scoped, one clock for the one store. */
+const KEEP_ALIVE_INTERVAL_MS = 5 * 60 * 1000;
+let lastKeepAliveAt = 0;
 
 export const useResManSession = create<ResManSessionState>((set, get) => ({
   status: "absent",
@@ -282,10 +299,9 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
     set({
       hydrated: true,
       username: persisted?.username ?? "",
-      // The cookies may or may not still be alive — "expired" makes the UI
-      // honest ("sign in to restore") until a verify() or a write proves
-      // otherwise.
-      status: persisted ? "expired" : "absent",
+      // The cookies may or may not still be alive — "unverified" is honest
+      // without kicking anyone anywhere; the probe below settles it.
+      status: persisted ? "unverified" : "absent",
     });
     if (persisted) {
       // Cheap background probe; native cookies often outlive an app restart.
@@ -316,11 +332,20 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
   },
 
   verify: async (fetchImpl = fetch) => {
-    const alive = await probeSession(fetchImpl);
+    const probe = await probeSession(fetchImpl);
     const { status } = get();
-    if (alive && status !== "active") set({ status: "active" });
-    if (!alive && status === "active") set({ status: "expired" });
-    return alive;
+    if (probe === "active" && status !== "active") set({ status: "active" });
+    if (probe === "expired") get().markExpired();
+    // "unreachable" changes nothing: the session may be fine, the network is not.
+    return probe === "active";
+  },
+
+  keepAlive: async () => {
+    if (get().status !== "active") return;
+    const now = Date.now();
+    if (now - lastKeepAliveAt < KEEP_ALIVE_INTERVAL_MS) return;
+    lastKeepAliveAt = now;
+    await get().verify();
   },
 
   markExpired: () => {

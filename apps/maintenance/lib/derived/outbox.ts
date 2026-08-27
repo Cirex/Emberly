@@ -38,6 +38,8 @@ export interface OutboxItem {
   photoCount?: number;
   /** Fields an edit touches (kind === "edit"), for a localized title. */
   editFields?: EditField[];
+  /** The last delivery failure for closes/edits — shown verbatim on the row. */
+  lastError?: string;
 }
 
 /** Which fields an edit touches, as keys — the screen turns these into words. */

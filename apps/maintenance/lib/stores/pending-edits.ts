@@ -35,6 +35,10 @@ interface PendingEditsState {
   queueEdit: (workOrderId: string, patch: WorkOrderEditPatch, config: StaffConfig) => Promise<void>;
   /** Retry any un-acked entries (called from the sync tick). */
   flush: (config: StaffConfig) => Promise<void>;
+  /** Mark an entry delivered by SOMEONE ELSE's request — the coalesced close
+   *  folds a pending edit into its own ResMan write, then acks it here. Only
+   *  lands if the entry still holds exactly the patch that was folded in. */
+  ackDelivered: (workOrderId: string, sent: WorkOrderEditPatch) => void;
   /** Drop entries the mirror has caught up with (base row matches every
    *  edited field) or stale ones. */
   prune: (rows: readonly WorkOrder[], nowMs: number) => void;
@@ -154,12 +158,17 @@ export const usePendingEdits = create<PendingEditsState>()(
           for (const entry of Object.values(s.pending)) {
             const row = byId.get(entry.workOrderId);
             const retire =
-              nowMs - entry.editedAt > STALE_MS || (row !== undefined && absorbed(row, entry.patch));
+              nowMs - entry.editedAt > STALE_MS ||
+              (row !== undefined && absorbed(row, entry.patch));
             if (retire) changed = true;
             else next[entry.workOrderId] = entry;
           }
           return changed ? { pending: next } : s;
         });
+      },
+
+      ackDelivered: (workOrderId, sent) => {
+        ackIfUnchanged(set, workOrderId, sent);
       },
 
       remove: (workOrderId) => {

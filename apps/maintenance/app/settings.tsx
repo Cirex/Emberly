@@ -4,10 +4,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import Constants from "expo-constants";
-import {
-  shouldCheckTranslation,
-  translateNotice,
-} from "@/lib/translation/availability-notice";
+import { shouldCheckTranslation, translateNotice } from "@/lib/translation/availability-notice";
 import {
   isTranslateModuleLinked,
   translateAvailability,
@@ -53,14 +50,29 @@ function SectionLabel({ children }: { children: string }) {
   return (
     <Text
       className="text-slate dark:text-white/60"
-      style={{ fontSize: 11, fontWeight: "700", letterSpacing: 1, marginTop: 18, marginBottom: 7, marginLeft: 4 }}
+      style={{
+        fontSize: 11,
+        fontWeight: "700",
+        letterSpacing: 1,
+        marginTop: 18,
+        marginBottom: 7,
+        marginLeft: 4,
+      }}
     >
       {children.toUpperCase()}
     </Text>
   );
 }
 
-function Row({ label, sub, children }: { label: string; sub?: string; children?: React.ReactNode }) {
+function Row({
+  label,
+  sub,
+  children,
+}: {
+  label: string;
+  sub?: string;
+  children?: React.ReactNode;
+}) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 12, gap: 12 }}>
       <View style={{ flex: 1, minWidth: 0 }}>
@@ -89,7 +101,15 @@ function Segments<T extends string>({
 }) {
   const palette = useAccentPalette();
   return (
-    <View style={{ flexDirection: "row", borderRadius: 12, backgroundColor: "rgba(9,27,84,0.06)", padding: 3, gap: 2 }}>
+    <View
+      style={{
+        flexDirection: "row",
+        borderRadius: 12,
+        backgroundColor: "rgba(9,27,84,0.06)",
+        padding: 3,
+        gap: 2,
+      }}
+    >
       {options.map((o) => (
         <Pressable
           key={o.id}
@@ -103,7 +123,13 @@ function Segments<T extends string>({
             backgroundColor: value === o.id ? `${palette.fill}D9` : "transparent",
           }}
         >
-          <Text style={{ fontSize: 13, fontWeight: "600", color: value === o.id ? "#FFFFFF" : "#4C556F" }}>
+          <Text
+            style={{
+              fontSize: 13,
+              fontWeight: "600",
+              color: value === o.id ? "#FFFFFF" : "#4C556F",
+            }}
+          >
             {o.label}
           </Text>
         </Pressable>
@@ -264,7 +290,10 @@ export default function Settings() {
       <Text className="text-navy dark:text-white" style={{ fontSize: 24, fontWeight: "700" }}>
         {t("settings.title")}
       </Text>
-      <Text className="text-slate dark:text-white/60" style={{ fontSize: 12.5, marginTop: 2, marginBottom: 16 }}>
+      <Text
+        className="text-slate dark:text-white/60"
+        style={{ fontSize: 12.5, marginTop: 2, marginBottom: 16 }}
+      >
         {t("settings.subtitle")}
       </Text>
 
@@ -281,13 +310,22 @@ export default function Settings() {
               justifyContent: "center",
             }}
           >
-            <Text style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "800" }}>{initialsOf(displayName)}</Text>
+            <Text style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "800" }}>
+              {initialsOf(displayName)}
+            </Text>
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text className="text-navy dark:text-white" style={{ fontSize: 15, fontWeight: "800" }} numberOfLines={1}>
+            <Text
+              className="text-navy dark:text-white"
+              style={{ fontSize: 15, fontWeight: "800" }}
+              numberOfLines={1}
+            >
               {displayName}
             </Text>
-            <Text className="text-slate dark:text-white/60" style={{ fontSize: 11.5, marginTop: 1 }}>
+            <Text
+              className="text-slate dark:text-white/60"
+              style={{ fontSize: 11.5, marginTop: 1 }}
+            >
               {t("settings.signedInVia")}
             </Text>
           </View>
@@ -302,9 +340,15 @@ export default function Settings() {
                 borderColor: `${palette.fill}66`,
               }}
             >
-              {/* Machine role value on purpose — roles are not translated. */}
+              {/* The scoped DEVICE role, mapped to what it means on this
+                  surface: the maintenance app mints the units+work-orders
+                  role, which happens to be NAMED security_manager server-side
+                  (see app-token/route.ts) — showing that name here reads as a
+                  permissions bug. */}
               <Text style={{ fontSize: 9, fontWeight: "800", color: "#767B24" }}>
-                {admin.role.replace(/_/g, " ").toUpperCase()}
+                {(admin.role === "security_manager" ? "maintenance" : admin.role)
+                  .replace(/_/g, " ")
+                  .toUpperCase()}
               </Text>
             </View>
           ) : null}
@@ -314,7 +358,10 @@ export default function Settings() {
       <SectionLabel>{t("settings.appearance")}</SectionLabel>
       <AppCardSurface kind="panel" style={{ paddingHorizontal: 18, paddingVertical: 4 }}>
         <View style={{ paddingVertical: 11 }}>
-          <Text className="text-navy dark:text-white" style={{ fontSize: 13.5, fontWeight: "600", marginBottom: 8 }}>
+          <Text
+            className="text-navy dark:text-white"
+            style={{ fontSize: 13.5, fontWeight: "600", marginBottom: 8 }}
+          >
             {t("settings.themeLabel")}
           </Text>
           <ThemeCards
@@ -334,7 +381,12 @@ export default function Settings() {
           <AccentPicker value={settings.accentId} onChange={settings.setAccent} />
         </View>
         <Row label={t("settings.language")}>
-          <Dropdown value={settings.language} options={LANGUAGE_OPTIONS} accent={accent} onChange={onPickLanguage} />
+          <Dropdown
+            value={settings.language}
+            options={LANGUAGE_OPTIONS}
+            accent={accent}
+            onChange={onPickLanguage}
+          />
         </Row>
       </AppCardSurface>
 
@@ -361,8 +413,15 @@ export default function Settings() {
           label={syncedLine}
           sub={t("settings.dataCounts", { workOrders: workOrderCount, units: unitCount })}
         >
-          <Pressable onPress={onSyncNow} accessibilityRole="button" disabled={syncBusy} style={{ opacity: syncBusy ? 0.5 : 1 }}>
-            <Text style={{ fontSize: 13, fontWeight: "700", color: "#767B24" }}>{t("settings.syncNow")}</Text>
+          <Pressable
+            onPress={onSyncNow}
+            accessibilityRole="button"
+            disabled={syncBusy}
+            style={{ opacity: syncBusy ? 0.5 : 1 }}
+          >
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#767B24" }}>
+              {t("settings.syncNow")}
+            </Text>
           </Pressable>
         </Row>
         <Pressable
@@ -372,7 +431,11 @@ export default function Settings() {
         >
           <Row
             label={t("settings.outbox")}
-            sub={outboxCount > 0 ? t("outbox.waiting", { count: outboxCount }) : t("outbox.allDelivered")}
+            sub={
+              outboxCount > 0
+                ? t("outbox.waiting", { count: outboxCount })
+                : t("outbox.allDelivered")
+            }
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               {outboxCount > 0 ? (
@@ -387,7 +450,9 @@ export default function Settings() {
                     justifyContent: "center",
                   }}
                 >
-                  <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "800" }}>{outboxCount}</Text>
+                  <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "800" }}>
+                    {outboxCount}
+                  </Text>
                 </View>
               ) : null}
               <Ionicons name="chevron-forward" size={16} color={MUTED} />
@@ -410,22 +475,33 @@ export default function Settings() {
               backgroundColor: resmanStatus === "active" ? "#33A666" : "#B05E14",
             }}
           />
-          <Text className="text-navy dark:text-white" style={{ fontSize: 15, fontWeight: "600", flex: 1 }}>
+          <Text
+            className="text-navy dark:text-white"
+            style={{ fontSize: 15, fontWeight: "600", flex: 1 }}
+          >
             {t("settings.resmanSession")}
           </Text>
           <Text className="text-slate dark:text-white/60" style={{ fontSize: 12.5 }}>
             {resmanStatus === "active"
               ? t("settings.resmanSessionActive")
-              : t("settings.resmanSessionExpired")}
+              : resmanStatus === "unverified"
+                ? t("settings.resmanSessionChecking")
+                : t("settings.resmanSessionExpired")}
           </Text>
         </View>
-        <Pressable onPress={() => router.push("/sign-in")} accessibilityRole="button" style={{ paddingVertical: 12 }}>
+        <Pressable
+          onPress={() => router.push("/sign-in")}
+          accessibilityRole="button"
+          style={{ paddingVertical: 12 }}
+        >
           <Text className="text-navy dark:text-white" style={{ fontSize: 15, fontWeight: "600" }}>
             {t("settings.switchUser")}
           </Text>
         </Pressable>
         <Pressable onPress={onSignOut} accessibilityRole="button" style={{ paddingVertical: 12 }}>
-          <Text style={{ color: RED, fontSize: 15, fontWeight: "700" }}>{t("settings.signOut")}</Text>
+          <Text style={{ color: RED, fontSize: 15, fontWeight: "700" }}>
+            {t("settings.signOut")}
+          </Text>
         </Pressable>
       </AppCardSurface>
 

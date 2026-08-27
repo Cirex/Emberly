@@ -7,6 +7,7 @@ import { registerForEmergencyPush, useWorkOrdersChangedPush } from "@/lib/push";
 import { useAnnotationPhotos } from "@/lib/stores/annotation-photos";
 import { useAnnotations } from "@/lib/stores/annotations";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
+import { useResManSession } from "@/lib/resman/session";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { usePendingEdits } from "@/lib/stores/pending-edits";
 import { usePm } from "@/lib/stores/pm";
@@ -76,6 +77,10 @@ function useServerSync() {
     }
     const CLOSED = new Set(["Closed", "Completed", "Cancelled", "Canceled"]);
     const tick = () => {
+      // Keep the device-held ResMan session warm through a workday: while
+      // active, a throttled probe (every ~5 min inside the store) refreshes
+      // ResMan's sliding expiry so writes don't find a dead session at 3pm.
+      void useResManSession.getState().keepAlive();
       void useWorkOrders
         .getState()
         .refresh(config)

@@ -102,7 +102,10 @@ export function extractLoggedInIdentity(html: string): ResmanLoggedInIdentity {
 }
 
 /** Prefer the primary page's fields, backfilling any gaps from a fallback page. */
-function mergeIdentity(primary: ResmanLoggedInIdentity, fallback: ResmanLoggedInIdentity): ResmanLoggedInIdentity {
+function mergeIdentity(
+  primary: ResmanLoggedInIdentity,
+  fallback: ResmanLoggedInIdentity,
+): ResmanLoggedInIdentity {
   return {
     personId: primary.personId ?? fallback.personId,
     personName: primary.personName ?? fallback.personName,
@@ -110,7 +113,9 @@ function mergeIdentity(primary: ResmanLoggedInIdentity, fallback: ResmanLoggedIn
   };
 }
 
-function parseOidcFormPost(html: string): { action: string; fields: Array<[string, string]> } | null {
+function parseOidcFormPost(
+  html: string,
+): { action: string; fields: Array<[string, string]> } | null {
   const actionMatch = /action=["']([^"']+)["']/.exec(html);
   if (!actionMatch) return null;
   const action = decodeHtmlEntities(actionMatch[1]);
@@ -125,12 +130,27 @@ function parseOidcFormPost(html: string): { action: string; fields: Array<[strin
 interface JarCookie {
   value: string;
   expires: number | null;
+  /** Host of the response that set it — what a device needs to file the
+   *  cookie under the right domain when a session is handed over. */
+  domain: string;
+  path: string;
+}
+
+/** One session cookie in the shape the native apps inject into their cookie
+ *  store when the server performs the ResMan login on their behalf. */
+export interface ResmanSessionCookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  /** ISO expiry, or null for a session cookie. */
+  expires: string | null;
 }
 
 class CookieJar {
   private readonly cookies = new Map<string, JarCookie>();
 
-  ingest(headers: Headers): void {
+  ingest(headers: Headers, host = ""): void {
     for (const header of getSetCookieHeaders(headers)) {
       const [pair, ...rawAttrs] = header.split(";").map((p) => p.trim());
       const sep = pair.indexOf("=");
@@ -138,6 +158,8 @@ class CookieJar {
       const name = pair.slice(0, sep);
       const value = pair.slice(sep + 1);
       let expires: number | null = null;
+      let domain = host;
+      let path = "/";
       for (const attr of rawAttrs) {
         const eq = attr.indexOf("=");
         const key = (eq < 0 ? attr : attr.slice(0, eq)).toLowerCase();
@@ -148,10 +170,27 @@ class CookieJar {
         } else if (key === "expires") {
           const p = Date.parse(val);
           if (Number.isFinite(p)) expires = p;
+        } else if (key === "domain" && val) {
+          domain = val.replace(/^\./, "");
+        } else if (key === "path" && val) {
+          path = val;
         }
       }
-      this.cookies.set(name, { value, expires });
+      this.cookies.set(name, { value, expires, domain, path });
     }
+  }
+
+  /** Unexpired cookies for handing a freshly-established session to a device. */
+  serialize(now = Date.now()): ResmanSessionCookie[] {
+    return Array.from(this.cookies.entries())
+      .filter(([, c]) => c.expires === null || c.expires > now)
+      .map(([name, c]) => ({
+        name,
+        value: c.value,
+        domain: c.domain,
+        path: c.path,
+        expires: c.expires === null ? null : new Date(c.expires).toISOString(),
+      }));
   }
 
   header(now = Date.now()): string {
@@ -193,7 +232,7 @@ async function fetchFollowing(
       body: method === "POST" ? body : undefined,
       redirect: "manual",
     });
-    jar.ingest(response.headers);
+    jar.ingest(response.headers, new URL(url).hostname);
 
     const status = response.status;
     const location = response.headers.get("location");
@@ -215,8 +254,16 @@ async function fetchFollowing(
 /** Challenge keywords that distinguish a device/MFA/CAPTCHA page from a plain
  *  "wrong password" login re-render. Matched case-insensitively against the HTML. */
 const CHALLENGE_MARKERS = [
-  "verify", "verification", "device", "authenticator",
-  "one-time", "passcode", "captcha", "locked", "mfa", "two-factor",
+  "verify",
+  "verification",
+  "device",
+  "authenticator",
+  "one-time",
+  "passcode",
+  "captcha",
+  "locked",
+  "mfa",
+  "two-factor",
 ] as const;
 
 function pageTitle(html: string): string | null {
@@ -280,18 +327,27 @@ export async function traceResmanAdminLogin(
   username: string,
   password: string,
   config: ResmanAdminConfig = resolveResmanAdminConfig(),
-  opts: { captureHtml?: boolean } = {},
+  opts: {
+    captureHtml?: boolean;
+    onJar?: (jar: { serialize(): ResmanSessionCookie[] }) => void;
+  } = {},
 ): Promise<ResmanLoginTrace> {
   const captureHtml = opts.captureHtml ?? false;
   const steps: ResmanLoginStepTrace[] = [];
   const jar = new CookieJar();
+  opts.onJar?.(jar);
   try {
     // 1. Bootstrap → login page + CSRF token.
     const bootstrap = await fetchFollowing(jar, { url: config.consumerStartUrl, method: "GET" });
     const token = bootstrap.status === 200 ? extractRequestVerificationToken(bootstrap.text) : null;
-    steps.push(summarizeStep("bootstrap", bootstrap, { csrfTokenFound: Boolean(token) }, captureHtml));
+    steps.push(
+      summarizeStep("bootstrap", bootstrap, { csrfTokenFound: Boolean(token) }, captureHtml),
+    );
     if (bootstrap.status !== 200) {
-      return { steps, result: { ok: false, reason: "unavailable", detail: `bootstrap ${bootstrap.status}` } };
+      return {
+        steps,
+        result: { ok: false, reason: "unavailable", detail: `bootstrap ${bootstrap.status}` },
+      };
     }
     if (!token) {
       return { steps, result: { ok: false, reason: "unavailable", detail: "no CSRF token" } };
@@ -322,10 +378,17 @@ export async function traceResmanAdminLogin(
     // 3. Replay the OIDC form_post. Invalid credentials re-render the login page
     //    (no auto-submit form_post to an absolute action) → treat as rejected.
     const formPost = parseOidcFormPost(credResult.text);
-    steps.push(summarizeStep("post-credentials", credResult, {
-      formPostAction: formPost?.action ?? null,
-      formPostFields: formPost?.fields.length ?? 0,
-    }, captureHtml));
+    steps.push(
+      summarizeStep(
+        "post-credentials",
+        credResult,
+        {
+          formPostAction: formPost?.action ?? null,
+          formPostFields: formPost?.fields.length ?? 0,
+        },
+        captureHtml,
+      ),
+    );
     if (!formPost || !/^https?:/i.test(formPost.action) || formPost.fields.length === 0) {
       return { steps, result: { ok: false, reason: "invalid_credentials" } };
     }
@@ -358,7 +421,11 @@ export async function traceResmanAdminLogin(
   } catch (error) {
     return {
       steps,
-      result: { ok: false, reason: "unavailable", detail: error instanceof Error ? error.message : String(error) },
+      result: {
+        ok: false,
+        reason: "unavailable",
+        detail: error instanceof Error ? error.message : String(error),
+      },
     };
   }
 }
@@ -382,4 +449,39 @@ export async function validateResmanAdminLogin(
     if (last) console.error("[resman-admin-login] rejected", { ...last, html: undefined });
   }
   return result;
+}
+
+export type ResmanAdminSessionResult =
+  | { ok: true; username: string; identity: ResmanLoggedInIdentity; cookies: ResmanSessionCookie[] }
+  | { ok: false; reason: "invalid_credentials" | "unavailable"; detail?: string };
+
+/**
+ * Run the full staff login and RETURN the session cookies — the server-side
+ * half of the maintenance app's device-held session. The device's own login
+ * dance fails on React Native's HTTP stack (field-verified: identical
+ * algorithm succeeds from node), so the server performs the proven login and
+ * hands the cookies over; the app injects them into its native cookie store
+ * and the session lives on the device from then on. Cookies are returned to
+ * the caller and NEVER persisted or logged here.
+ */
+export async function loginResmanAdminSession(
+  username: string,
+  password: string,
+  config: ResmanAdminConfig = resolveResmanAdminConfig(),
+): Promise<ResmanAdminSessionResult> {
+  const box: { serialize: (() => ResmanSessionCookie[]) | null } = { serialize: null };
+  const { steps, result } = await traceResmanAdminLogin(username, password, config, {
+    onJar: (jar) => {
+      box.serialize = () => jar.serialize();
+    },
+  });
+  if (!result.ok) {
+    if (result.reason === "invalid_credentials") {
+      const last = steps[steps.length - 1];
+      if (last)
+        console.error("[resman-admin-login] session login rejected", { ...last, html: undefined });
+    }
+    return result;
+  }
+  return { ...result, cookies: box.serialize ? box.serialize() : [] };
 }

@@ -73,7 +73,7 @@ export default function SignIn() {
     // means writes wait in the outbox until the tech signs in again. On
     // success the credentials persist in the device Keychain so the session
     // renews itself when ResMan times it out (see lib/resman/session.ts).
-    void useResManSession.getState().establish(username.trim(), password);
+    void useResManSession.getState().establish(username.trim(), password, result.resmanSession?.cookies);
     // Tie subsequent events to the staff member by their stable admin id (no
     // name/PII), then record the sign-in with just their role.
     identify(result.admin.adminId, { role: result.admin.role });

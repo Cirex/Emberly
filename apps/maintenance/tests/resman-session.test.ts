@@ -14,6 +14,16 @@ mock.module("expo-secure-store", () => ({
   setItemAsync: async (k: string, v: string) => void secure.set(k, v),
   deleteItemAsync: async (k: string) => void secure.delete(k),
 }));
+const cookieSets: unknown[][] = [];
+mock.module("@react-native-cookies/cookies", () => ({
+  default: {
+    set: async (...args: unknown[]) => {
+      cookieSets.push(args);
+      return true;
+    },
+    clearAll: async () => true,
+  },
+}));
 mock.module("@/lib/analytics", () => ({
   capture: () => {},
   identify: () => {},
@@ -171,6 +181,9 @@ describe("silent renewal", () => {
         // to the login page (that is exactly what an expired session does).
         return response(LOGIN_URL, LOGIN_HTML);
       }
+      if (method === "POST" && url.includes("/api/admin/auth/resman-session")) {
+        throw new Error("server unreachable"); // exercises the device fallback
+      }
       if (method === "POST" && url === LOGIN_URL) return response(LOGIN_URL, FORM_POST_HTML);
       if (method === "POST") return response(HOME, "<html>home</html>");
       throw new Error(`unscripted ${method} ${url}`);
@@ -178,20 +191,47 @@ describe("silent renewal", () => {
     return { calls, fetchImpl };
   }
 
-  test("verify: an expired session with Keychain credentials renews to active", async () => {
+  test("verify: an expired session renews via the SERVER session endpoint", async () => {
     secure.set(CREDS_KEY, JSON.stringify({ username: "tech", password: "pw" }));
-    useResManSession.setState({
-      status: "active",
-      username: "tech",
-      canRenew: true,
-      hydrated: true,
-    });
-    const { calls, fetchImpl } = renewalTransport();
+    useResManSession.setState({ status: "active", username: "tech", canRenew: true, hydrated: true });
+    cookieSets.length = 0;
+    let probes = 0;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (method === "POST" && url.includes("/api/admin/auth/resman-session")) {
+        return {
+          url,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            cookies: [
+              { name: "s", value: "v", domain: "multisouth.myresman.com", path: "/", expires: null },
+            ],
+          }),
+          text: async () => "",
+        } as unknown as Response;
+      }
+      // Probes: first sees the bounce (expired), the post-inject one sees home.
+      probes += 1;
+      return probes === 1
+        ? response(LOGIN_URL, LOGIN_HTML)
+        : response("https://multisouth.myresman.com/", "<html>home</html>");
+    }) as unknown as typeof fetch;
     const alive = await useResManSession.getState().verify(fetchImpl);
     expect(alive).toBe(true);
     expect(useResManSession.getState().status).toBe("active");
-    // Probe, then the 3-step dance (bootstrap GET + creds POST + oidc POST).
-    expect(calls.filter((c) => c.method === "POST")).toHaveLength(2);
+    expect(cookieSets.length).toBe(1); // the server cookie was injected natively
+  });
+
+  test("verify: server unreachable falls back to the on-device dance", async () => {
+    secure.set(CREDS_KEY, JSON.stringify({ username: "tech", password: "pw" }));
+    useResManSession.setState({ status: "active", username: "tech", canRenew: true, hydrated: true });
+    const { calls, fetchImpl } = renewalTransport(); // server endpoint throws → unreachable
+    const alive = await useResManSession.getState().verify(fetchImpl);
+    expect(alive).toBe(true);
+    expect(useResManSession.getState().status).toBe("active");
+    // Server attempt, then the dance's creds POST + oidc POST.
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(3);
   });
 
   test("renew: rejected credentials are wiped and the kick gate opens", async () => {
@@ -205,12 +245,17 @@ describe("silent renewal", () => {
     let posts = 0;
     const fetchImpl = (async (url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
+      if (method === "POST" && url.includes("/api/admin/auth/resman-session")) {
+        posts += 1;
+        return { url, status: 401, json: async () => ({}), text: async () => "" } as unknown as Response;
+      }
       if (method === "GET") return response(LOGIN_URL, LOGIN_HTML);
       posts += 1;
       return response(LOGIN_URL, RELOGIN_HTML); // creds rejected
     }) as unknown as typeof fetch;
     const renewed = await useResManSession.getState().renew(fetchImpl);
     expect(renewed).toBe(false);
+    // The server 401 is definitive — no device-dance retry with bad creds.
     expect(posts).toBe(1);
     expect(secure.has(CREDS_KEY)).toBe(false);
     expect(useResManSession.getState().canRenew).toBe(false);

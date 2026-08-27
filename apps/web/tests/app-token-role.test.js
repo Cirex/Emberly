@@ -25,11 +25,16 @@ const state = {
   minted: null,
 };
 
+const FAKE_COOKIES = [
+  { name: "s", value: "v", domain: "multisouth.myresman.com", path: "/", expires: null },
+];
+
 mock.module("@/lib/admin-users", () => ({
-  authenticateResmanAdmin: async () => ({
+  authenticateResmanAdminSession: async () => ({
     ok: true,
     admin: { adminId: "admin-7", role: "property_manager", displayName: "Marcus Tech" },
     personId: "person-9",
+    resmanCookies: FAKE_COOKIES,
   }),
 }));
 mock.module("@/lib/rate-limit", () => ({
@@ -65,6 +70,16 @@ function signIn(body) {
     }),
   );
 }
+
+test("maintenance response carries the ResMan session; manager's does not", async () => {
+  const maint = await signIn({ username: "marcus", password: "pw", app: "maintenance" });
+  assert.equal(maint.status, 200);
+  assert.deepEqual((await maint.json()).resmanSession, { cookies: FAKE_COOKIES });
+
+  const mgr = await signIn({ username: "marcus", password: "pw", app: "manager" });
+  assert.equal(mgr.status, 200);
+  assert.equal((await mgr.json()).resmanSession, undefined);
+});
 
 test("the maintenance app mints maintenance_tech, pinned to its own scopes", async () => {
   const response = await signIn({ username: "marcus", password: "pw", app: "maintenance" });

@@ -17,6 +17,16 @@ mock.module("expo-secure-store", () => ({
   setItemAsync: async (k: string, v: string) => void secure.set(k, v),
   deleteItemAsync: async (k: string) => void secure.delete(k),
 }));
+const cookieSets: unknown[][] = [];
+mock.module("@react-native-cookies/cookies", () => ({
+  default: {
+    set: async (...args: unknown[]) => {
+      cookieSets.push(args);
+      return true;
+    },
+    clearAll: async () => true,
+  },
+}));
 mock.module("@/lib/analytics", () => ({
   capture: () => {},
   identify: () => {},

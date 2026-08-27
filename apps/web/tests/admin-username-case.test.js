@@ -18,6 +18,8 @@ mock.module("@/lib/resman-admin-login", () => ({
   // ResMan authenticates case-insensitively — that is the whole premise. It
   // accepts whatever spelling is typed and answers with the same identity.
   validateResmanAdminLogin: async () => state.login,
+  // admin-users also imports the cookie-returning variant; unused here.
+  loginResmanAdminSession: async () => ({ ...state.login, cookies: [] }),
 }));
 
 mock.module("@/lib/supabase/admin", () => ({

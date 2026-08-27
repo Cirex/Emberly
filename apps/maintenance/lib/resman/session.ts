@@ -1,5 +1,8 @@
+import CookieManager from "@react-native-cookies/cookies";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
+import { PRODUCTION_ORIGIN } from "@emberly/core";
+import type { ResmanSessionCookie } from "@/lib/api/auth";
 import {
   MULTI_SOUTH_STAFF_PORTAL,
   buildStaffCredentialBody,
@@ -41,6 +44,10 @@ import { capture } from "@/lib/analytics";
 
 const PORTAL = MULTI_SOUTH_STAFF_PORTAL;
 const SESSION_KEY = "emberly_resman_session";
+
+/** Same resolution as the config store's BASE_URL, duplicated on purpose —
+ *  importing the config store would drag its native deps into this module. */
+const SERVER_BASE_URL = process.env.EXPO_PUBLIC_BASE_URL || PRODUCTION_ORIGIN;
 
 /**
  * The same Safari UA the sync worker's proven node client sends. The app's
@@ -313,6 +320,64 @@ async function wipeCredentials(): Promise<void> {
   }
 }
 
+/**
+ * File server-established ResMan cookies into the NATIVE cookie store — the
+ * same store the app's fetches ride on. The server performs the login (its
+ * egress IP is long-trusted by ResMan; a first-time device login trips the
+ * portal's new-device challenge) and hands the session over; from here it
+ * lives only on this device.
+ */
+export async function injectServerCookies(cookies: readonly ResmanSessionCookie[]): Promise<void> {
+  for (const cookie of cookies) {
+    await CookieManager.set(`https://${cookie.domain}${cookie.path || "/"}`, {
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path || "/",
+      secure: true,
+      httpOnly: true,
+      ...(cookie.expires ? { expires: cookie.expires } : {}),
+    });
+  }
+}
+
+type ServerSessionResult =
+  { ok: true; cookies: ResmanSessionCookie[] } | { ok: false; reason: "invalid" | "unreachable" };
+
+/**
+ * Ask emberly-web to run the ResMan login and hand back the session cookies
+ * (POST /api/admin/auth/resman-session). Bounded like every other network
+ * call that can sit in front of the UI.
+ */
+export async function fetchServerSession(
+  username: string,
+  password: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<ServerSessionResult> {
+  try {
+    const response = await withTimeout(
+      (signal) =>
+        fetchImpl(`${SERVER_BASE_URL}/api/admin/auth/resman-session`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username, password }),
+          signal,
+        }),
+      LOGIN_STEP_TIMEOUT_MS,
+    );
+    if (response.status === 401) return { ok: false, reason: "invalid" };
+    if (response.status !== 200) return { ok: false, reason: "unreachable" };
+    const payload = (await response.json()) as { cookies?: unknown };
+    const cookies = Array.isArray(payload.cookies)
+      ? (payload.cookies as ResmanSessionCookie[])
+      : [];
+    if (cookies.length === 0) return { ok: false, reason: "unreachable" };
+    return { ok: true, cookies };
+  } catch {
+    return { ok: false, reason: "unreachable" };
+  }
+}
+
 interface ResManSessionState {
   status: ResManSessionStatus;
   /** ResMan username the session belongs to ("" when absent). */
@@ -329,8 +394,15 @@ interface ResManSessionState {
   lastEstablishReason: "invalid" | "unreachable" | "already_authenticated" | null;
   hydrated: boolean;
   hydrate: () => Promise<void>;
-  /** Sign out any lingering session, then log in as this technician. */
-  establish: (username: string, password: string) => Promise<EstablishResult>;
+  /** Establish this technician's session. `serverCookies` (from the sign-in
+   *  response, where the server already ran the ResMan login) are injected
+   *  directly; otherwise the server session endpoint is asked, and the
+   *  on-device dance remains the last resort. */
+  establish: (
+    username: string,
+    password: string,
+    serverCookies?: readonly ResmanSessionCookie[],
+  ) => Promise<EstablishResult>;
   /** Re-check the session against ResMan; flips status accordingly.
    *  `fetchImpl` is injectable so the write path (and tests) can thread their
    *  own transport through. */
@@ -381,26 +453,46 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
     void get().verify();
   },
 
-  establish: async (username, password) => {
+  establish: async (username, password, serverCookies) => {
     await SecureStore.deleteItemAsync(SESSION_KEY);
     set({ status: "absent", username: "", lastEstablishAt: Date.now() });
-    // Unlike the button path, login MUST wait for the server-side sign-out
-    // (bounded): a lingering predecessor session would make the bootstrap
-    // land authenticated and the login refuse.
+    // Clear whatever session lingers, local cookie store included — the next
+    // session must be THIS technician's, never an inherited one.
     await remoteSignOut();
-    let result = await performDeviceLogin(username, password);
-    if (!result.ok && result.reason === "already_authenticated") {
-      // The sign-out had not taken effect yet (seen in the field: a device
-      // whose live session survived /Access/SignOut long enough for the
-      // bootstrap to ride it). One more full round; if the session STILL
-      // will not die we refuse rather than bind an unknown identity —
-      // and the probes will independently report the live session as
-      // Active, so nothing user-visible gets stuck on this failure.
-      await remoteSignOut();
-      result = await performDeviceLogin(username, password);
-      if (!result.ok && result.reason === "already_authenticated") {
-        result = { ok: false, reason: "unreachable" };
+    try {
+      await CookieManager.clearAll();
+    } catch {
+      /* nothing to clear */
+    }
+
+    // Preferred path: a session the SERVER established (its IP is trusted by
+    // ResMan; the device's own first login trips the new-device challenge).
+    // Sign-in hands cookies straight in; renewal asks the endpoint.
+    let result: EstablishResult | null = null;
+    let cookies: readonly ResmanSessionCookie[] | null = serverCookies ?? null;
+    if (!cookies) {
+      const server = await fetchServerSession(username, password);
+      if (server.ok) cookies = server.cookies;
+      else if (server.reason === "invalid") result = { ok: false, reason: "invalid" };
+    }
+    if (!result && cookies) {
+      await injectServerCookies(cookies);
+      result =
+        (await probeSession()) === "active" ? { ok: true } : { ok: false, reason: "unreachable" };
+    }
+
+    // Last resort: the on-device dance (works on some networks; kept for
+    // resilience when the server is unreachable).
+    if (!result || (!result.ok && result.reason === "unreachable")) {
+      let device = await performDeviceLogin(username, password);
+      if (!device.ok && device.reason === "already_authenticated") {
+        await remoteSignOut();
+        device = await performDeviceLogin(username, password);
+        if (!device.ok && device.reason === "already_authenticated") {
+          device = { ok: false, reason: "unreachable" };
+        }
       }
+      if (device.ok || !result) result = device;
     }
     if (result.ok) {
       set({ status: "active", username, canRenew: true, lastEstablishReason: null });
@@ -458,11 +550,24 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
         set({ canRenew: false });
         return false;
       }
-      const result = await performDeviceLogin(
+      let result: EstablishResult;
+      const server = await fetchServerSession(
         credentials.username,
         credentials.password,
         fetchImpl,
       );
+      if (server.ok) {
+        await injectServerCookies(server.cookies);
+        result =
+          (await probeSession(fetchImpl)) === "active"
+            ? { ok: true }
+            : { ok: false, reason: "unreachable" };
+      } else if (server.reason === "invalid") {
+        result = { ok: false, reason: "invalid" };
+      } else {
+        // Server unreachable — the on-device dance is better than nothing.
+        result = await performDeviceLogin(credentials.username, credentials.password, fetchImpl);
+      }
       if (result.ok) {
         set({ status: "active", username: credentials.username, canRenew: true });
         capture("resman_session_renewed", {});

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mintAccessToken } from "@/lib/access-tokens";
-import { authenticateResmanAdmin } from "@/lib/admin-users";
+import { authenticateResmanAdminSession } from "@/lib/admin-users";
 import { requestSource } from "@/lib/http";
 import { appRoleScopes } from "@/lib/resman-api-auth";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -34,7 +34,9 @@ export async function POST(request: NextRequest) {
   const { username, password, device, app } = {
     username: str((body as Record<string, unknown>)?.username).trim(),
     password: str((body as Record<string, unknown>)?.password),
-    device: str((body as Record<string, unknown>)?.device).trim().slice(0, 64),
+    device: str((body as Record<string, unknown>)?.device)
+      .trim()
+      .slice(0, 64),
     app: str((body as Record<string, unknown>)?.app).trim(),
   };
   const source = requestSource(request);
@@ -56,7 +58,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Too many login attempts" }, { status: 429 });
   }
 
-  const result = await authenticateResmanAdmin(username, password);
+  const result = await authenticateResmanAdminSession(username, password);
   if (!result.ok) {
     if (result.reason === "unavailable" || result.reason === "not_configured") {
       return NextResponse.json(
@@ -112,5 +114,15 @@ export async function POST(request: NextRequest) {
       displayName: admin.displayName,
       personId: result.personId,
     },
+    // The freshly-established ResMan session, for the maintenance app to
+    // inject into its NATIVE cookie store — the device's own login dance
+    // fails on React Native's HTTP stack (the identical algorithm succeeds
+    // from node), so the server performs the proven login and hands the
+    // session over. Returned once, never persisted or logged server-side;
+    // from here the session lives only on the device. Manager doesn't write
+    // to ResMan, so it doesn't get one.
+    ...(isManager || !result.resmanCookies
+      ? {}
+      : { resmanSession: { cookies: result.resmanCookies } }),
   });
 }

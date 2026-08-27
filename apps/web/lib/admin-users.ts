@@ -8,7 +8,12 @@
  */
 import type { AdminAuthContext, AdminRole } from "./auth";
 import { BOOTSTRAP_ADMIN_CONTEXT, verifyBreakGlassKey } from "./auth";
-import { validateResmanAdminLogin } from "./resman-admin-login";
+import {
+  validateResmanAdminLogin,
+  loginResmanAdminSession,
+  type ResmanSessionCookie,
+  type ResmanLoggedInIdentity,
+} from "./resman-admin-login";
 import { createUntypedAdminClient, getMissingSupabaseAdminEnvVars } from "./supabase/admin";
 import type { UntypedSupabase } from "./supabase/types";
 
@@ -51,11 +56,39 @@ export async function authenticateResmanAdmin(
 ): Promise<AdminLoginResult> {
   const login = await validateResmanAdminLogin(username, password);
   if (!login.ok) return { ok: false, reason: login.reason };
+  return resolveAdminForIdentity(username, login.identity, client);
+}
 
+/**
+ * Like authenticateResmanAdmin, but the login runs through
+ * loginResmanAdminSession so the RESMAN SESSION COOKIES ride back with the
+ * admin context — the server-performed half of the maintenance app's
+ * device-held session (the device injects them into its native cookie store;
+ * nothing is persisted or logged here).
+ */
+export async function authenticateResmanAdminSession(
+  username: string,
+  password: string,
+  client?: UntypedSupabase,
+): Promise<AdminLoginResult & { resmanCookies?: ResmanSessionCookie[] }> {
+  const login = await loginResmanAdminSession(username, password);
+  if (!login.ok) return { ok: false, reason: login.reason };
+  const resolved = await resolveAdminForIdentity(username, login.identity, client);
+  if (!resolved.ok) return resolved;
+  return { ...resolved, resmanCookies: login.cookies };
+}
+
+/** The shared post-login half: admin_users upsert + identity backfill. */
+async function resolveAdminForIdentity(
+  username: string,
+  identity: ResmanLoggedInIdentity,
+  client?: UntypedSupabase,
+): Promise<AdminLoginResult> {
+  const login = { identity };
   if (!client && getMissingSupabaseAdminEnvVars().length > 0) {
     return { ok: false, reason: "not_configured" };
   }
-  const supabase = client ?? (createUntypedAdminClient());
+  const supabase = client ?? createUntypedAdminClient();
   const now = new Date().toISOString();
   const resmanUsername = normalizeResmanUsername(username);
 
@@ -174,8 +207,7 @@ export async function countActiveSuperAdmins(client: UntypedSupabase): Promise<n
 }
 
 export type UpdateAdminRoleResult =
-  | { ok: true; admin: AdminUserSummary }
-  | { ok: false; reason: "not_found" | "last_super_admin" };
+  { ok: true; admin: AdminUserSummary } | { ok: false; reason: "not_found" | "last_super_admin" };
 
 /**
  * Change an admin's role. Refuses to demote the last active super_admin, which

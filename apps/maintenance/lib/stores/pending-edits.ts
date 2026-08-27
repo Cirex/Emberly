@@ -7,12 +7,13 @@ import type { StaffConfig } from "@/lib/stores/config";
 /**
  * Optimistic "edited, pending ResMan" overlay — the sibling of pending-closes
  * for the detail screen's edits (technician reassignment, description,
- * technician notes). The real write to ResMan doesn't exist yet — the server
- * route is a stub that answers queued:true — so this store is the app's
- * memory of what the technician changed. The detail screen renders overlay
- * values over the base row; entries retire on their own once the sync mirror
- * reports the base row absorbed every edited field (or after the stale
- * window, so a stub entry can't shadow reality forever).
+ * technician notes). The server queues each edit durably and the sync worker
+ * replays it into ResMan minutes later, so this store is the app's memory of
+ * what the technician changed in the meantime. The detail screen renders
+ * overlay values over the base row; entries retire on their own once the sync
+ * mirror reports the base row absorbed every edited field (or after the stale
+ * window, so an entry whose write failed server-side can't shadow reality
+ * forever).
  */
 
 export interface PendingEdit {
@@ -23,8 +24,8 @@ export interface PendingEdit {
   acked: boolean;
 }
 
-/** An edit older than this is dropped at prune — with the write path stubbed,
- *  an entry can otherwise outlive its usefulness. */
+/** An edit older than this is dropped at prune — a write the flusher kept
+ *  refusing would otherwise shadow the base row forever. */
 const STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface PendingEditsState {

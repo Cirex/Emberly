@@ -4,7 +4,7 @@
 > change the route's docblock and regenerate.** Each entry's prose is the docblock
 > above that handler, so it lives next to the code and is updated in the same edit.
 
-103 routes, 123 handlers.
+104 routes, 125 handlers.
 
 ## Conventions
 
@@ -33,7 +33,7 @@ shown — a token without it gets 403 even though it authenticated fine.
 
 ## Contents
 
-- [`/api/resman`](#apiresman) — 45 routes
+- [`/api/resman`](#apiresman) — 46 routes
 - [`/api/admin`](#apiadmin) — 36 routes
 - [`/api/mlgw`](#apimlgw) — 6 routes
 - [`/api/resident`](#apiresident) — 5 routes
@@ -139,6 +139,35 @@ their last four characters. Staff-token only.
   - `404` → `{ error }`
   - `500` → `{ data, error }`
 - **Source** — [`apps/web/app/api/resman/manager/insurance-actions/[id]/route.ts`](../apps/web/app/api/resman/manager/insurance-actions/[id]/route.ts)
+
+### `GET /api/resman/manager/lease-notes`
+
+The shared staff notes thread on a lease (manager app, pipeline detail
+sheet).
+
+GET  ?lease=<resman_lease_id> — the lease's thread, oldest first.
+POST { resmanLeaseId, body, unitNumber? } — append one note; attribution
+(name + role + admin id) comes from the token, like
+delinquency-actions.
+
+Rides on `manager:leases` on purpose: notes are part of the lease surface,
+and a new capability would have signed every existing manager token out of
+the thread (see app-role-capabilities on why PM rides on work-orders).
+
+- **Auth** — staff bearer token, capability `manager:leases`
+- **Returns**
+  - `400` → `{ error }`
+  - `500` → `{ data, error }`
+- **Source** — [`apps/web/app/api/resman/manager/lease-notes/route.ts`](../apps/web/app/api/resman/manager/lease-notes/route.ts)
+
+### `POST /api/resman/manager/lease-notes`
+
+- **Auth** — staff bearer token, capability `manager:leases`
+- **Returns**
+  - `201` → `{ data }`
+  - `400` → `{ error }`
+  - `500` → `{ error }`
+- **Source** — [`apps/web/app/api/resman/manager/lease-notes/route.ts`](../apps/web/app/api/resman/manager/lease-notes/route.ts)
 
 ### `GET /api/resman/manager/leases`
 
@@ -442,44 +471,52 @@ scoped field-device tokens may not.
 
 ### `POST /api/resman/work-orders/:id/close`
 
-POST /api/resman/work-orders/[id]/close — STUB of the write path.
+POST /api/resman/work-orders/[id]/close — queue a work-order close for ResMan.
 
-The maintenance app calls this when a technician closes a work order from
-their path. ResMan is the system of record, and we do not write to it yet:
-this validates the work order exists and answers `{ queued: true, stub:
-true }` so the app can render "Closed · pending ResMan" optimistically.
+The maintenance app calls this when a technician marks a work order
+complete. ResMan is the system of record, and this route never touches it
+inline: it validates the work order exists and appends a durable row to
+`maintenance_work_order_edits`, which the sync worker's
+flush-work-order-writes job replays against ResMan's edit form — Status
+becomes "Completed" (the office's Close stays office work), the completion
+date is stamped, and ResMan credits the ASSIGNED technician
+(CompletedByPersonID follows AssignedToPersonID). When the tech did not
+stamp a completion date themselves, the flush uses this row's created_at —
+the moment they tapped, not the moment the queue drained. The app renders
+"Closed · pending ResMan" optimistically until the mirror absorbs it.
+Never write resman_work_orders directly.
 
-Real implementation (per apps/maintenance/README.md "deferred write path"):
-upsert a maintenance_work_order_edits overlay row (status "Closed",
-edited_by from the token) and push the close to ResMan; the sync then
-absorbs it. Never write resman_work_orders directly.
+Staff-token only: a scanner is a gate device, not a maintenance tool.
 
 - **Auth** — ResMan API key
 - **Returns**
+  - `403` → `{ error }`
   - `404` → `{ error }`
-  - `500` → `{ ok, queued, stub, error }`
+  - `500` → `{ ok, queued, error }`
 - **Source** — [`apps/web/app/api/resman/work-orders/[id]/close/route.ts`](../apps/web/app/api/resman/work-orders/[id]/close/route.ts)
 
 ### `POST /api/resman/work-orders/:id/edit`
 
-POST /api/resman/work-orders/[id]/edit — STUB of the write path.
+POST /api/resman/work-orders/[id]/edit — queue a work-order edit for ResMan.
 
 The maintenance app calls this when a technician reassigns a work order or
-edits its description / technician notes from the detail screen. ResMan is
-the system of record, and we do not write to it yet: this validates the
-work order exists and answers `{ queued: true, stub: true }` so the app can
-render the edited values optimistically ("pending sync").
+edits its description / technician notes / scheduled visit from the detail
+screen. ResMan is the system of record, and this route never touches it
+inline: it validates the work order exists and appends a durable row to
+`maintenance_work_order_edits`, which the sync worker's
+flush-work-order-writes job replays against ResMan's edit form (edits and
+closes only — delete and cancel are refused by the writer). The app renders
+the edited values optimistically ("pending sync") until the mirror absorbs
+them on a later sync pass. Never write resman_work_orders directly.
 
-Real implementation (per apps/maintenance/README.md "deferred write path"):
-upsert a maintenance_work_order_edits overlay row (edited_by from the
-token) and push the change to ResMan; the sync then absorbs it. Never
-write resman_work_orders directly.
+Staff-token only: a scanner is a gate device, not a maintenance tool.
 
 - **Auth** — ResMan API key
 - **Returns**
   - `400` → `{ error }`
+  - `403` → `{ error }`
   - `404` → `{ error }`
-  - `500` → `{ ok, queued, stub, error }`
+  - `500` → `{ ok, queued, error }`
 - **Source** — [`apps/web/app/api/resman/work-orders/[id]/edit/route.ts`](../apps/web/app/api/resman/work-orders/[id]/edit/route.ts)
 
 ### `GET /api/resman/work-orders/:id/photos`
@@ -496,6 +533,7 @@ write resman_work_orders directly.
   - `201` → `{ error, data }`
   - `400` → `{ error }`
   - `404` → `{ error }`
+  - `413` → `{ error }`
   - `500` → `{ error }`
 - **Source** — [`apps/web/app/api/resman/work-orders/[id]/photos/route.ts`](../apps/web/app/api/resman/work-orders/[id]/photos/route.ts)
 
@@ -725,6 +763,7 @@ A scanner credential can only reach security-layer rows; admins reach both.
 - **Returns**
   - `201` → `{ error, photo }`
   - `400` → `{ error }`
+  - `413` → `{ error }`
 - **Source** — [`apps/web/app/api/admin/map-annotations/[annotationId]/photos/route.ts`](../apps/web/app/api/admin/map-annotations/[annotationId]/photos/route.ts)
 
 ### `GET /api/admin/map-cameras`

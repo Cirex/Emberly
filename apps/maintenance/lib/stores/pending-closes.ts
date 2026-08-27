@@ -6,12 +6,13 @@ import { closeWorkOrder } from "@/lib/api/work-orders";
 import type { StaffConfig } from "@/lib/stores/config";
 
 /**
- * Optimistic "closed, pending ResMan" overlay. The real close write to ResMan
- * doesn't exist yet — the server route is a stub that answers queued:true —
- * so this store is the app's memory of which work orders the technician has
- * closed. Screens consult it to render those rows as closed; entries retire
- * on their own once the sync mirror reports the base row actually closed
- * (or after the stale window, so a stub entry can't shadow reality forever).
+ * Optimistic "closed, pending ResMan" overlay. The server queues each close
+ * durably and the sync worker replays it into ResMan minutes later, so this
+ * store is the app's memory of which work orders the technician has closed
+ * in the meantime. Screens consult it to render those rows as closed; entries
+ * retire on their own once the sync mirror reports the base row actually
+ * closed (or after the stale window, so an entry whose write failed
+ * server-side can't shadow reality forever).
  */
 
 export interface PendingClose {
@@ -35,8 +36,8 @@ export interface PendingClose {
   attempts?: number;
 }
 
-/** A pending close older than this is dropped at hydrate/prune — with the
- *  write path stubbed, an entry can otherwise outlive its usefulness. */
+/** A pending close older than this is dropped at hydrate/prune — a close the
+ *  flusher kept refusing would otherwise shadow the base row forever. */
 const STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface PendingClosesState {

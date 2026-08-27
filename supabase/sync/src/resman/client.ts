@@ -163,6 +163,14 @@ export interface ResManRequest {
   method?: "GET" | "POST";
   headers?: Record<string, string>;
   body?: string;
+  /**
+   * "manual" returns the FIRST response instead of following redirects —
+   * cookies on that hop are still captured. The write path needs this: ResMan
+   * answers a successful form POST with a redirect, and following it would
+   * downgrade to GET and hand back the landing page instead of the save's own
+   * status. Reads keep the default ("follow").
+   */
+  redirect?: "follow" | "manual";
 }
 
 export interface ResManResponse {
@@ -270,7 +278,13 @@ export class ResManClient {
 
       const status = response.status;
       const location = response.headers.get("location");
-      if (status >= 300 && status < 400 && location && hop < MAX_REDIRECTS) {
+      if (
+        request.redirect !== "manual" &&
+        status >= 300 &&
+        status < 400 &&
+        location &&
+        hop < MAX_REDIRECTS
+      ) {
         url = new URL(location, url).toString();
         // 303 always downgrades to GET; browsers also convert POST on 301/302.
         if (status === 303 || ((status === 301 || status === 302) && method === "POST")) {

@@ -4,20 +4,22 @@ import { requireResmanApiKey } from "@/lib/resman-api-auth";
 import { workOrdersResource } from "@/lib/resman-resources";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { UntypedSupabase } from "@/lib/supabase/types";
+import { queueWorkOrderWrite, workOrderWriteActor } from "@/lib/work-order-write-queue";
 
 /**
- * POST /api/resman/work-orders/[id]/edit — STUB of the write path.
+ * POST /api/resman/work-orders/[id]/edit — queue a work-order edit for ResMan.
  *
  * The maintenance app calls this when a technician reassigns a work order or
- * edits its description / technician notes from the detail screen. ResMan is
- * the system of record, and we do not write to it yet: this validates the
- * work order exists and answers `{ queued: true, stub: true }` so the app can
- * render the edited values optimistically ("pending sync").
+ * edits its description / technician notes / scheduled visit from the detail
+ * screen. ResMan is the system of record, and this route never touches it
+ * inline: it validates the work order exists and appends a durable row to
+ * `maintenance_work_order_edits`, which the sync worker's
+ * flush-work-order-writes job replays against ResMan's edit form (edits and
+ * closes only — delete and cancel are refused by the writer). The app renders
+ * the edited values optimistically ("pending sync") until the mirror absorbs
+ * them on a later sync pass. Never write resman_work_orders directly.
  *
- * Real implementation (per apps/maintenance/README.md "deferred write path"):
- * upsert a maintenance_work_order_edits overlay row (edited_by from the
- * token) and push the change to ResMan; the sync then absorbs it. Never
- * write resman_work_orders directly.
+ * Staff-token only: a scanner is a gate device, not a maintenance tool.
  */
 export async function POST(
   request: Request,
@@ -25,6 +27,9 @@ export async function POST(
 ): Promise<NextResponse> {
   const auth = await requireResmanApiKey(request);
   if (!auth.ok) return auth.response;
+  if (auth.kind !== "token") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const patch: {
     technician?: string;
@@ -54,19 +59,22 @@ export async function POST(
 
   try {
     const { id } = await context.params;
-    const row = await getResource(
-      workOrdersResource,
-      id,
-      createAdminClient() as UntypedSupabase,
-      auth.kind === "scanner",
-    );
+    const client = createAdminClient() as UntypedSupabase;
+    const row = await getResource(workOrdersResource, id, client, false);
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    // TODO(resman-write): queue the actual ResMan update + overlay row here.
+    await queueWorkOrderWrite(client, {
+      workOrderId: id,
+      kind: "edit",
+      patch,
+      actor: workOrderWriteActor(auth),
+    });
+    // Field names only — description/notes are free text that can carry
+    // unit/resident details (AGENTS.md: keep request bodies out of logs).
     console.info(
-      `[resman-api work-orders edit] STUB queued edit for ${id} (fields: ${Object.keys(patch).join(", ")})`,
+      `[resman-api work-orders edit] queued edit for ${id} (fields: ${Object.keys(patch).join(", ")})`,
     );
-    return NextResponse.json({ ok: true, queued: true, stub: true });
+    return NextResponse.json({ ok: true, queued: true });
   } catch (error) {
     console.error("[resman-api work-orders edit] Unexpected error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

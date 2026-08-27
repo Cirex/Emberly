@@ -17,6 +17,7 @@
     "sync:delinquency": "bun --env-file=.env run src/run-delinquency.ts",
     "sync:work-orders": "bun --env-file=.env run src/run-work-orders.ts",
     "sync:translate-work-orders": "bun --env-file=.env run src/run-translate-work-orders.ts",
+    "sync:flush-work-order-writes": "bun --env-file=.env run src/run-flush-work-order-writes.ts",
     "sync:unit-details": "bun --env-file=.env run src/run-unit-details.ts",
     "sync:lease-details": "bun --env-file=.env run src/run-lease-details.ts",
     "sync:mlgw-bills": "bun --env-file=.env run src/run-mlgw-bills.ts",

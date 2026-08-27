@@ -137,9 +137,11 @@ export interface WorkOrderEditPatch {
 
 /**
  * Ask the server to apply an edit (reassign / description / tech notes). The
- * server side is a STUB today — it validates and answers { queued: true }
- * without touching ResMan. The app renders the edited values optimistically
- * as "pending sync" via the pending-edits overlay store.
+ * server queues it durably (maintenance_work_order_edits) and answers
+ * { queued: true }; the sync worker's flush replays it against ResMan's edit
+ * form minutes later. The app renders the edited values optimistically as
+ * "pending sync" via the pending-edits overlay store until the mirror
+ * absorbs them.
  */
 export async function editWorkOrder(
   id: string,
@@ -161,9 +163,11 @@ export async function editWorkOrder(
 }
 
 /**
- * Ask the server to close a work order. The server side is a STUB today —
- * it validates and answers { queued: true } without touching ResMan (see the
- * route's TODO). The app treats a queued close as "Closed · pending ResMan".
+ * Ask the server to close a work order. The server queues it durably and
+ * answers { queued: true }; the sync worker's flush replays it against
+ * ResMan's edit form — Status becomes "Completed", and ResMan credits the
+ * ASSIGNED technician (CompletedBy follows AssignedTo). The app treats a
+ * queued close as "Closed · pending ResMan" until the mirror absorbs it.
  *
  * `completedAt` (ISO 8601) is when the work was actually finished, which is
  * not always now: a tech closing out Friday's job on Monday morning needs the

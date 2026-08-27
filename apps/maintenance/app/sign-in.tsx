@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { EmberlyBrandLogo } from "@emberly/ui";
+import { GlassSurface } from "@/components/ui/GlassSurface";
 import { capture, identify } from "@/lib/analytics";
 import { signInWithResman } from "@/lib/api/auth";
 import { registerForEmergencyPush } from "@/lib/push";
@@ -55,7 +56,9 @@ export default function SignIn() {
     });
     if (!result.ok) {
       setBusy(false);
-      setError(t(`signIn.errors.${KNOWN_ERRORS.has(result.reason) ? result.reason : "unreachable"}`));
+      setError(
+        t(`signIn.errors.${KNOWN_ERRORS.has(result.reason) ? result.reason : "unreachable"}`),
+      );
       return;
     }
     await config.signIn({ token: result.token, admin: result.admin });
@@ -97,131 +100,149 @@ export default function SignIn() {
           }}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Liquid-glass card over the workspace backdrop: shadow lives on an
+              unclipped wrapper (GlassSurface clips to its radius), the glass
+              itself is the shared primitive so field mode still goes opaque. */}
           <View
-            className="bg-white"
             style={{
               width: "100%",
               maxWidth: 500,
               borderRadius: 28,
-              paddingHorizontal: 32,
-              paddingVertical: 40,
-              alignItems: "center",
-              gap: 22,
               shadowColor: "#091B54",
-              shadowOpacity: 0.1,
+              shadowOpacity: 0.14,
               shadowRadius: 24,
               shadowOffset: { width: 0, height: 8 },
               elevation: 4,
             }}
           >
-            <EmberlyBrandLogo variant="full" size={128} />
-
-            <View style={{ width: "100%", gap: 10 }}>
+            <GlassSurface radius={28}>
               <View
-                className="bg-white"
                 style={{
-                  height: 52,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: "rgba(9,27,84,0.18)",
-                  flexDirection: "row",
+                  paddingHorizontal: 32,
+                  paddingVertical: 40,
                   alignItems: "center",
-                  paddingHorizontal: 16,
-                  gap: 10,
+                  gap: 22,
                 }}
               >
-                <Ionicons name="person-outline" size={18} color="#70788F" />
-                <TextInput
-                  value={username}
-                  onChangeText={(next) => {
-                    setUsername(next);
-                    if (error) setError("");
-                  }}
-                  placeholder={t("signIn.username")}
-                  placeholderTextColor="rgba(112,120,143,0.6)"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="username"
-                  textContentType="username"
-                  returnKeyType="next"
-                  className="text-navy"
-                  style={{ flex: 1, fontSize: 16, paddingVertical: 0 }}
-                />
+                <EmberlyBrandLogo variant="full" size={128} />
+
+                <View style={{ width: "100%", gap: 10 }}>
+                  <View
+                    className="bg-white"
+                    style={{
+                      height: 52,
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: "rgba(9,27,84,0.18)",
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 16,
+                      gap: 10,
+                    }}
+                  >
+                    <Ionicons name="person-outline" size={18} color="#70788F" />
+                    <TextInput
+                      value={username}
+                      onChangeText={(next) => {
+                        setUsername(next);
+                        if (error) setError("");
+                      }}
+                      placeholder={t("signIn.username")}
+                      placeholderTextColor="rgba(112,120,143,0.6)"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete="username"
+                      textContentType="username"
+                      returnKeyType="next"
+                      className="text-navy"
+                      style={{ flex: 1, fontSize: 16, paddingVertical: 0 }}
+                    />
+                  </View>
+
+                  <View
+                    className="bg-white"
+                    style={{
+                      height: 52,
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: "rgba(9,27,84,0.18)",
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 16,
+                      gap: 10,
+                    }}
+                  >
+                    <Ionicons name="key-outline" size={18} color="#70788F" />
+                    <TextInput
+                      value={password}
+                      onChangeText={(next) => {
+                        setPassword(next);
+                        if (error) setError("");
+                      }}
+                      placeholder={t("signIn.password")}
+                      placeholderTextColor="rgba(112,120,143,0.6)"
+                      secureTextEntry={!revealed}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete="current-password"
+                      textContentType="password"
+                      returnKeyType="go"
+                      onSubmitEditing={() => canSubmit && onSignIn()}
+                      className="text-navy"
+                      style={{ flex: 1, fontSize: 16, paddingVertical: 0 }}
+                    />
+                    <Pressable
+                      onPress={() => setRevealed((v) => !v)}
+                      hitSlop={12}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        revealed ? t("signIn.hidePassword") : t("signIn.showPassword")
+                      }
+                      style={{ width: REVEAL_HIT_WIDTH, alignItems: "flex-end" }}
+                    >
+                      <Ionicons
+                        name={revealed ? "eye-off-outline" : "eye-outline"}
+                        size={20}
+                        color="#70788F"
+                      />
+                    </Pressable>
+                  </View>
+
+                  {error ? (
+                    <Text
+                      style={{
+                        color: "#B3261E",
+                        fontSize: 13,
+                        lineHeight: 18,
+                        textAlign: "center",
+                      }}
+                    >
+                      {error}
+                    </Text>
+                  ) : null}
+                </View>
+
+                <GlassSurface radius={16} style={{ width: "100%", opacity: canSubmit ? 1 : 0.55 }}>
+                  <Pressable
+                    onPress={onSignIn}
+                    disabled={!canSubmit}
+                    accessibilityRole="button"
+                    style={{
+                      height: 52,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      // Olive at partial alpha so the blur reads through — the
+                      // glass tint, not a solid fill.
+                      backgroundColor: "rgba(162,169,33,0.72)",
+                    }}
+                  >
+                    <Text style={{ color: "#0B1020", fontSize: 16, fontWeight: "700" }}>
+                      {busy ? t("signIn.signingIn") : t("signIn.signIn")}
+                    </Text>
+                  </Pressable>
+                </GlassSurface>
               </View>
-
-              <View
-                className="bg-white"
-                style={{
-                  height: 52,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: "rgba(9,27,84,0.18)",
-                  flexDirection: "row",
-                  alignItems: "center",
-                  paddingHorizontal: 16,
-                  gap: 10,
-                }}
-              >
-                <Ionicons name="key-outline" size={18} color="#70788F" />
-                <TextInput
-                  value={password}
-                  onChangeText={(next) => {
-                    setPassword(next);
-                    if (error) setError("");
-                  }}
-                  placeholder={t("signIn.password")}
-                  placeholderTextColor="rgba(112,120,143,0.6)"
-                  secureTextEntry={!revealed}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="current-password"
-                  textContentType="password"
-                  returnKeyType="go"
-                  onSubmitEditing={() => canSubmit && onSignIn()}
-                  className="text-navy"
-                  style={{ flex: 1, fontSize: 16, paddingVertical: 0 }}
-                />
-                <Pressable
-                  onPress={() => setRevealed((v) => !v)}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel={revealed ? t("signIn.hidePassword") : t("signIn.showPassword")}
-                  style={{ width: REVEAL_HIT_WIDTH, alignItems: "flex-end" }}
-                >
-                  <Ionicons
-                    name={revealed ? "eye-off-outline" : "eye-outline"}
-                    size={20}
-                    color="#70788F"
-                  />
-                </Pressable>
-              </View>
-
-              {error ? (
-                <Text
-                  style={{ color: "#B3261E", fontSize: 13, lineHeight: 18, textAlign: "center" }}
-                >
-                  {error}
-                </Text>
-              ) : null}
-            </View>
-
-            <Pressable
-              onPress={onSignIn}
-              disabled={!canSubmit}
-              className="bg-olive"
-              style={{
-                width: "100%",
-                height: 52,
-                borderRadius: 14,
-                alignItems: "center",
-                justifyContent: "center",
-                opacity: canSubmit ? 1 : 0.5,
-              }}
-            >
-              <Text style={{ color: "#0B1020", fontSize: 16, fontWeight: "700" }}>
-                {busy ? t("signIn.signingIn") : t("signIn.signIn")}
-              </Text>
-            </Pressable>
+            </GlassSurface>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

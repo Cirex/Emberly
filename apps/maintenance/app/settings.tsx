@@ -211,6 +211,7 @@ export default function Settings() {
   const baseUrl = useConfig((s) => s.baseUrl);
   const signOut = useConfig((s) => s.signOut);
   const resmanStatus = useResManSession((s) => s.status);
+  const resmanCanRenew = useResManSession((s) => s.canRenew);
 
   const workOrderCount = useWorkOrders((s) => s.workOrders.length);
   const refreshedAt = useWorkOrders((s) => s.refreshedAt);
@@ -349,7 +350,8 @@ export default function Settings() {
               <Text style={{ fontSize: 9, fontWeight: "800", color: "#767B24" }}>
                 {(admin.role === "maintenance_tech" || admin.role === "security_manager"
                   ? "maintenance"
-                  : admin.role)
+                  : admin.role
+                )
                   .replace(/_/g, " ")
                   .toUpperCase()}
               </Text>
@@ -487,7 +489,7 @@ export default function Settings() {
           <Text className="text-slate dark:text-white/60" style={{ fontSize: 12.5 }}>
             {resmanStatus === "active"
               ? t("settings.resmanSessionActive")
-              : resmanStatus === "unverified"
+              : resmanStatus === "unverified" || (resmanStatus === "expired" && resmanCanRenew)
                 ? t("settings.resmanSessionChecking")
                 : t("settings.resmanSessionExpired")}
           </Text>

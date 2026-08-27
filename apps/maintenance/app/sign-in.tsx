@@ -70,8 +70,9 @@ export default function SignIn() {
     // sign-in must never wait on ResMan's portal (an unresponsive step here
     // once left the spinner sitting at "Signing in…"). The dance runs in the
     // background — Settings shows the result, and a failed establish just
-    // means writes wait in the outbox until the tech signs in again. The
-    // password is used in-flight and never stored, same as the exchange above.
+    // means writes wait in the outbox until the tech signs in again. On
+    // success the credentials persist in the device Keychain so the session
+    // renews itself when ResMan times it out (see lib/resman/session.ts).
     void useResManSession.getState().establish(username.trim(), password);
     // Tie subsequent events to the staff member by their stable admin id (no
     // name/PII), then record the sign-in with just their role.

@@ -76,13 +76,22 @@ function RootLayout() {
   // "expired" on a real login bounce, never on a bad network (a no-signal
   // basement must never look like a sign-out).
   const resmanStatus = useResManSession((s) => s.status);
+  const resmanCanRenew = useResManSession((s) => s.canRenew);
   const router = useRouter();
   const pathname = usePathname();
   useEffect(() => {
-    if (hydrated && signedIn && resmanStatus === "expired" && pathname !== "/sign-in") {
+    // Only when the session is dead AND cannot renew itself — with Keychain
+    // credentials present, expiry is a silent renewal, not a sign-out.
+    if (
+      hydrated &&
+      signedIn &&
+      resmanStatus === "expired" &&
+      !resmanCanRenew &&
+      pathname !== "/sign-in"
+    ) {
       router.push("/sign-in");
     }
-  }, [hydrated, signedIn, resmanStatus, pathname, router]);
+  }, [hydrated, signedIn, resmanStatus, resmanCanRenew, pathname, router]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

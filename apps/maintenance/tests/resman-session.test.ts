@@ -153,3 +153,103 @@ describe("sign-out responsiveness", () => {
     }
   });
 });
+
+describe("silent renewal", () => {
+  const CREDS_KEY = "emberly_resman_credentials";
+  const HOME = "https://multisouth.myresman.com/";
+
+  /** A transport that answers: probe → login bounce, then a full successful
+   *  login dance (bootstrap → creds → form_post replay). */
+  function renewalTransport() {
+    const calls: Array<{ url: string; method: string }> = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      calls.push({ url, method });
+      if (method === "GET" && url === HOME) {
+        // First GET is the probe, second is the login bootstrap — both bounce
+        // to the login page (that is exactly what an expired session does).
+        return response(LOGIN_URL, LOGIN_HTML);
+      }
+      if (method === "POST" && url === LOGIN_URL) return response(LOGIN_URL, FORM_POST_HTML);
+      if (method === "POST") return response(HOME, "<html>home</html>");
+      throw new Error(`unscripted ${method} ${url}`);
+    }) as unknown as typeof fetch;
+    return { calls, fetchImpl };
+  }
+
+  test("verify: an expired session with Keychain credentials renews to active", async () => {
+    secure.set(CREDS_KEY, JSON.stringify({ username: "tech", password: "pw" }));
+    useResManSession.setState({
+      status: "active",
+      username: "tech",
+      canRenew: true,
+      hydrated: true,
+    });
+    const { calls, fetchImpl } = renewalTransport();
+    const alive = await useResManSession.getState().verify(fetchImpl);
+    expect(alive).toBe(true);
+    expect(useResManSession.getState().status).toBe("active");
+    // Probe, then the 3-step dance (bootstrap GET + creds POST + oidc POST).
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(2);
+  });
+
+  test("renew: rejected credentials are wiped and the kick gate opens", async () => {
+    secure.set(CREDS_KEY, JSON.stringify({ username: "tech", password: "rotated" }));
+    useResManSession.setState({
+      status: "expired",
+      username: "tech",
+      canRenew: true,
+      hydrated: true,
+    });
+    let posts = 0;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (method === "GET") return response(LOGIN_URL, LOGIN_HTML);
+      posts += 1;
+      return response(LOGIN_URL, RELOGIN_HTML); // creds rejected
+    }) as unknown as typeof fetch;
+    const renewed = await useResManSession.getState().renew(fetchImpl);
+    expect(renewed).toBe(false);
+    expect(posts).toBe(1);
+    expect(secure.has(CREDS_KEY)).toBe(false);
+    expect(useResManSession.getState().canRenew).toBe(false);
+  });
+
+  test("renew: no stored credentials is a quiet false, no network", async () => {
+    secure.delete(CREDS_KEY);
+    useResManSession.setState({
+      status: "expired",
+      username: "tech",
+      canRenew: true,
+      hydrated: true,
+    });
+    const fetchImpl = (async () => {
+      throw new Error("must not be called");
+    }) as unknown as typeof fetch;
+    expect(await useResManSession.getState().renew(fetchImpl)).toBe(false);
+    expect(useResManSession.getState().canRenew).toBe(false);
+  });
+
+  test("signOut wipes the Keychain credentials with the session", async () => {
+    secure.set(CREDS_KEY, JSON.stringify({ username: "tech", password: "pw" }));
+    useResManSession.setState({
+      status: "active",
+      username: "tech",
+      canRenew: true,
+      hydrated: true,
+    });
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => ({
+      url: "x",
+      status: 200,
+      text: async () => "",
+    })) as unknown as typeof fetch;
+    try {
+      await useResManSession.getState().signOut();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    expect(secure.has(CREDS_KEY)).toBe(false);
+    expect(useResManSession.getState().canRenew).toBe(false);
+  });
+});

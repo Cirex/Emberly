@@ -9,8 +9,12 @@ import { SCREENSHOT_ADMIN, isScreenshotMode } from "@/lib/screenshot-mode";
 
 // The staff token lives in the Keychain-backed secure store, never in
 // AsyncStorage. It is a per-user `eapi_` access token minted by
-// POST /api/admin/auth/app-token at sign-in — the ResMan username/password are
-// exchanged for it and never stored on the device.
+// POST /api/admin/auth/app-token at sign-in from the ResMan username/password.
+// Those credentials ALSO persist in the Keychain (device-only class, owned by
+// lib/resman/session.ts) so the device-held ResMan session renews silently
+// when ResMan idle-times it out — an owner-approved change from the original
+// never-stored posture; see that module's header. They never leave the device
+// and are wiped on sign-out.
 //
 // One token authenticates everything the app does: the ResMan read API
 // (work orders + units) via requireResmanApiKey, and the map module's

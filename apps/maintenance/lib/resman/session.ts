@@ -29,9 +29,14 @@ import { capture } from "@/lib/analytics";
  * harvest, the credential body, and the auto-submitting form_post replay
  * (which fetch does NOT follow — it is an HTML form, not an HTTP redirect).
  *
- * Only the username and a timestamp are persisted (Keychain-backed), so the
- * re-auth prompt can say who is signing back in. Session validity is a live
- * question, answered by whether ResMan redirects us to its login page.
+ * CREDENTIALS: the technician's ResMan username AND password persist in the
+ * device Keychain (WHEN_UNLOCKED_THIS_DEVICE_ONLY — never synced, wiped on
+ * sign-out or on a rejected renewal). Owner-approved change from the original
+ * "password never stored" posture: ResMan idle-times sessions out, iOS won't
+ * let a backgrounded app keep them alive, and without stored credentials
+ * every timeout dumped the tech at "Sign in again to sync changes". With
+ * them, an expired session silently renews and the sign-in screen appears
+ * only when the credentials themselves stop working.
  */
 
 const PORTAL = MULTI_SOUTH_STAFF_PORTAL;
@@ -262,10 +267,59 @@ function parsePersisted(raw: string | null): PersistedSession | null {
   return null;
 }
 
+const CREDENTIALS_KEY = "emberly_resman_credentials";
+/** Strictest non-biometric class: never leaves this device, never in iCloud
+ *  Keychain, unreadable while locked (renewals only run with the app
+ *  foregrounded, so locked-state access is never needed). */
+const CREDENTIAL_STORE_OPTIONS: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+};
+
+interface StoredCredentials {
+  username: string;
+  password: string;
+}
+
+function parseCredentials(raw: string | null): StoredCredentials | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<StoredCredentials>;
+    if (typeof value.username === "string" && typeof value.password === "string") {
+      return { username: value.username, password: value.password };
+    }
+  } catch {
+    /* corrupted — treat as absent */
+  }
+  return null;
+}
+
+async function readCredentials(): Promise<StoredCredentials | null> {
+  try {
+    return parseCredentials(
+      await SecureStore.getItemAsync(CREDENTIALS_KEY, CREDENTIAL_STORE_OPTIONS),
+    );
+  } catch {
+    // A locked keychain (or a class migration) reads as no credentials — the
+    // renewal just doesn't happen this tick.
+    return null;
+  }
+}
+
+async function wipeCredentials(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(CREDENTIALS_KEY, CREDENTIAL_STORE_OPTIONS);
+  } catch {
+    /* nothing to wipe */
+  }
+}
+
 interface ResManSessionState {
   status: ResManSessionStatus;
   /** ResMan username the session belongs to ("" when absent). */
   username: string;
+  /** Keychain credentials exist — an expired session will renew itself, so
+   *  nothing should kick to sign-in while this is true. */
+  canRenew: boolean;
   hydrated: boolean;
   hydrate: () => Promise<void>;
   /** Sign out any lingering session, then log in as this technician. */
@@ -280,6 +334,9 @@ interface ResManSessionState {
   keepAlive: () => Promise<void>;
   /** Called by the write path when a request hit the login redirect. */
   markExpired: () => void;
+  /** Silent re-login with the Keychain credentials. Single-flight; wipes the
+   *  credentials (and stays expired → sign-in) when ResMan rejects them. */
+  renew: (fetchImpl?: FetchLike) => Promise<boolean>;
   /** GET /Access/SignOut and forget the session. */
   signOut: () => Promise<void>;
 }
@@ -288,17 +345,23 @@ interface ResManSessionState {
 const KEEP_ALIVE_INTERVAL_MS = 5 * 60 * 1000;
 let lastKeepAliveAt = 0;
 
+/** Single-flight guard so a burst of expired writes renews ONCE. */
+let renewInFlight: Promise<boolean> | null = null;
+
 export const useResManSession = create<ResManSessionState>((set, get) => ({
   status: "absent",
   username: "",
+  canRenew: false,
   hydrated: false,
 
   hydrate: async () => {
     if (get().hydrated) return;
     const persisted = parsePersisted(await SecureStore.getItemAsync(SESSION_KEY));
+    const credentials = await readCredentials();
     set({
       hydrated: true,
       username: persisted?.username ?? "",
+      canRenew: credentials !== null,
       // The cookies may or may not still be alive — "unverified" is honest
       // without kicking anyone anywhere; the probe below settles it.
       status: persisted ? "unverified" : "absent",
@@ -318,14 +381,25 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
     await remoteSignOut();
     const result = await performDeviceLogin(username, password);
     if (result.ok) {
-      set({ status: "active", username });
+      set({ status: "active", username, canRenew: true });
       await SecureStore.setItemAsync(
         SESSION_KEY,
         JSON.stringify({ username, establishedAt: Date.now() } satisfies PersistedSession),
       );
+      // The proven-good credentials go to the Keychain (device-only class) so
+      // an idle-timed-out session renews silently instead of surfacing
+      // "Sign in again" — see the module header for the posture change.
+      await SecureStore.setItemAsync(
+        CREDENTIALS_KEY,
+        JSON.stringify({ username, password } satisfies StoredCredentials),
+        CREDENTIAL_STORE_OPTIONS,
+      );
       capture("resman_session_established", {});
     } else {
-      set({ status: "absent" });
+      // Rejected or unreachable: whatever credentials the Keychain holds are
+      // not known-good for THIS user — wipe rather than renew with them.
+      await wipeCredentials();
+      set({ status: "absent", canRenew: false });
       capture("resman_session_establish_failed", { reason: result.reason });
     }
     return result;
@@ -335,9 +409,51 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
     const probe = await probeSession(fetchImpl);
     const { status } = get();
     if (probe === "active" && status !== "active") set({ status: "active" });
-    if (probe === "expired") get().markExpired();
+    if (probe === "expired") {
+      // A genuine bounce — but with Keychain credentials this is a renewal,
+      // not a sign-out: the tech only sees the sign-in screen when ResMan
+      // rejects the stored credentials themselves.
+      if (await get().renew(fetchImpl)) return true;
+      get().markExpired();
+    }
     // "unreachable" changes nothing: the session may be fine, the network is not.
     return probe === "active";
+  },
+
+  renew: async (fetchImpl = fetch) => {
+    if (renewInFlight) return renewInFlight;
+    renewInFlight = (async () => {
+      const credentials = await readCredentials();
+      if (!credentials) {
+        set({ canRenew: false });
+        return false;
+      }
+      const result = await performDeviceLogin(
+        credentials.username,
+        credentials.password,
+        fetchImpl,
+      );
+      if (result.ok) {
+        set({ status: "active", username: credentials.username, canRenew: true });
+        capture("resman_session_renewed", {});
+        return true;
+      }
+      if (result.reason === "invalid") {
+        // Password changed or account disabled — these credentials are dead.
+        // Wiping flips canRenew so the expiry kick finally sends the tech to
+        // sign-in, which is now genuinely the only fix.
+        await wipeCredentials();
+        set({ canRenew: false });
+        capture("resman_session_renew_rejected", {});
+      }
+      // "unreachable" keeps the credentials; the next tick tries again.
+      return false;
+    })();
+    try {
+      return await renewInFlight;
+    } finally {
+      renewInFlight = null;
+    }
   },
 
   keepAlive: async () => {
@@ -359,8 +475,11 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
     // Local first, and INSTANT — this sits behind the Sign out button, and an
     // unbounded network await here once made that button look dead for up to
     // 60 seconds. The server-side sign-out fires in the background, bounded.
+    // The Keychain credentials go with the session: sign-out means THIS tech
+    // is done on this device, and the next one must never inherit a renewal.
     await SecureStore.deleteItemAsync(SESSION_KEY);
-    set({ status: "absent", username: "" });
+    await wipeCredentials();
+    set({ status: "absent", username: "", canRenew: false });
     void remoteSignOut();
   },
 }));

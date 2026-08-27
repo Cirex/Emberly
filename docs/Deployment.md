@@ -307,13 +307,15 @@ live **only** in Coolify's secret store — never in the web env, never in the i
    | `sync-mlgw` | `sh -c 'set -o pipefail; { bun run src/run-mlgw-bills.ts && bun run src/run-mlgw-payments.ts; } 2>&1 \| tee /proc/1/fd/1'` | `23 7 * * *` | 2:23 AM | 14400 |
    | `sync-derived` | `bun run src/run-pm-generate.ts && bun run src/run-manager-alerts.ts && bun run src/run-snapshots.ts && bun run src/run-unit-snapshots.ts` | `31 14 * * *` | 9:31 AM | 900 |
 
-   `flush-work-order-writes` drains the maintenance app's queued work-order
-   edits/closes into ResMan (`maintenance_work_order_edits` → the form-replay
-   writer). An empty queue is one Supabase read and no ResMan traffic, which is
-   why every 2 minutes is affordable. It takes the `resman` lock like every
-   other runner, so during a deep scrape it skips (exit 0, normal) and a
-   technician's close lands once the scrape finishes — up to an hour later in
-   those two windows.
+   `flush-work-order-writes` drains queued work-order edits/closes into ResMan
+   (`maintenance_work_order_edits` → the form-replay writer). The maintenance
+   app does NOT feed this queue — technicians' devices write to ResMan
+   directly under their own sessions — so it is the office-side / fallback
+   path, and the queue is normally empty. An empty queue is one Supabase read
+   and no ResMan traffic, which is why every 2 minutes is affordable (or skip
+   scheduling it until something office-side actually enqueues). It takes the
+   `resman` lock like every other runner, so during a deep scrape it skips
+   (exit 0, normal).
 
    **The deep scrape is TWO tasks, not one chain, and that is not cosmetic.** Coolify wraps
    each scheduled task in `timeout 3600` on its SSH invocation — observed in `ps`, and NOT

@@ -1,4 +1,9 @@
 import { z } from "zod";
+// @emberly/core is framework-free, so the refusal class can load eagerly; the
+// direct-writer and analytics modules reach expo/react-native natives and are
+// imported LAZILY inside the write path — this module's schemas are consumed
+// by pure derived-logic tests that must never touch the native stack.
+import { WorkOrderWriteRefused, type WorkOrderWriteRequest } from "@emberly/core";
 import type { StaffConfig } from "@/lib/stores/config";
 
 /**
@@ -136,60 +141,87 @@ export interface WorkOrderEditPatch {
 }
 
 /**
- * Ask the server to apply an edit (reassign / description / tech notes). The
- * server queues it durably (maintenance_work_order_edits) and answers
- * { queued: true }; the sync worker's flush replays it against ResMan's edit
- * form minutes later. The app renders the edited values optimistically as
- * "pending sync" via the pending-edits overlay store until the mirror
- * absorbs them.
+ * Apply an edit (reassign / description / tech notes) DIRECTLY to ResMan,
+ * under the technician's own device-held session — no server in the write
+ * path (reads still come from the emberly-web mirror). The write is a form
+ * replay, verified by re-reading the form before this resolves, so a resolved
+ * promise means the edit is genuinely in ResMan; the mirror catches up on the
+ * next sync pass, which is what retires the pending-edits overlay.
+ *
+ * A refused write (work order Cancelled/Closed, locked field, form drift) is
+ * DETERMINISTIC — retrying forever cannot help — so it is acked as consumed
+ * and reported to analytics instead of shadowing the row for the stale
+ * window. An expired session or offline failure throws, keeping the entry
+ * un-acked for the next tick.
  */
 export async function editWorkOrder(
   id: string,
   patch: WorkOrderEditPatch,
-  config: StaffConfig,
+  _config: StaffConfig,
 ): Promise<CloseResponse> {
-  const res = await fetch(
-    `${config.baseUrl}/api/resman/work-orders/${encodeURIComponent(id)}/edit`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${config.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
+  const result = await writeDirect({
+    workOrderId: id,
+    kind: "edit",
+    patch: {
+      ...(patch.technician !== undefined ? { technicianName: patch.technician } : {}),
+      ...(patch.description !== undefined ? { description: patch.description } : {}),
+      ...(patch.completionNotes !== undefined ? { completionNotes: patch.completionNotes } : {}),
+      ...(patch.scheduledAt !== undefined ? { scheduledAt: patch.scheduledAt } : {}),
     },
-  );
-  if (res.status === 404) throw new Error("Work order not found");
-  if (res.status === 401 || res.status === 403) throw new Error("Not authorized for the ResMan API");
-  if (!res.ok) throw new Error(`Failed to edit work order (${res.status})`);
-  return CloseResponseSchema.parse(await res.json());
+    expectedUnitId: null,
+  });
+  if (!result) return { ok: true, queued: false, stub: false }; // refused — consumed
+  if (!result.ok) throw new Error(result.detail);
+  return { ok: true, queued: false, stub: false };
 }
 
 /**
- * Ask the server to close a work order. The server queues it durably and
- * answers { queued: true }; the sync worker's flush replays it against
- * ResMan's edit form — Status becomes "Completed", and ResMan credits the
- * ASSIGNED technician (CompletedBy follows AssignedTo). The app treats a
- * queued close as "Closed · pending ResMan" until the mirror absorbs it.
+ * Close a work order DIRECTLY in ResMan, under the technician's own
+ * device-held session: Status becomes "Completed" (the office's Close stays
+ * office work), the completion date is stamped, and CompletedBy follows the
+ * assignee the way ResMan's own page does it. Because the session is the
+ * tech's, ResMan's audit history records THEM — the original point of
+ * device-held sessions. Verified by re-reading the form before this resolves.
  *
  * `completedAt` (ISO 8601) is when the work was actually finished, which is
  * not always now: a tech closing out Friday's job on Monday morning needs the
- * record to say Friday. Omitted means "the server decides", preserving the
- * behaviour of every caller that just marks a job complete on the spot.
+ * record to say Friday. Omitted means "now", the moment they tapped.
+ *
+ * Refusals ack as consumed (see editWorkOrder); expired sessions and offline
+ * failures throw, keeping the entry queued for the next tick.
  */
 export async function closeWorkOrder(
   id: string,
   note: string,
-  config: StaffConfig,
+  _config: StaffConfig,
   completedAt?: string,
 ): Promise<CloseResponse> {
-  const res = await fetch(
-    `${config.baseUrl}/api/resman/work-orders/${encodeURIComponent(id)}/close`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${config.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ ...(note ? { note } : {}), ...(completedAt ? { completedAt } : {}) }),
-    },
-  );
-  if (res.status === 404) throw new Error("Work order not found");
-  if (res.status === 401 || res.status === 403) throw new Error("Not authorized for the ResMan API");
-  if (!res.ok) throw new Error(`Failed to close work order (${res.status})`);
-  return CloseResponseSchema.parse(await res.json());
+  const result = await writeDirect({
+    workOrderId: id,
+    kind: "close",
+    patch: { ...(note ? { note } : {}), ...(completedAt ? { completedAt } : {}) },
+    expectedUnitId: null,
+  });
+  if (!result) return { ok: true, queued: false, stub: false }; // refused — consumed
+  if (!result.ok) throw new Error(result.detail);
+  return { ok: true, queued: false, stub: false };
+}
+
+/**
+ * Run one direct write, folding deterministic refusals into `null` so both
+ * wrappers treat them as consumed (analytics carry the reason — no free text,
+ * AGENTS.md keeps notes out of logs).
+ */
+async function writeDirect(request: WorkOrderWriteRequest) {
+  const { writeWorkOrderDirect } = await import("@/lib/resman/work-order-write");
+  try {
+    return await writeWorkOrderDirect(request);
+  } catch (error) {
+    if (error instanceof WorkOrderWriteRefused) {
+      const { capture } = await import("@/lib/analytics");
+      capture("work_order_write_refused", { kind: request.kind, reason: error.message });
+      return null;
+    }
+    throw error;
+  }
 }

@@ -17,6 +17,7 @@ import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import type { AppLanguage } from "@/lib/i18n";
 import { registerForEmergencyPush, unregisterEmergencyPush } from "@/lib/push";
 import { emergencyAlertNotice } from "@/lib/push/availability-notice";
+import { useResManSession } from "@/lib/resman/session";
 import { useConfig } from "@/lib/stores/config";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { usePendingEdits } from "@/lib/stores/pending-edits";
@@ -183,6 +184,7 @@ export default function Settings() {
   const token = useConfig((s) => s.token);
   const baseUrl = useConfig((s) => s.baseUrl);
   const signOut = useConfig((s) => s.signOut);
+  const resmanStatus = useResManSession((s) => s.status);
 
   const workOrderCount = useWorkOrders((s) => s.workOrders.length);
   const refreshedAt = useWorkOrders((s) => s.refreshedAt);
@@ -396,6 +398,27 @@ export default function Settings() {
 
       <SectionLabel>{t("settings.account")}</SectionLabel>
       <AppCardSurface kind="panel" style={{ paddingHorizontal: 18, paddingVertical: 4 }}>
+        {/* The device-held ResMan session that direct work-order writes ride
+            on. Expired/absent means edits and closes wait in the outbox until
+            the tech signs in again — say so where they will look. */}
+        <View style={{ paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <View
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 4,
+              backgroundColor: resmanStatus === "active" ? "#33A666" : "#B05E14",
+            }}
+          />
+          <Text className="text-navy dark:text-white" style={{ fontSize: 15, fontWeight: "600", flex: 1 }}>
+            {t("settings.resmanSession")}
+          </Text>
+          <Text className="text-slate dark:text-white/60" style={{ fontSize: 12.5 }}>
+            {resmanStatus === "active"
+              ? t("settings.resmanSessionActive")
+              : t("settings.resmanSessionExpired")}
+          </Text>
+        </View>
         <Pressable onPress={() => router.push("/sign-in")} accessibilityRole="button" style={{ paddingVertical: 12 }}>
           <Text className="text-navy dark:text-white" style={{ fontSize: 15, fontWeight: "600" }}>
             {t("settings.switchUser")}

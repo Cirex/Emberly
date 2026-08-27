@@ -16,6 +16,7 @@ import { EmberlyBrandLogo } from "@emberly/ui";
 import { capture, identify } from "@/lib/analytics";
 import { signInWithResman } from "@/lib/api/auth";
 import { registerForEmergencyPush } from "@/lib/push";
+import { useResManSession } from "@/lib/resman/session";
 import { useConfig } from "@/lib/stores/config";
 
 const REVEAL_HIT_WIDTH = 24;
@@ -58,6 +59,13 @@ export default function SignIn() {
       return;
     }
     await config.signIn({ token: result.token, admin: result.admin });
+    // The same credentials, the same moment: establish the technician's OWN
+    // ResMan session on this device (native cookie store — never a server),
+    // so work-order edits/closes post to ResMan as them. Best-effort: an
+    // establish failure leaves the Emberly sign-in intact, and writes will
+    // prompt for it from Settings when needed. The password is used in-flight
+    // and never stored, same as the token exchange above.
+    await useResManSession.getState().establish(username.trim(), password);
     // Tie subsequent events to the staff member by their stable admin id (no
     // name/PII), then record the sign-in with just their role.
     identify(result.admin.adminId, { role: result.admin.role });

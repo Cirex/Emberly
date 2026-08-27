@@ -18,6 +18,7 @@ import { PostHogProvider } from "posthog-react-native";
 import { WorkspaceBackdrop } from "@/components/ui/WorkspaceBackdrop";
 import { posthog } from "@/lib/analytics";
 import { useEmergencyNotificationResponses } from "@/lib/push";
+import { useResManSession } from "@/lib/resman/session";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
 import { useSettings } from "@/lib/stores/settings";
 import { accentVars } from "@/theme/tokens";
@@ -55,9 +56,14 @@ function RootLayout() {
   }, [themePreference, fieldMode, setColorScheme]);
 
   // Hydrate the secure store once for the whole app — the sign-in gate here is
-  // the only thing that decides what to mount.
+  // the only thing that decides what to mount. The ResMan device session
+  // hydrates alongside it (and probes whether its cookies survived the
+  // restart) so direct work-order writes know their standing immediately.
   useEffect(() => {
-    if (!hydrated) void hydrate();
+    if (!hydrated) {
+      void hydrate();
+      void useResManSession.getState().hydrate();
+    }
   }, [hydrated, hydrate]);
 
   // Emergency push taps → the announced work order. Gated on the same

@@ -143,6 +143,16 @@ export const useConfig = create<ConfigState>((set, get) => ({
       SecureStore.deleteItemAsync(K.admin),
       clearSessionData(),
     ]);
+    // The technician's device-held ResMan session goes with them — the next
+    // person to sign in must never inherit it (ResMan's audit trail would
+    // record the wrong tech). Lazy import: the session store also signs out
+    // during establish(), and a static import would be a cycle magnet.
+    try {
+      const { useResManSession } = await import("@/lib/resman/session");
+      await useResManSession.getState().signOut();
+    } catch {
+      /* the local sign-out below still stands */
+    }
     set({ token: "", admin: null });
   },
 }));

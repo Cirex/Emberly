@@ -9,15 +9,16 @@ import { queueWorkOrderWrite, workOrderWriteActor } from "@/lib/work-order-write
 /**
  * POST /api/resman/work-orders/[id]/edit — queue a work-order edit for ResMan.
  *
- * The maintenance app calls this when a technician reassigns a work order or
- * edits its description / technician notes / scheduled visit from the detail
- * screen. ResMan is the system of record, and this route never touches it
- * inline: it validates the work order exists and appends a durable row to
+ * The OFFICE-SIDE / fallback write path. The maintenance app writes to ResMan
+ * DIRECTLY from the device under the technician's own session (so ResMan's
+ * audit trail records the tech) and does not call this route; it remains for
+ * office tooling and any client without a device-held ResMan session. ResMan
+ * is the system of record, and this route never touches it inline: it
+ * validates the work order exists and appends a durable row to
  * `maintenance_work_order_edits`, which the sync worker's
  * flush-work-order-writes job replays against ResMan's edit form (edits and
- * closes only — delete and cancel are refused by the writer). The app renders
- * the edited values optimistically ("pending sync") until the mirror absorbs
- * them on a later sync pass. Never write resman_work_orders directly.
+ * closes only — delete and cancel are refused by the writer). Never write
+ * resman_work_orders directly.
  *
  * Staff-token only: a scanner is a gate device, not a maintenance tool.
  */

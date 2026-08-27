@@ -320,6 +320,13 @@ interface ResManSessionState {
   /** Keychain credentials exist — an expired session will renew itself, so
    *  nothing should kick to sign-in while this is true. */
   canRenew: boolean;
+  /** Epoch ms of the last establish attempt — the expiry kick stays quiet for
+   *  a grace window after it so a failing establish can never bounce a tech
+   *  straight back to the sign-in screen they just left. */
+  lastEstablishAt: number | null;
+  /** Why the last establish failed (null after a success) — shown in Settings
+   *  so a broken sign-in names itself instead of looping silently. */
+  lastEstablishReason: "invalid" | "unreachable" | "already_authenticated" | null;
   hydrated: boolean;
   hydrate: () => Promise<void>;
   /** Sign out any lingering session, then log in as this technician. */
@@ -352,6 +359,8 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
   status: "absent",
   username: "",
   canRenew: false,
+  lastEstablishAt: null,
+  lastEstablishReason: null,
   hydrated: false,
 
   hydrate: async () => {
@@ -374,7 +383,7 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
 
   establish: async (username, password) => {
     await SecureStore.deleteItemAsync(SESSION_KEY);
-    set({ status: "absent", username: "" });
+    set({ status: "absent", username: "", lastEstablishAt: Date.now() });
     // Unlike the button path, login MUST wait for the server-side sign-out
     // (bounded): a lingering predecessor session would make the bootstrap
     // land authenticated and the login refuse.
@@ -394,7 +403,7 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
       }
     }
     if (result.ok) {
-      set({ status: "active", username, canRenew: true });
+      set({ status: "active", username, canRenew: true, lastEstablishReason: null });
       await SecureStore.setItemAsync(
         SESSION_KEY,
         JSON.stringify({ username, establishedAt: Date.now() } satisfies PersistedSession),
@@ -416,7 +425,7 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
         await wipeCredentials();
         set({ canRenew: false });
       }
-      set({ status: "absent" });
+      set({ status: "absent", lastEstablishReason: result.reason });
       capture("resman_session_establish_failed", { reason: result.reason });
       // A failed establish is not proof there is no session — the field case
       // above ends with a LIVE session and a failed login. Let the probe

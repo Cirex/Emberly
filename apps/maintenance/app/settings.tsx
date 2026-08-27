@@ -212,6 +212,7 @@ export default function Settings() {
   const signOut = useConfig((s) => s.signOut);
   const resmanStatus = useResManSession((s) => s.status);
   const resmanCanRenew = useResManSession((s) => s.canRenew);
+  const resmanEstablishReason = useResManSession((s) => s.lastEstablishReason);
 
   const workOrderCount = useWorkOrders((s) => s.workOrders.length);
   const refreshedAt = useWorkOrders((s) => s.refreshedAt);
@@ -491,7 +492,9 @@ export default function Settings() {
               ? t("settings.resmanSessionActive")
               : resmanStatus === "unverified" || (resmanStatus === "expired" && resmanCanRenew)
                 ? t("settings.resmanSessionChecking")
-                : t("settings.resmanSessionExpired")}
+                : resmanEstablishReason
+                  ? t(`settings.resmanSessionFailed.${resmanEstablishReason}`)
+                  : t("settings.resmanSessionExpired")}
           </Text>
         </View>
         <Pressable

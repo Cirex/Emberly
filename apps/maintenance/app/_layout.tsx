@@ -10,7 +10,7 @@ import "../global.css";
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider, useRouter, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme, vars } from "nativewind";
-import { PropsWithChildren, useEffect } from "react";
+import { PropsWithChildren, useEffect, useRef } from "react";
 import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -77,21 +77,33 @@ function RootLayout() {
   // basement must never look like a sign-out).
   const resmanStatus = useResManSession((s) => s.status);
   const resmanCanRenew = useResManSession((s) => s.canRenew);
+  const lastEstablishAt = useResManSession((s) => s.lastEstablishAt);
   const router = useRouter();
   const pathname = usePathname();
+  const kickedRef = useRef(false);
   useEffect(() => {
     // Only when the session is dead AND cannot renew itself — with Keychain
-    // credentials present, expiry is a silent renewal, not a sign-out.
+    // credentials present, expiry is a silent renewal, not a sign-out. And
+    // LOOP-PROOF: at most once per launch, and never inside the grace window
+    // after a sign-in attempt — a failing establish must surface its reason
+    // in Settings, not bounce the tech straight back to the screen they just
+    // left (field report: "a successful sign in just takes [me] to another
+    // sign in").
+    const GRACE_MS = 10 * 60 * 1000;
+    const inGrace = lastEstablishAt !== null && Date.now() - lastEstablishAt < GRACE_MS;
     if (
       hydrated &&
       signedIn &&
       resmanStatus === "expired" &&
       !resmanCanRenew &&
+      !kickedRef.current &&
+      !inGrace &&
       pathname !== "/sign-in"
     ) {
+      kickedRef.current = true;
       router.push("/sign-in");
     }
-  }, [hydrated, signedIn, resmanStatus, resmanCanRenew, pathname, router]);
+  }, [hydrated, signedIn, resmanStatus, resmanCanRenew, lastEstablishAt, pathname, router]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

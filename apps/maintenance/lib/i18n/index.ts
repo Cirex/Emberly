@@ -68,6 +68,11 @@ const en = {
     resmanSessionActive: "Active",
     resmanSessionChecking: "Checking…",
     resmanSessionExpired: "Sign in again to sync changes",
+    resmanSessionFailed: {
+      invalid: "ResMan rejected the sign-in — check the password",
+      unreachable: "ResMan didn't respond — will keep trying",
+      already_authenticated: "ResMan session conflict — will keep trying",
+    },
     switchUser: "Switch user",
     signedInAs: "Signed in as",
     signOut: "Sign out",
@@ -81,7 +86,8 @@ const en = {
     syncNow: "Sync now",
     sending: "Sending…",
     reassureLead: "Nothing is lost.",
-    reassureBody: "Everything here is saved on this phone and sends itself — you can close the app.",
+    reassureBody:
+      "Everything here is saved on this phone and sends itself — you can close the app.",
     emptyTitle: "Outbox is empty",
     emptyBody: "Closes, notes, and photos will appear here until they reach ResMan.",
     workOrderFallback: "Work order",
@@ -442,7 +448,7 @@ const en = {
       sewer: "Sewer",
       gas: "Gas",
       electrical: "Electrical",
-        internet: "Internet",
+      internet: "Internet",
       other: "Other",
     },
     pin: "Pin",
@@ -489,7 +495,8 @@ const en = {
     pointCount: "{{count}} points",
     hiddenBadge: "hidden",
     deleteRun: "Delete run",
-    hubHint: "Tap a run to edit it. Hidden runs stay in the shared data — they just stop drawing on this device.",
+    hubHint:
+      "Tap a run to edit it. Hidden runs stay in the shared data — they just stop drawing on this device.",
     drawRun: "+ Draw run",
     dropPin: "+ Drop pin",
     noRuns: "Nothing drawn yet — draw a run or drop a pin to start the layer.",
@@ -670,7 +677,8 @@ const es: typeof en = {
     errors: {
       invalid: "Ese usuario o contraseña no fue aceptado. Revísalos e intenta de nuevo.",
       rate_limited: "Demasiados intentos. Espera unos minutos e intenta de nuevo.",
-      unavailable: "El inicio de sesión de ResMan no está disponible por ahora. Intenta en un momento.",
+      unavailable:
+        "El inicio de sesión de ResMan no está disponible por ahora. Intenta en un momento.",
       unreachable: "No se puede conectar al servidor. Revisa la red e intenta de nuevo.",
     },
   },
@@ -705,6 +713,11 @@ const es: typeof en = {
     resmanSessionActive: "Activa",
     resmanSessionChecking: "Comprobando…",
     resmanSessionExpired: "Inicia sesión de nuevo para sincronizar",
+    resmanSessionFailed: {
+      invalid: "ResMan rechazó el acceso — revisa la contraseña",
+      unreachable: "ResMan no respondió — se seguirá intentando",
+      already_authenticated: "Conflicto de sesión de ResMan — se seguirá intentando",
+    },
     switchUser: "Cambiar de usuario",
     signedInAs: "Sesión iniciada como",
     signOut: "Cerrar sesión",
@@ -718,7 +731,8 @@ const es: typeof en = {
     syncNow: "Sincronizar",
     sending: "Enviando…",
     reassureLead: "No se pierde nada.",
-    reassureBody: "Todo lo que ves está guardado en este teléfono y se envía solo — puedes cerrar la app.",
+    reassureBody:
+      "Todo lo que ves está guardado en este teléfono y se envía solo — puedes cerrar la app.",
     emptyTitle: "La bandeja está vacía",
     emptyBody: "Los cierres, notas y fotos aparecerán aquí hasta llegar a ResMan.",
     workOrderFallback: "Orden de trabajo",
@@ -772,7 +786,12 @@ const es: typeof en = {
         highToLow: "Mayor → Menor",
       },
     },
-    modes: { open: "Abiertas", closed: "Cerradas", preventive: "Preventivo", hotSpots: "Puntos críticos" },
+    modes: {
+      open: "Abiertas",
+      closed: "Cerradas",
+      preventive: "Preventivo",
+      hotSpots: "Puntos críticos",
+    },
     modeMenuA11y: "Viendo {{mode}}; cambiar modo",
     insightsA11y: "Estadísticas de cerradas",
     closeFlow: {
@@ -994,7 +1013,8 @@ const es: typeof en = {
   mapGroups: {
     title: "Grupos de color",
     close: "Cerrar",
-    priorityHint: "El grupo de arriba gana cuando una unidad coincide con varios. Usa las flechas para reordenar.",
+    priorityHint:
+      "El grupo de arriba gana cuando una unidad coincide con varios. Usa las flechas para reordenar.",
     visibility: "Mostrar en el mapa",
     moveUp: "Subir",
     moveDown: "Bajar",
@@ -1061,7 +1081,7 @@ const es: typeof en = {
       sewer: "Drenaje",
       gas: "Gas",
       electrical: "Eléctrico",
-        internet: "Internet",
+      internet: "Internet",
       other: "Otro",
     },
     pin: "Pin",
@@ -1108,7 +1128,8 @@ const es: typeof en = {
     pointCount: "{{count}} puntos",
     hiddenBadge: "oculta",
     deleteRun: "Eliminar línea",
-    hubHint: "Toca una línea para editarla. Las líneas ocultas siguen en los datos compartidos — solo dejan de dibujarse en este dispositivo.",
+    hubHint:
+      "Toca una línea para editarla. Las líneas ocultas siguen en los datos compartidos — solo dejan de dibujarse en este dispositivo.",
     drawRun: "+ Dibujar línea",
     dropPin: "+ Colocar pin",
     noRuns: "Aún no hay nada dibujado — dibuja una línea o coloca un pin para iniciar la capa.",
@@ -1197,7 +1218,8 @@ const es: typeof en = {
     removePart: "Quitar pieza",
     increase: "Aumentar cantidad",
     decrease: "Disminuir cantidad",
-    heldOnDevice: "Guardado en este dispositivo hasta que las órdenes cerradas se sincronicen con ResMan.",
+    heldOnDevice:
+      "Guardado en este dispositivo hasta que las órdenes cerradas se sincronicen con ResMan.",
   },
   dictation: {
     listening: "Escuchando…",

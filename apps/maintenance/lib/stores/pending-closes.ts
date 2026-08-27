@@ -34,6 +34,9 @@ export interface PendingClose {
    * attempt, so a missing value reads as 1.
    */
   attempts?: number;
+  /** The last delivery failure, verbatim — surfaced in the outbox so a stuck
+   *  entry says WHY instead of just counting attempts. Cleared on ack. */
+  lastError?: string;
 }
 
 /** A pending close older than this is dropped at hydrate/prune — a close the
@@ -83,7 +86,12 @@ function ackIfUnchanged(
     return {
       pending: {
         ...s.pending,
-        [workOrderId]: { ...cur, acked: true, ...(attempts === undefined ? {} : { attempts }) },
+        [workOrderId]: {
+          ...cur,
+          acked: true,
+          lastError: undefined,
+          ...(attempts === undefined ? {} : { attempts }),
+        },
       },
     };
   });
@@ -94,6 +102,23 @@ function ackIfUnchanged(
  *  body omits the field entirely and the server keeps deciding. */
 function isoOrUndefined(ms: number | undefined): string | undefined {
   return ms === undefined ? undefined : new Date(ms).toISOString();
+}
+
+/** One line of failure text — our own error messages carry no note contents. */
+function errorText(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).slice(0, 300);
+}
+
+function recordError(
+  set: (fn: (s: PendingClosesState) => Partial<PendingClosesState>) => void,
+  workOrderId: string,
+  error: unknown,
+): void {
+  set((s) => {
+    const cur = s.pending[workOrderId];
+    if (!cur || cur.acked) return s;
+    return { pending: { ...s.pending, [workOrderId]: { ...cur, lastError: errorText(error) } } };
+  });
 }
 
 /** Module-scoped so it guards the ONE store, not a per-call closure. */
@@ -121,8 +146,9 @@ export const usePendingCloses = create<PendingClosesState>()(
         try {
           await closeWorkOrder(workOrderId, note, config, isoOrUndefined(completedAt));
           ackIfUnchanged(set, workOrderId, note, completedAt);
-        } catch {
+        } catch (error) {
           // Keep it un-acked; flush() retries on the next sync tick.
+          recordError(set, workOrderId, error);
         }
       },
 
@@ -165,12 +191,17 @@ export const usePendingCloses = create<PendingClosesState>()(
                   queued_ms: Date.now() - entry.queuedAt,
                 });
               }
-            } catch {
-              // Still unreachable — persist the attempt count for the next tick.
+            } catch (error) {
+              // Still failing — persist the attempt count and the reason.
               set((s) => {
                 const cur = s.pending[entry.workOrderId];
                 if (!cur || cur.acked) return s;
-                return { pending: { ...s.pending, [entry.workOrderId]: { ...cur, attempts } } };
+                return {
+                  pending: {
+                    ...s.pending,
+                    [entry.workOrderId]: { ...cur, attempts, lastError: errorText(error) },
+                  },
+                };
               });
             }
           }

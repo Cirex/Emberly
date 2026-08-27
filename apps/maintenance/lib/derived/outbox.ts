@@ -85,6 +85,7 @@ export function buildOutbox(input: OutboxInput): OutboxItem[] {
       state: closeState(c),
       attempts: c.attempts ?? 1,
       queuedAt: c.queuedAt,
+      lastError: c.acked ? undefined : c.lastError,
     });
   }
 
@@ -97,6 +98,7 @@ export function buildOutbox(input: OutboxInput): OutboxItem[] {
       attempts: 0,
       queuedAt: e.editedAt,
       editFields: editFields(e.patch),
+      lastError: e.acked ? undefined : e.lastError,
     });
   }
 
@@ -126,9 +128,7 @@ export function buildOutbox(input: OutboxInput): OutboxItem[] {
     });
   }
 
-  return items.sort(
-    (a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || a.queuedAt - b.queuedAt,
-  );
+  return items.sort((a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || a.queuedAt - b.queuedAt);
 }
 
 /** Count of items not yet accepted by the server — the tab/settings badge. */

@@ -106,9 +106,18 @@ export default function Outbox() {
     const config = { baseUrl, token };
     // Closes and edits first, then photos — the same order the sync tick uses,
     // so a photo's work order exists on the server before its bytes arrive.
-    await usePendingCloses.getState().flush(config).catch(() => {});
-    await usePendingEdits.getState().flush(config).catch(() => {});
-    await useWorkOrderPhotos.getState().flush(config).catch(() => {});
+    await usePendingCloses
+      .getState()
+      .flush(config)
+      .catch(() => {});
+    await usePendingEdits
+      .getState()
+      .flush(config)
+      .catch(() => {});
+    await useWorkOrderPhotos
+      .getState()
+      .flush(config)
+      .catch(() => {});
     setFlushing(false);
   };
 
@@ -153,7 +162,15 @@ export default function Outbox() {
       </View>
 
       {/* Reassurance — the whole point of the screen. */}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 9, marginTop: 14, marginBottom: 4 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 9,
+          marginTop: 14,
+          marginBottom: 4,
+        }}
+      >
         <MaterialCommunityIcons name="shield-check-outline" size={18} color={GREEN} />
         <Text style={{ flex: 1, fontSize: 12.5, color: SLATE, fontWeight: "600" }}>
           <Text style={{ fontWeight: "800", color: NAVY }}>{t("outbox.reassureLead")} </Text>
@@ -162,12 +179,15 @@ export default function Outbox() {
       </View>
 
       {items.length === 0 ? (
-        <AppCardSurface kind="panel" style={{ paddingVertical: 28, alignItems: "center", marginTop: 14 }}>
+        <AppCardSurface
+          kind="panel"
+          style={{ paddingVertical: 28, alignItems: "center", marginTop: 14 }}
+        >
           <MaterialCommunityIcons name="tray-remove" size={30} color={MUTED} />
-          <Text style={{ fontSize: 14, fontWeight: "800", color: NAVY, marginTop: 10 }}>{t("outbox.emptyTitle")}</Text>
-          <Text style={{ fontSize: 12, color: MUTED, marginTop: 3 }}>
-            {t("outbox.emptyBody")}
+          <Text style={{ fontSize: 14, fontWeight: "800", color: NAVY, marginTop: 10 }}>
+            {t("outbox.emptyTitle")}
           </Text>
+          <Text style={{ fontSize: 12, color: MUTED, marginTop: 3 }}>{t("outbox.emptyBody")}</Text>
         </AppCardSurface>
       ) : (
         <View style={{ marginTop: 12, gap: 9 }}>
@@ -195,13 +215,23 @@ export default function Outbox() {
                   backgroundColor: `${stateColor(item.state)}1A`,
                 }}
               >
-                <MaterialCommunityIcons name={kindIcon(item.kind)} size={19} color={stateColor(item.state)} />
+                <MaterialCommunityIcons
+                  name={kindIcon(item.kind)}
+                  size={19}
+                  color={stateColor(item.state)}
+                />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text className="text-navy dark:text-white" style={{ fontSize: 14, fontWeight: "800" }}>
+                <Text
+                  className="text-navy dark:text-white"
+                  style={{ fontSize: 14, fontWeight: "800" }}
+                >
                   {itemTitle(item)}
                 </Text>
-                <Text style={{ fontSize: 11.5, color: MUTED, marginTop: 2, fontWeight: "600" }} numberOfLines={1}>
+                <Text
+                  style={{ fontSize: 11.5, color: MUTED, marginTop: 2, fontWeight: "600" }}
+                  numberOfLines={1}
+                >
                   {woLabel.get(item.workOrderId) ?? t("outbox.workOrderFallback")}
                 </Text>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 }}>
@@ -219,7 +249,9 @@ export default function Outbox() {
                     {item.state === "sent" ? (
                       <Ionicons name="checkmark" size={11} color={stateColor(item.state)} />
                     ) : null}
-                    <Text style={{ fontSize: 10.5, fontWeight: "800", color: stateColor(item.state) }}>
+                    <Text
+                      style={{ fontSize: 10.5, fontWeight: "800", color: stateColor(item.state) }}
+                    >
                       {t(`outbox.state.${item.state}`)}
                     </Text>
                   </View>
@@ -229,6 +261,14 @@ export default function Outbox() {
                     </Text>
                   ) : null}
                 </View>
+                {item.lastError ? (
+                  <Text
+                    style={{ fontSize: 10.5, color: "#B3261E", marginTop: 5 }}
+                    numberOfLines={3}
+                  >
+                    {item.lastError}
+                  </Text>
+                ) : null}
               </View>
             </AppCardSurface>
           ))}

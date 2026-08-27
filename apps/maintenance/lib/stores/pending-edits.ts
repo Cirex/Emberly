@@ -22,6 +22,9 @@ export interface PendingEdit {
   editedAt: number;
   /** True once the server accepted (even as a stub); false = local-only, retry. */
   acked: boolean;
+  /** The last delivery failure, verbatim — surfaced in the outbox so a stuck
+   *  entry says WHY instead of just counting attempts. Cleared on ack. */
+  lastError?: string;
 }
 
 /** An edit older than this is dropped at prune — a write the flusher kept
@@ -73,7 +76,9 @@ function ackIfUnchanged(
   set((s) => {
     const cur = s.pending[workOrderId];
     if (!cur || fingerprint(cur.patch) !== sentPrint) return s;
-    return { pending: { ...s.pending, [workOrderId]: { ...cur, acked: true } } };
+    return {
+      pending: { ...s.pending, [workOrderId]: { ...cur, acked: true, lastError: undefined } },
+    };
   });
 }
 
@@ -103,6 +108,23 @@ function absorbed(row: WorkOrder, patch: WorkOrderEditPatch): boolean {
   return true;
 }
 
+/** One line of failure text — our own error messages carry no note contents. */
+function errorText(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).slice(0, 300);
+}
+
+function recordError(
+  set: (fn: (s: PendingEditsState) => Partial<PendingEditsState>) => void,
+  workOrderId: string,
+  error: unknown,
+): void {
+  set((s) => {
+    const cur = s.pending[workOrderId];
+    if (!cur || cur.acked) return s;
+    return { pending: { ...s.pending, [workOrderId]: { ...cur, lastError: errorText(error) } } };
+  });
+}
+
 /** Module-scoped so it guards the ONE store, not a per-call closure. */
 let flushing = false;
 
@@ -122,8 +144,9 @@ export const usePendingEdits = create<PendingEditsState>()(
         try {
           await editWorkOrder(workOrderId, merged, config);
           ackIfUnchanged(set, workOrderId, merged);
-        } catch {
+        } catch (error) {
           // Keep it un-acked; flush() retries on the next sync tick.
+          recordError(set, workOrderId, error);
         }
       },
 
@@ -141,8 +164,8 @@ export const usePendingEdits = create<PendingEditsState>()(
             try {
               await editWorkOrder(entry.workOrderId, entry.patch, config);
               ackIfUnchanged(set, entry.workOrderId, entry.patch);
-            } catch {
-              /* still unreachable — next tick */
+            } catch (error) {
+              recordError(set, entry.workOrderId, error); // next tick retries
             }
           }
         } finally {

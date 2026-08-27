@@ -507,6 +507,12 @@ const ECHO_FIELDS = new Set([
   "ReportedBy", "ReportedByPersonID", "Appointment", "Phone", "Pets",
   "WorkOrderCategoryID", "ReportingNotes", "CancellationReasonPickListItemID",
   "CancellationDate", "Priority", "VendorID", "EstimatedCost", "StartedDate",
+  // Synthesized by the writer (see resolveWorkOrderLocationName): the display
+  // text the ObjectID combobox posts. ResMan persists its denormalized
+  // ObjectName from THIS field on every save — omit it and the work order's
+  // unit/building name blanks in every list and report (verified live on
+  // WOs 14627 and 16376, 2026-08-27).
+  "Location",
   "StartedDate_Date", "StartedDate.Time", "StartedByPersonID", "AddRetentionEffortNote",
   // The .Time halves of the two date triples we do write ride along as
   // harvested — the composite field carries the authoritative value.
@@ -571,6 +577,46 @@ export interface WorkOrderWriteResult {
   /** POST response facts, for the log line. Runtimes that auto-follow report
    *  the post-redirect status (200). */
   postStatus?: number;
+}
+
+// MARK: - Location display name
+
+/**
+ * The edit page server-renders `var workOrderableObjects = [{ObjectID,
+ * ObjectType, Name, …}]` — the same list the page's own combobox uses to show
+ * the Location text. Resolve the display name for the harvested ObjectID from
+ * it. Null when the page carries no entry for that id.
+ */
+export function resolveWorkOrderLocationName(html: string, objectId: string): string | null {
+  const pattern = new RegExp(
+    '\\{"ObjectID":"' + objectId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
+      '","ObjectType":"[^"]*","Name":"((?:[^"\\\\]|\\\\.)*)"',
+    "i",
+  );
+  const match = pattern.exec(html);
+  if (!match) return null;
+  return match[1].replace(/\\(.)/g, "$1");
+}
+
+/**
+ * Insert the synthetic `Location` input the browser's combobox would submit,
+ * positioned directly after the ObjectID select the way the real input sits
+ * in the DOM. Must run BEFORE the byte-diff baseline is taken.
+ */
+function synthesizeLocationControl(controls: FormControl[], name: string): void {
+  const index = controls.findIndex((control) => control.name === "ObjectID");
+  const location: FormControl = {
+    name: "Location",
+    kind: "input",
+    type: "text",
+    value: name,
+    dataSelectedValue: null,
+    checked: false,
+    disabled: false,
+    multiple: false,
+    options: [],
+  };
+  controls.splice(index + 1, 0, location);
 }
 
 // MARK: - Transport interface
@@ -908,14 +954,14 @@ async function fetchEditForm(
   http: ResManPageHttp,
   base: string,
   workOrderId: string,
-): Promise<FormControl[]> {
+): Promise<{ controls: FormControl[]; html: string }> {
   const url = `${base}${EDIT_PATH}${workOrderId}`;
   const response = await http.getPage(url);
   if (isResManLoginRedirectUrl(response.finalUrl)) throw new ResManSessionExpiredError();
   if (response.status !== 200) {
     throw new ResManFormParseError(`HTTP ${response.status} for ${url}`);
   }
-  return parseWorkOrderEditForm(response.text, workOrderId).controls;
+  return { controls: parseWorkOrderEditForm(response.text, workOrderId).controls, html: response.text };
 }
 
 /** Resolve `technicianName` into `technicianPersonId` (mutating a COPY of the
@@ -960,8 +1006,19 @@ export async function applyWorkOrderWriteWithHttp(
   const base = params.baseUrl.replace(/\/$/, "");
 
   // 1. Harvest.
-  const controls = await fetchEditForm(http, base, request.workOrderId);
+  const { controls, html } = await fetchEditForm(http, base, request.workOrderId);
   preflight(controls, request);
+  // The Location display pair: ResMan persists its denormalized ObjectName
+  // from this posted text on EVERY save. Refuse rather than post without it —
+  // a save with it absent blanks the unit/building name off every list.
+  const objectIdValue = controlWireValue(requireControl(controls, "ObjectID")) ?? "";
+  const locationName = resolveWorkOrderLocationName(html, objectIdValue);
+  if (locationName === null) {
+    throw new WorkOrderWriteRefused(
+      "page carries no display name for the work order's location — refusing a save that would blank it",
+    );
+  }
+  synthesizeLocationControl(controls, locationName);
   const resolved = await withResolvedTechnician(params, controls);
   const before = serializeControls(controls);
 
@@ -988,7 +1045,7 @@ export async function applyWorkOrderWriteWithHttp(
   // 4. Verify by re-reading, never by trusting the POST's own response.
   let fresh: FormControl[];
   try {
-    fresh = await fetchEditForm(http, base, request.workOrderId);
+    fresh = (await fetchEditForm(http, base, request.workOrderId)).controls;
   } catch (error) {
     return {
       ok: false,
@@ -1028,7 +1085,7 @@ export async function verifyWorkOrderWriteWithHttp(
   const { http, request } = params;
   const now = params.now ?? (() => new Date());
   const base = params.baseUrl.replace(/\/$/, "");
-  const controls = await fetchEditForm(http, base, request.workOrderId);
+  const { controls } = await fetchEditForm(http, base, request.workOrderId);
   preflight(controls, request);
   const resolved = await withResolvedTechnician(params, controls);
   const { allowed } = mutate(controls, resolved, now());

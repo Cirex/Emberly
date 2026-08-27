@@ -142,6 +142,12 @@ test("close: POSTs the full form with Status=Completed and verifies on a re-read
   // required field a naive replay would omit.
   assert.equal(byName.ObjectID, UNIT_16305);
   assert.equal(byName.ObjectType, "Unit");
+  // The synthesized Location display pair: ResMan persists its denormalized
+  // ObjectName from this text on every save — omitting it blanks the unit
+  // name off every list (verified live on WOs 14627/16376, 2026-08-27).
+  assert.equal(byName.Location, "3723 CC-6");
+  const names = pairs.map(([name]) => name);
+  assert.equal(names[names.indexOf("ObjectID") + 1], "Location", "Location sits right after ObjectID");
   // Echo fields are byte-faithful.
   assert.equal(byName.SaveAndNew, "False");
   assert.equal(byName.AddRetentionEffortNote, "false");
@@ -341,6 +347,20 @@ test("close: an explicit close note beats folded typed notes", async () => {
   assert.equal(result.ok, true);
   const byName = Object.fromEntries(decodePairs(posts(transport.calls)[0].body));
   assert.equal(byName.CompletedNotes, "Final word");
+});
+
+test("guard: a page without the location display name refuses (never blank it)", async () => {
+  const stripped = fixture("16305").replace(/var workOrderableObjects = \[[^\]]*\];/, "var workOrderableObjects = [];");
+  const transport = makeTransport({ pages: { [EDIT_URL_16305]: stripped } });
+  await assert.rejects(
+    applyWorkOrderWrite({
+      client: makeClient(transport.fetchImpl),
+      request: { workOrderId: WO_16305, kind: "close", patch: {}, expectedUnitId: UNIT_16305 },
+      now: NOW,
+    }),
+    (error) => error instanceof WorkOrderWriteRefused && /display name/.test(error.message),
+  );
+  assert.equal(posts(transport.calls).length, 0);
 });
 
 // MARK: - Guards (each one an attack)

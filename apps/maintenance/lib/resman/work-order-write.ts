@@ -9,7 +9,7 @@ import {
   parseEmployeeList,
   resolveTechnician,
 } from "@emberly/core";
-import { useResManSession } from "@/lib/resman/session";
+import { BROWSER_UA, useResManSession } from "@/lib/resman/session";
 
 /**
  * Direct on-device work-order writes — the maintenance app's adapter over the
@@ -37,7 +37,7 @@ function pageHttp(fetchImpl: FetchLike): ResManPageHttp {
     async getPage(url) {
       const response = await fetchImpl(url, {
         credentials: "include",
-        headers: { accept: "text/html,application/xhtml+xml" },
+        headers: { accept: "text/html,application/xhtml+xml", "user-agent": BROWSER_UA },
       });
       return { status: response.status, finalUrl: response.url || url, text: await response.text() };
     },
@@ -48,6 +48,7 @@ function pageHttp(fetchImpl: FetchLike): ResManPageHttp {
         headers: {
           "content-type": "application/x-www-form-urlencoded",
           accept: "text/html,application/xhtml+xml",
+          "user-agent": BROWSER_UA,
         },
         body,
       });
@@ -97,6 +98,7 @@ export async function writeWorkOrderDirect(
                   headers: {
                     accept: "application/json, text/javascript, */*; q=0.01",
                     "x-requested-with": "XMLHttpRequest",
+                    "user-agent": BROWSER_UA,
                   },
                 });
               } catch {

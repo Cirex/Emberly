@@ -37,6 +37,44 @@ import { capture } from "@/lib/analytics";
 const PORTAL = MULTI_SOUTH_STAFF_PORTAL;
 const SESSION_KEY = "emberly_resman_session";
 
+/**
+ * The same Safari UA the sync worker's proven node client sends. The app's
+ * default UA is CFNetwork/…, which web-facing infrastructure treats
+ * differently from a browser — and this whole module is impersonating the
+ * browser flow ResMan actually serves.
+ */
+export const BROWSER_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 " +
+  "(KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+
+const HTML_HEADERS = {
+  accept: "text/html,application/xhtml+xml",
+  "user-agent": BROWSER_UA,
+} as const;
+
+/** Per-request deadline on the login steps — a stuck step must surface as
+ *  "unreachable" on the sign-in screen, never as a spinner that sits forever. */
+const LOGIN_STEP_TIMEOUT_MS = 20_000;
+
+const PROBE_TIMEOUT_MS = 10_000;
+const SIGN_OUT_TIMEOUT_MS = 8_000;
+
+/** Run a fetch with a hard deadline — iOS's own 60s timeout is far too long
+ *  for anything sitting in front of a button. */
+async function withTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await run(controller.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+
 /** How the tech signs out of ResMan (from MainMenu.js's #SignOut handler). */
 const SIGN_OUT_PATH = "/Access/SignOut";
 
@@ -82,10 +120,15 @@ export async function performDeviceLogin(
     // login page, whose URL carries the OIDC ReturnUrl and whose HTML carries
     // the CSRF token. An already-live session lands on the consumer root
     // instead — callers sign out first when switching users.
-    const bootstrap = await fetchImpl(PORTAL.consumerStartUrl, {
-      credentials: "include",
-      headers: { accept: "text/html,application/xhtml+xml" },
-    });
+    const bootstrap = await withTimeout(
+      (signal) =>
+        fetchImpl(PORTAL.consumerStartUrl, {
+          credentials: "include",
+          headers: HTML_HEADERS,
+          signal,
+        }),
+      LOGIN_STEP_TIMEOUT_MS,
+    );
     const loginUrl = bootstrap.url || PORTAL.consumerStartUrl;
     const bootstrapHtml = await bootstrap.text();
     if (!isResManLoginRedirectUrl(loginUrl)) {
@@ -100,21 +143,23 @@ export async function performDeviceLogin(
 
     // 2. POST the credentials. Success is the auto-submitting OIDC form_post
     // page; failure re-renders the login form (no absolute form action).
-    const credentialResponse = await fetchImpl(loginUrl, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "content-type": "application/x-www-form-urlencoded",
-        accept: "text/html,application/xhtml+xml",
-      },
-      body: buildStaffCredentialBody({
-        portal: PORTAL,
-        returnUrl: returnUrlFromLoginUrl(loginUrl),
-        username,
-        password,
-        token,
-      }),
-    });
+    const credentialResponse = await withTimeout(
+      (signal) =>
+        fetchImpl(loginUrl, {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/x-www-form-urlencoded", ...HTML_HEADERS },
+          body: buildStaffCredentialBody({
+            portal: PORTAL,
+            returnUrl: returnUrlFromLoginUrl(loginUrl),
+            username,
+            password,
+            token,
+          }),
+          signal,
+        }),
+      LOGIN_STEP_TIMEOUT_MS,
+    );
     const formPost = parseOidcFormPostPage(await credentialResponse.text());
     if (!oidcFormPostLooksValid(formPost)) {
       return { ok: false, reason: "invalid" };
@@ -124,15 +169,17 @@ export async function performDeviceLogin(
     // HTML form, so this POST is built by hand; the redirect chain that
     // follows it IS auto-followed, landing on the consumer root with the
     // session cookies already persisted by the native stack.
-    const oidc = await fetchImpl(formPost.action, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "content-type": "application/x-www-form-urlencoded",
-        accept: "text/html,application/xhtml+xml",
-      },
-      body: resManFormURLEncode(formPost.fields),
-    });
+    const oidc = await withTimeout(
+      (signal) =>
+        fetchImpl(formPost.action, {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/x-www-form-urlencoded", ...HTML_HEADERS },
+          body: resManFormURLEncode(formPost.fields),
+          signal,
+        }),
+      LOGIN_STEP_TIMEOUT_MS,
+    );
     if (isResManLoginRedirectUrl(oidc.url || "")) {
       return { ok: false, reason: "invalid" };
     }
@@ -143,17 +190,48 @@ export async function performDeviceLogin(
 }
 
 /** One cheap authenticated-or-not probe: does the consumer root serve, or
- *  bounce to login? */
+ *  bounce to login? Bounded — a probe that hangs must not stall a write. */
 export async function probeSession(fetchImpl: FetchLike = fetch): Promise<boolean> {
   try {
-    const response = await fetchImpl(PORTAL.consumerStartUrl, {
-      credentials: "include",
-      headers: { accept: "text/html,application/xhtml+xml" },
-    });
+    const response = await withTimeout(
+      (signal) =>
+        fetchImpl(PORTAL.consumerStartUrl, {
+          credentials: "include",
+          headers: HTML_HEADERS,
+          signal,
+        }),
+      PROBE_TIMEOUT_MS,
+    );
     await response.text(); // drain
     return !isResManLoginRedirectUrl(response.url || "");
   } catch {
     return false;
+  }
+}
+
+
+/**
+ * Best-effort server-side sign-out (GET /Access/SignOut), bounded. Never
+ * throws: an offline or slow sign-out is still a local sign-out — the server
+ * session simply ages out.
+ */
+export async function remoteSignOut(
+  fetchImpl: FetchLike = fetch,
+  timeoutMs = SIGN_OUT_TIMEOUT_MS,
+): Promise<void> {
+  try {
+    const response = await withTimeout(
+      (signal) =>
+        fetchImpl(`${consumerBase}${SIGN_OUT_PATH}`, {
+          credentials: "include",
+          headers: HTML_HEADERS,
+          signal,
+        }),
+      timeoutMs,
+    );
+    await response.text(); // drain
+  } catch {
+    /* offline or slow — the local sign-out stands */
   }
 }
 
@@ -216,7 +294,12 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
   },
 
   establish: async (username, password) => {
-    await get().signOut();
+    await SecureStore.deleteItemAsync(SESSION_KEY);
+    set({ status: "absent", username: "" });
+    // Unlike the button path, login MUST wait for the server-side sign-out
+    // (bounded): a lingering predecessor session would make the bootstrap
+    // land authenticated and the login refuse.
+    await remoteSignOut();
     const result = await performDeviceLogin(username, password);
     if (result.ok) {
       set({ status: "active", username });
@@ -248,15 +331,11 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
   },
 
   signOut: async () => {
-    try {
-      await fetch(`${consumerBase}${SIGN_OUT_PATH}`, {
-        credentials: "include",
-        headers: { accept: "text/html,application/xhtml+xml" },
-      });
-    } catch {
-      /* offline sign-out is still a local sign-out */
-    }
+    // Local first, and INSTANT — this sits behind the Sign out button, and an
+    // unbounded network await here once made that button look dead for up to
+    // 60 seconds. The server-side sign-out fires in the background, bounded.
     await SecureStore.deleteItemAsync(SESSION_KEY);
     set({ status: "absent", username: "" });
+    void remoteSignOut();
   },
 }));

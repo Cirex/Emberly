@@ -20,9 +20,8 @@ mock.module("@/lib/analytics", () => ({
   resetAnalytics: () => {},
 }));
 
-const { performDeviceLogin, probeSession, returnUrlFromLoginUrl } = await import(
-  "@/lib/resman/session"
-);
+const { performDeviceLogin, probeSession, remoteSignOut, returnUrlFromLoginUrl, useResManSession } =
+  await import("@/lib/resman/session");
 
 const LOGIN_URL =
   "https://multisouth.auth.myresman.com/auth/Account/Login?ReturnUrl=%2Fauth%2Fconnect%2Fauthorize";
@@ -110,5 +109,41 @@ describe("probeSession", () => {
     const bounced = (async () => response(LOGIN_URL, LOGIN_HTML)) as unknown as typeof fetch;
     expect(await probeSession(home)).toBe(true);
     expect(await probeSession(bounced)).toBe(false);
+  });
+});
+
+describe("sign-out responsiveness", () => {
+  test("remoteSignOut returns at the deadline even when the request hangs", async () => {
+    // The regression this pins: an unbounded await on /Access/SignOut sat in
+    // front of the Sign out button and made it look dead for up to 60s.
+    const hanging = ((_url: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      })) as unknown as typeof fetch;
+    const start = Date.now();
+    await remoteSignOut(hanging, 50);
+    expect(Date.now() - start).toBeLessThan(2_000);
+  });
+
+  test("store signOut clears local state instantly, never awaiting the network", async () => {
+    const realFetch = globalThis.fetch;
+    let networkCalls = 0;
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      networkCalls += 1;
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+    }) as unknown as typeof fetch;
+    try {
+      useResManSession.setState({ status: "active", username: "tech", hydrated: true });
+      const start = Date.now();
+      await useResManSession.getState().signOut();
+      expect(Date.now() - start).toBeLessThan(2_000);
+      expect(useResManSession.getState().status).toBe("absent");
+      expect(useResManSession.getState().username).toBe("");
+      expect(networkCalls).toBe(1); // fired, in the background
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });

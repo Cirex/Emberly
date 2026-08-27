@@ -56,7 +56,7 @@ function mutationResponse(result: MutationResult): NextResponse {
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteContext): Promise<NextResponse> {
-  const auth = await requireAdminOrScanner(request, { roles: ["property_manager", "security_manager"] });
+  const auth = await requireAdminOrScanner(request, { roles: ["property_manager", "security_manager", "maintenance_tech"] });
   if (!auth.ok) return auth.response;
 
   const body = await readJson(request);
@@ -86,7 +86,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext): Pro
 }
 
 export async function DELETE(request: NextRequest, { params }: RouteContext): Promise<NextResponse> {
-  const auth = await requireAdminOrScanner(request, { roles: ["property_manager", "security_manager"] });
+  const auth = await requireAdminOrScanner(request, { roles: ["property_manager", "security_manager", "maintenance_tech"] });
   if (!auth.ok) return auth.response;
 
   const body = await readJson(request);

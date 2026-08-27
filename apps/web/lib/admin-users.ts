@@ -121,7 +121,12 @@ export function authenticateBreakGlass(key: string): AdminAuthContext | null {
 
 // ---- admin_users directory management --------------------------------------
 
-/** The assignable roles, most- to least-privileged. Mirrors AdminRole. */
+/**
+ * The HUMAN-assignable roles, most- to least-privileged. Deliberately not the
+ * whole AdminRole union: `maintenance_tech` is a device-only role minted by
+ * /api/admin/auth/app-token for EmberlyMaintenance sign-ins and must never be
+ * assignable to an admin_users row — keep the human/device distinction.
+ */
 export const ASSIGNABLE_ADMIN_ROLES: readonly AdminRole[] = [
   "super_admin",
   "property_manager",

@@ -77,10 +77,17 @@ export async function POST(request: NextRequest) {
   // tech's phone carried a credential for the whole back office, so the app
   // names itself here and gets only its own capabilities.
   //
+  // Maintenance mints `maintenance_tech`. It used to mint `security_manager`,
+  // which happened to carry the right capability set (units, work-orders) but
+  // whose name read as a permissions bug in the app UI and muddied audits.
+  // `security_manager` is NOT retired: it stays the scanner's effective role,
+  // a real back-office role for humans, and the role on every maintenance
+  // token minted before this rename — all of which every gate still accepts.
+  //
   // `app` is absent on installs that predate this field; they are all
   // maintenance builds, so that stays the default.
   const isManager = app === "manager";
-  const role = isManager ? "property_manager" : "security_manager";
+  const role = isManager ? "property_manager" : "maintenance_tech";
   const appLabel = isManager ? "app:manager" : "app:maintenance";
   const who = admin.displayName?.trim() || username;
   const minted = await mintAccessToken(client, {

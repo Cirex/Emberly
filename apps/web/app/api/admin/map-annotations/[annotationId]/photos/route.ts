@@ -31,7 +31,7 @@ const CreateSchema = z.object({
 const MAX_BODY_BYTES = 13 * 1024 * 1024;
 
 export async function POST(request: Request, { params }: RouteParams) {
-  const auth = await requireAdminOrScanner(request, { roles: ["property_manager", "security_manager"] });
+  const auth = await requireAdminOrScanner(request, { roles: ["property_manager", "security_manager", "maintenance_tech"] });
   if (!auth.ok) return auth.response;
   const { annotationId } = await params;
 

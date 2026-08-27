@@ -2,9 +2,15 @@
 
 import { useState } from "react";
 import { fetchAdminJson } from "../_components/admin-fetch";
+// Type-only import: erased at compile time, so this client component still
+// never pulls the server-only auth module into the bundle.
+import type { AdminRole } from "@/lib/auth";
 
-/** Assignable roles, most- to least-privileged. Kept local so this client
- *  component never imports the server-only admin-users module at runtime. */
+/** HUMAN-assignable roles, most- to least-privileged. Kept local so this
+ *  client component never imports the server-only admin-users module at
+ *  runtime. Deliberately narrower than AdminRole: `maintenance_tech` is a
+ *  device-only role (minted for maintenance-app sign-ins by
+ *  /api/admin/auth/app-token) and must never be offered in this picker. */
 const ROLES = ["super_admin", "property_manager", "security_manager", "viewer"] as const;
 type Role = (typeof ROLES)[number];
 
@@ -12,7 +18,9 @@ export interface AdminUserRow {
   id: string;
   resman_username: string;
   display_name: string | null;
-  role: Role;
+  // The full union: rows are read back as whatever admin-users.ts reports,
+  // while the editable draft (`Role` above) stays human-assignable only.
+  role: AdminRole;
   active: boolean;
   resman_person_id: string | null;
   last_login_at: string | null;

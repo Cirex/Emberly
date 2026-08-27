@@ -13,7 +13,18 @@ import { authenticateScanner, hasScannerCredential, touchScannerLastSeen } from 
 import { createUntypedAdminClient } from "./supabase/admin";
 import type { UntypedSupabase } from "./supabase/types";
 
-const ADMIN_ROLES: readonly AdminRole[] = ["super_admin", "property_manager", "security_manager", "viewer"];
+// Roles an `eapi_` app token may carry (adminFromApiToken demotes anything
+// else to viewer) and that a live admin_users row may refresh a session to.
+// `maintenance_tech` only ever arrives via the token path — it is the
+// maintenance app's device role (minted by /api/admin/auth/app-token), never a
+// human admin_users role, so resolveActiveSessionAdmin simply never sees it.
+const ADMIN_ROLES: readonly AdminRole[] = [
+  "super_admin",
+  "property_manager",
+  "security_manager",
+  "maintenance_tech",
+  "viewer",
+];
 
 /** Extract an `eapi_` bearer token, if the request carries one. */
 function bearerApiToken(request: Request): string | null {

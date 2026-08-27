@@ -68,20 +68,29 @@ const MANAGER_CAPABILITIES = [
 
 // ── behaviour ──────────────────────────────────────────────────────────────
 
+// Two maintenance roles on purpose: new sign-ins mint `maintenance_tech`,
+// while tokens minted before that role existed still carry `security_manager`
+// and must keep working identically.
+const MAINTENANCE_ROLES = ["maintenance_tech", "security_manager"];
+
 test("a maintenance token reaches NO manager capability", async () => {
-  asRole("security_manager");
-  for (const capability of MANAGER_CAPABILITIES) {
-    const result = await requireStaffToken(request(), capability);
-    assert.equal(result.ok, false, `security_manager was allowed ${capability}`);
-    assert.equal(result.response.status, 403);
+  for (const role of MAINTENANCE_ROLES) {
+    asRole(role);
+    for (const capability of MANAGER_CAPABILITIES) {
+      const result = await requireStaffToken(request(), capability);
+      assert.equal(result.ok, false, `${role} was allowed ${capability}`);
+      assert.equal(result.response.status, 403);
+    }
   }
 });
 
 test("a maintenance token still reaches its own surface", async () => {
-  asRole("security_manager");
-  for (const capability of ["units", "work-orders"]) {
-    const result = await requireStaffToken(request(), capability);
-    assert.equal(result.ok, true, `security_manager was denied ${capability}`);
+  for (const role of MAINTENANCE_ROLES) {
+    asRole(role);
+    for (const capability of ["units", "work-orders"]) {
+      const result = await requireStaffToken(request(), capability);
+      assert.equal(result.ok, true, `${role} was denied ${capability}`);
+    }
   }
 });
 
@@ -175,7 +184,11 @@ test("every staff route authorizes through requireStaffToken", () => {
   assert.ok(files.length >= 22, `expected the staff surface, found ${files.length} routes`);
 
   const offenders = [];
-  const allowed = new Set([...appRoleScopes("property_manager"), ...appRoleScopes("security_manager")]);
+  const allowed = new Set([
+    ...appRoleScopes("property_manager"),
+    ...appRoleScopes("security_manager"),
+    ...appRoleScopes("maintenance_tech"),
+  ]);
 
   for (const file of files) {
     const source = readFileSync(file, "utf8");

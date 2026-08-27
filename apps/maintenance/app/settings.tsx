@@ -341,12 +341,15 @@ export default function Settings() {
               }}
             >
               {/* The scoped DEVICE role, mapped to what it means on this
-                  surface: the maintenance app mints the units+work-orders
-                  role, which happens to be NAMED security_manager server-side
-                  (see app-token/route.ts) — showing that name here reads as a
-                  permissions bug. */}
+                  surface. New sign-ins mint `maintenance_tech`; tokens minted
+                  before that role existed carry `security_manager` (the name
+                  the maintenance app used to borrow server-side — see
+                  app-token/route.ts) and stay signed in, so BOTH read as
+                  MAINTENANCE here rather than as a permissions bug. */}
               <Text style={{ fontSize: 9, fontWeight: "800", color: "#767B24" }}>
-                {(admin.role === "security_manager" ? "maintenance" : admin.role)
+                {(admin.role === "maintenance_tech" || admin.role === "security_manager"
+                  ? "maintenance"
+                  : admin.role)
                   .replace(/_/g, " ")
                   .toUpperCase()}
               </Text>

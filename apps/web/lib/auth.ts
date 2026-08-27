@@ -92,7 +92,18 @@ export interface ResidentSelectionPayload {
   exp: number;
 }
 
-export type AdminRole = "super_admin" | "property_manager" | "security_manager" | "viewer";
+// `maintenance_tech` is a DEVICE-ONLY role: minted by /api/admin/auth/app-token
+// for EmberlyMaintenance sign-ins, never assignable to a human admin_users row
+// (it is deliberately absent from ASSIGNABLE_ADMIN_ROLES in admin-users.ts and
+// from the users-management UI). It exists so maintenance tokens stop
+// borrowing the `security_manager` name, which stays for scanners, back-office
+// humans, and legacy maintenance tokens.
+export type AdminRole =
+  | "super_admin"
+  | "property_manager"
+  | "security_manager"
+  | "maintenance_tech"
+  | "viewer";
 
 export interface AdminAuthContext {
   adminId: string;

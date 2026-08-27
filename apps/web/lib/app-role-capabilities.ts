@@ -25,10 +25,23 @@ import type { AccessTokenSubject } from "./access-tokens";
  */
 const APP_ROLE_CAPABILITIES: Record<string, ReadonlySet<string>> = {
   /**
-   * EmberlyMaintenance — work orders, units, PM rounds, map annotations.
-   * PM rounds ride on `work-orders` on purpose: tokens minted before the
-   * manager role existed carry exactly `["units", "work-orders"]`, and gating
-   * PM on its own capability would have signed every tech out of that tab.
+   * EmberlyMaintenance's DEVICE role — what /api/admin/auth/app-token mints
+   * for maintenance sign-ins: work orders, units, PM rounds, map annotations.
+   * Deliberately the identical capability set as `security_manager` below,
+   * which the maintenance app borrowed before this role existed (the name read
+   * as a permissions bug in the app UI and muddied audits, but the
+   * capabilities were right). PM rounds ride on `work-orders` on purpose:
+   * tokens minted before the manager role existed carry exactly
+   * `["units", "work-orders"]`, and gating PM on its own capability would have
+   * signed every tech out of that tab.
+   */
+  maintenance_tech: new Set(["units", "work-orders"]),
+  /**
+   * The scanner's effective role (admin-request.ts SCANNER_ADMIN_ROLE), a real
+   * back-office role for human admin_users, and the role still carried by
+   * every maintenance token minted before `maintenance_tech` existed — those
+   * live in techs' Keychains and must keep working, so this entry stays
+   * exactly as it was. New maintenance sign-ins mint `maintenance_tech` above.
    */
   security_manager: new Set(["units", "work-orders"]),
   /**

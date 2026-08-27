@@ -82,13 +82,14 @@ describe("performDeviceLogin", () => {
     expect(count).toBe(2); // never replayed a form_post that was not one
   });
 
-  test("a lingering session on bootstrap refuses rather than adopting it", async () => {
-    // establish() signs out first; landing on the consumer root here means
-    // the sign-out failed and WHOSE session this is is unknown.
+  test("a lingering session on bootstrap reports already_authenticated", async () => {
+    // Landing on the consumer root means the prior sign-out has not
+    // propagated. performDeviceLogin never adopts the unknown identity —
+    // establish() owns the retry (one more sign-out round, then refuse).
     const fetchImpl = (async () =>
       response("https://multisouth.myresman.com/", "<html>home</html>")) as unknown as typeof fetch;
     const result = await performDeviceLogin("tech", "pw", fetchImpl);
-    expect(result).toEqual({ ok: false, reason: "unreachable" });
+    expect(result).toEqual({ ok: false, reason: "already_authenticated" });
   });
 
   test("network failure is unreachable, never a throw", async () => {

@@ -43,6 +43,16 @@ export interface PendingClose {
  *  flusher kept refusing would otherwise shadow the base row forever. */
 const STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * An ACKED close whose work order the mirror STILL reports open after this
+ * long gets un-acked and redelivered. Two real cases: stub-era entries the
+ * old server "accepted" without ever writing ResMan (found in the field: a
+ * close stuck at "syncing to ResMan" for days), and any future ack whose
+ * write silently failed to stick. Safe because delivery is verify-first and
+ * idempotent — a close that actually landed re-acks as a no-op on one GET.
+ */
+const REDELIVER_MS = 30 * 60 * 1000;
+
 interface PendingClosesState {
   pending: Record<string, PendingClose>;
   /** Optimistically mark closed and tell the server. Resolves ok even when the
@@ -216,6 +226,14 @@ export const usePendingCloses = create<PendingClosesState>()(
           let changed = false;
           for (const [id, entry] of Object.entries(s.pending)) {
             if (closedIds.has(id) || nowMs - entry.queuedAt > STALE_MS) {
+              changed = true;
+              continue;
+            }
+            if (entry.acked && nowMs - entry.queuedAt > REDELIVER_MS) {
+              // The mirror never confirmed this ack — redeliver (see
+              // REDELIVER_MS). Verify-first delivery makes this a no-op when
+              // the close actually landed.
+              next[id] = { ...entry, acked: false };
               changed = true;
               continue;
             }

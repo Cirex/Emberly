@@ -94,7 +94,8 @@ export type ResManSessionStatus =
   /** A request hit the login redirect — the tech must sign in again. */
   | "expired";
 
-export type EstablishResult = { ok: true } | { ok: false; reason: "invalid" | "unreachable" };
+export type EstablishResult =
+  { ok: true } | { ok: false; reason: "invalid" | "unreachable" | "already_authenticated" };
 
 /** Pull the (already-encoded) ReturnUrl off the login page URL without the
  *  URL API — React Native's URL support is not something to lean on. */
@@ -138,11 +139,10 @@ export async function performDeviceLogin(
     const loginUrl = bootstrap.url || PORTAL.consumerStartUrl;
     const bootstrapHtml = await bootstrap.text();
     if (!isResManLoginRedirectUrl(loginUrl)) {
-      // Already authenticated as SOMEONE. Treat as success only if the caller
-      // knowingly kept the session; establish() signs out first, so reaching
-      // here means the sign-out failed — report unreachable rather than
-      // silently keeping an unknown identity.
-      return { ok: false, reason: "unreachable" };
+      // Already authenticated as SOMEONE — ResMan's sign-out had not
+      // propagated before this bootstrap. establish() handles the retry;
+      // never silently adopt an unknown identity here.
+      return { ok: false, reason: "already_authenticated" };
     }
     const token = extractResManVerificationToken(bootstrapHtml);
     if (!token) return { ok: false, reason: "unreachable" };
@@ -366,10 +366,10 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
       // without kicking anyone anywhere; the probe below settles it.
       status: persisted ? "unverified" : "absent",
     });
-    if (persisted) {
-      // Cheap background probe; native cookies often outlive an app restart.
-      void get().verify();
-    }
+    // Cheap background probe EVEN with nothing persisted: the native cookies
+    // can outlive our marker (a failed establish deletes the marker first),
+    // and a live session must read as Active, not "sign in again".
+    void get().verify();
   },
 
   establish: async (username, password) => {
@@ -379,7 +379,20 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
     // (bounded): a lingering predecessor session would make the bootstrap
     // land authenticated and the login refuse.
     await remoteSignOut();
-    const result = await performDeviceLogin(username, password);
+    let result = await performDeviceLogin(username, password);
+    if (!result.ok && result.reason === "already_authenticated") {
+      // The sign-out had not taken effect yet (seen in the field: a device
+      // whose live session survived /Access/SignOut long enough for the
+      // bootstrap to ride it). One more full round; if the session STILL
+      // will not die we refuse rather than bind an unknown identity —
+      // and the probes will independently report the live session as
+      // Active, so nothing user-visible gets stuck on this failure.
+      await remoteSignOut();
+      result = await performDeviceLogin(username, password);
+      if (!result.ok && result.reason === "already_authenticated") {
+        result = { ok: false, reason: "unreachable" };
+      }
+    }
     if (result.ok) {
       set({ status: "active", username, canRenew: true });
       await SecureStore.setItemAsync(
@@ -396,11 +409,19 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
       );
       capture("resman_session_established", {});
     } else {
-      // Rejected or unreachable: whatever credentials the Keychain holds are
-      // not known-good for THIS user — wipe rather than renew with them.
-      await wipeCredentials();
-      set({ status: "absent", canRenew: false });
+      if (result.reason === "invalid") {
+        // Rejected: whatever the Keychain holds is not known-good — wipe
+        // rather than renew with it. Transport failures keep any existing
+        // credentials; they may be fine.
+        await wipeCredentials();
+        set({ canRenew: false });
+      }
+      set({ status: "absent" });
       capture("resman_session_establish_failed", { reason: result.reason });
+      // A failed establish is not proof there is no session — the field case
+      // above ends with a LIVE session and a failed login. Let the probe
+      // decide what the settings row should say.
+      void get().verify();
     }
     return result;
   },
@@ -457,7 +478,8 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
   },
 
   keepAlive: async () => {
-    if (get().status !== "active") return;
+    const { status } = get();
+    if (status !== "active" && status !== "unverified") return;
     const now = Date.now();
     if (now - lastKeepAliveAt < KEEP_ALIVE_INTERVAL_MS) return;
     lastKeepAliveAt = now;

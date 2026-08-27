@@ -31,6 +31,12 @@ export interface PendingEdit {
  *  refusing would otherwise shadow the base row forever. */
 const STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** An ACKED edit the mirror has not absorbed after this long gets un-acked
+ *  and redelivered — same reasoning as pending-closes (stub-era acks, or an
+ *  ack whose write silently failed to stick). Idempotent: an edit that
+ *  landed re-acks as a no-op on one GET. */
+const REDELIVER_MS = 30 * 60 * 1000;
+
 interface PendingEditsState {
   pending: Record<string, PendingEdit>;
   /** Optimistically merge a patch and tell the server. Resolves ok even when
@@ -183,8 +189,15 @@ export const usePendingEdits = create<PendingEditsState>()(
             const retire =
               nowMs - entry.editedAt > STALE_MS ||
               (row !== undefined && absorbed(row, entry.patch));
-            if (retire) changed = true;
-            else next[entry.workOrderId] = entry;
+            if (retire) {
+              changed = true;
+            } else if (entry.acked && nowMs - entry.editedAt > REDELIVER_MS) {
+              // Acked but never absorbed — redeliver (see REDELIVER_MS).
+              next[entry.workOrderId] = { ...entry, acked: false };
+              changed = true;
+            } else {
+              next[entry.workOrderId] = entry;
+            }
           }
           return changed ? { pending: next } : s;
         });

@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useColorScheme } from "nativewind";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -34,7 +35,13 @@ const HEADER_HEIGHT = 38;
 const CELL_HEIGHT = 78;
 const STAGE_COUNT = MAKE_READY_STAGES.length;
 
-const FILTER_ORDER: MakeReadyQuickFilter[] = ["all", "atRisk", "dueThisWeek", "incomplete", "noMoveInDate"];
+const FILTER_ORDER: MakeReadyQuickFilter[] = [
+  "all",
+  "atRisk",
+  "dueThisWeek",
+  "incomplete",
+  "noMoveInDate",
+];
 
 const RED = "#D1382E";
 const GREEN = "#33A666";
@@ -61,6 +68,7 @@ function FilterChip({
   selected: boolean;
   onPress: () => void;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <Pressable
       onPress={onPress}
@@ -73,18 +81,46 @@ function FilterChip({
         paddingHorizontal: 12,
         height: 34,
         borderRadius: 999,
-        backgroundColor: selected ? "rgba(9,27,84,0.9)" : "transparent",
+        backgroundColor: selected
+          ? dark
+            ? "rgba(255,255,255,0.92)"
+            : "rgba(9,27,84,0.9)"
+          : "transparent",
         borderWidth: 1,
-        borderColor: selected ? "transparent" : "rgba(9,27,84,0.16)",
+        borderColor: selected
+          ? "transparent"
+          : dark
+            ? "rgba(255,255,255,0.18)"
+            : "rgba(9,27,84,0.16)",
       }}
     >
-      <Text style={{ fontSize: 12, fontWeight: "600", color: selected ? "#FFFFFF" : "#4C556F" }}>{label}</Text>
+      <Text
+        style={{
+          fontSize: 12,
+          fontWeight: "600",
+          color: selected
+            ? dark
+              ? "#14181F"
+              : "#FFFFFF"
+            : dark
+              ? "rgba(255,255,255,0.72)"
+              : "#4C556F",
+        }}
+      >
+        {label}
+      </Text>
       <Text
         style={{
           fontSize: 11,
           fontWeight: "700",
           fontVariant: ["tabular-nums"],
-          color: selected ? "rgba(255,255,255,0.75)" : MUTED,
+          color: selected
+            ? dark
+              ? "rgba(20,24,31,0.75)"
+              : "rgba(255,255,255,0.75)"
+            : dark
+              ? "rgba(255,255,255,0.5)"
+              : MUTED,
         }}
       >
         {count}
@@ -103,12 +139,16 @@ function EyeChip({
   onPress: () => void;
 }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
+  const chipInk = dark ? "rgba(255,255,255,0.72)" : "#4C556F";
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: showCompleted }}
-      accessibilityLabel={showCompleted ? t("makeReady.hideCompleted") : t("makeReady.showCompleted")}
+      accessibilityLabel={
+        showCompleted ? t("makeReady.hideCompleted") : t("makeReady.showCompleted")
+      }
       style={{
         flexDirection: "row",
         alignItems: "center",
@@ -116,14 +156,18 @@ function EyeChip({
         paddingHorizontal: 11,
         height: 34,
         borderRadius: 999,
-        backgroundColor: "rgba(255,255,255,0.5)",
+        backgroundColor: dark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.5)",
         borderWidth: 1,
-        borderColor: "rgba(9,27,84,0.12)",
+        borderColor: dark ? "rgba(255,255,255,0.12)" : "rgba(9,27,84,0.12)",
       }}
     >
-      <Ionicons name={showCompleted ? "eye-outline" : "eye-off-outline"} size={13} color="#4C556F" />
+      <Ionicons
+        name={showCompleted ? "eye-outline" : "eye-off-outline"}
+        size={13}
+        color={chipInk}
+      />
       {showLabel ? (
-        <Text style={{ fontSize: 12, fontWeight: "600", color: "#4C556F" }}>
+        <Text style={{ fontSize: 12, fontWeight: "600", color: chipInk }}>
           {showCompleted ? t("makeReady.hideCompleted") : t("makeReady.showCompleted")}
         </Text>
       ) : null}
@@ -157,6 +201,7 @@ function UrgencyBadge({ urgency }: { urgency: MoveInUrgency }) {
  *  (the tablet board's compact strip). */
 function ProgressStrip({ completed }: { completed: number }) {
   const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View style={{ flexDirection: "row", gap: 4 }}>
       {MAKE_READY_STAGES.map((stage, i) => (
@@ -166,7 +211,8 @@ function ProgressStrip({ completed }: { completed: number }) {
             flex: 1,
             height: 6,
             borderRadius: 3,
-            backgroundColor: i < completed ? palette.fill : "rgba(9,27,84,0.10)",
+            backgroundColor:
+              i < completed ? palette.fill : dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.10)",
           }}
         />
       ))}
@@ -179,6 +225,7 @@ function ProgressStrip({ completed }: { completed: number }) {
 function StageBar({ group }: { group: MakeReadyGroup }) {
   const palette = useAccentPalette();
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
   const current = currentStageOf(group);
   return (
     <View style={{ flexDirection: "row", gap: 4 }}>
@@ -191,7 +238,13 @@ function StageBar({ group }: { group: MakeReadyGroup }) {
               style={{
                 height: 6,
                 borderRadius: 3,
-                backgroundColor: done ? GREEN : isCurrent ? palette.fill : "rgba(9,27,84,0.08)",
+                backgroundColor: done
+                  ? GREEN
+                  : isCurrent
+                    ? palette.fill
+                    : dark
+                      ? "rgba(255,255,255,0.08)"
+                      : "rgba(9,27,84,0.08)",
               }}
             />
             <Text
@@ -236,7 +289,9 @@ function StageChip({ stage }: { stage: MakeReadyStage }) {
         borderColor: `${color}55`,
       }}
     >
-      <Text style={{ fontSize: 10, fontWeight: "700", color }}>{t(`makeReady.stages.${stage}`)}</Text>
+      <Text style={{ fontSize: 10, fontWeight: "700", color }}>
+        {t(`makeReady.stages.${stage}`)}
+      </Text>
     </View>
   );
 }
@@ -250,7 +305,14 @@ function MoveInChip({ moveInAt, nowMs }: { moveInAt: number | null; nowMs: numbe
   const days = calendarDaysBetween(nowMs, moveInAt);
   if (days < 0) {
     return (
-      <View style={{ paddingHorizontal: 8, paddingVertical: 2.5, borderRadius: 999, backgroundColor: RED }}>
+      <View
+        style={{
+          paddingHorizontal: 8,
+          paddingVertical: 2.5,
+          borderRadius: 999,
+          backgroundColor: RED,
+        }}
+      >
         <Text style={{ fontSize: 9.5, fontWeight: "800", color: "#FFFFFF" }}>
           {t("makeReady.chip.late", { count: -days })}
         </Text>
@@ -276,7 +338,9 @@ function MoveInChip({ moveInAt, nowMs }: { moveInAt: number | null; nowMs: numbe
         borderColor: `${color}42`,
       }}
     >
-      <Text style={{ fontSize: 9.5, fontWeight: "700", color, fontVariant: ["tabular-nums"] }}>{label}</Text>
+      <Text style={{ fontSize: 9.5, fontWeight: "700", color, fontVariant: ["tabular-nums"] }}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -284,6 +348,7 @@ function MoveInChip({ moveInAt, nowMs }: { moveInAt: number | null; nowMs: numbe
 /** Expanded row: the six stages as a labeled circle strip (olive check when
  *  done, empty ring when not) — the mockup's glyph row, no bordered cells. */
 function StageGlyphStrip({ group }: { group: MakeReadyGroup }) {
+  const dark = useColorScheme().colorScheme === "dark";
   const palette = useAccentPalette();
   const { t } = useTranslation();
   return (
@@ -299,13 +364,25 @@ function StageGlyphStrip({ group }: { group: MakeReadyGroup }) {
                 borderRadius: 15,
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: done ? `${palette.fill}2E` : "rgba(9,27,84,0.06)",
+                backgroundColor: done
+                  ? `${palette.fill}2E`
+                  : dark
+                    ? "rgba(255,255,255,0.06)"
+                    : "rgba(9,27,84,0.06)",
               }}
             >
               {done ? (
                 <Ionicons name="checkmark" size={15} color={palette.text} />
               ) : (
-                <View style={{ width: 10, height: 10, borderRadius: 5, borderWidth: 1.5, borderColor: "#98A0B4" }} />
+                <View
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 5,
+                    borderWidth: 1.5,
+                    borderColor: "#98A0B4",
+                  }}
+                />
               )}
             </View>
             <Text
@@ -327,7 +404,10 @@ function StageValue({ wo }: { wo: ParsedWorkOrder | null }) {
   return (
     <>
       {wo === null ? (
-        <Text className="text-muted dark:text-white/50" style={{ fontSize: 10.5, fontWeight: "600" }}>
+        <Text
+          className="text-muted dark:text-white/50"
+          style={{ fontSize: 10.5, fontWeight: "600" }}
+        >
           —
         </Text>
       ) : done ? (
@@ -352,14 +432,15 @@ function StageValue({ wo }: { wo: ParsedWorkOrder | null }) {
 
 /** Band strip separating scheduled from unscheduled turns. */
 function BandHeader({ label, color, pad }: { label: string; color: string; pad: number }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View
       style={{
         paddingHorizontal: pad,
         paddingVertical: 8,
         borderTopWidth: 1,
-        borderTopColor: HAIRLINE,
-        backgroundColor: "rgba(9,27,84,0.03)",
+        borderTopColor: dark ? "rgba(255,255,255,0.10)" : HAIRLINE,
+        backgroundColor: dark ? "rgba(255,255,255,0.04)" : "rgba(9,27,84,0.03)",
       }}
     >
       <Text style={{ fontSize: 10.5, fontWeight: "800", letterSpacing: 0.9, color }}>{label}</Text>
@@ -386,6 +467,7 @@ function TurnRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
   const stage = currentStageOf(group);
   return (
     <Pressable
@@ -397,7 +479,7 @@ function TurnRow({
         paddingVertical: 13,
         gap: 10,
         borderTopWidth: 1,
-        borderTopColor: HAIRLINE,
+        borderTopColor: dark ? "rgba(255,255,255,0.10)" : HAIRLINE,
       }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
@@ -408,7 +490,11 @@ function TurnRow({
         {urgencyShowsBadge(group.urgency) ? <UrgencyBadge urgency={group.urgency} /> : null}
         <View style={{ flex: 1 }} />
         <MoveInChip moveInAt={group.moveInAt} nowMs={nowMs} />
-        <Ionicons name={expanded ? "chevron-down" : "chevron-forward"} size={13} color="rgba(9,27,84,0.32)" />
+        <Ionicons
+          name={expanded ? "chevron-down" : "chevron-forward"}
+          size={13}
+          color={dark ? "rgba(255,255,255,0.3)" : "rgba(9,27,84,0.32)"}
+        />
       </View>
       <StageBar group={group} />
       {expanded ? <StageGlyphStrip group={group} /> : null}
@@ -432,10 +518,13 @@ function BoardHeaderText({ text }: { text: string }) {
 
 function TabletBoard({ groups, nowMs }: { groups: MakeReadyGroup[]; nowMs: number }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
+  const hairline = dark ? "rgba(255,255,255,0.10)" : HAIRLINE;
+  const hairlineSoft = dark ? "rgba(255,255,255,0.07)" : HAIRLINE_SOFT;
   return (
     <AppCardSurface kind="panel" style={{ overflow: "hidden", flexDirection: "row" }}>
       {/* Pinned unit column */}
-      <View style={{ width: 190, borderRightWidth: 1, borderRightColor: HAIRLINE }}>
+      <View style={{ width: 190, borderRightWidth: 1, borderRightColor: hairline }}>
         <View style={{ height: HEADER_HEIGHT, justifyContent: "center", paddingHorizontal: 12 }}>
           <BoardHeaderText text="Unit" />
         </View>
@@ -448,7 +537,7 @@ function TabletBoard({ groups, nowMs }: { groups: MakeReadyGroup[]; nowMs: numbe
               paddingVertical: 9,
               justifyContent: "space-between",
               borderTopWidth: 1,
-              borderTopColor: HAIRLINE_SOFT,
+              borderTopColor: hairlineSoft,
             }}
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -491,7 +580,9 @@ function TabletBoard({ groups, nowMs }: { groups: MakeReadyGroup[]; nowMs: numbe
       >
         {MAKE_READY_STAGES.map((stage) => (
           <View key={stage} style={{ minWidth: 132, flexGrow: 1 }}>
-            <View style={{ height: HEADER_HEIGHT, justifyContent: "center", paddingHorizontal: 10 }}>
+            <View
+              style={{ height: HEADER_HEIGHT, justifyContent: "center", paddingHorizontal: 10 }}
+            >
               <BoardHeaderText text={t(`makeReady.stages.${stage}`)} />
             </View>
             {groups.map((g) => {
@@ -505,7 +596,7 @@ function TabletBoard({ groups, nowMs }: { groups: MakeReadyGroup[]; nowMs: numbe
                     paddingHorizontal: 10,
                     justifyContent: "center",
                     borderTopWidth: 1,
-                    borderTopColor: HAIRLINE_SOFT,
+                    borderTopColor: hairlineSoft,
                     backgroundColor: done ? "rgba(51,166,102,0.13)" : undefined,
                   }}
                 >
@@ -545,6 +636,7 @@ export function MakeReadyBoard({
   pad?: number;
 }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
   const tablet = width >= 768;
   const [expandedUnit, setExpandedUnit] = useState<string | null>(null);
 
@@ -590,7 +682,13 @@ export function MakeReadyBoard({
             onPress={() => onQuickFilter(f)}
           />
         ))}
-        <View style={{ width: 1, height: 22, backgroundColor: "rgba(9,27,84,0.10)" }} />
+        <View
+          style={{
+            width: 1,
+            height: 22,
+            backgroundColor: dark ? "rgba(255,255,255,0.12)" : "rgba(9,27,84,0.10)",
+          }}
+        />
         <EyeChip showCompleted={showCompleted} showLabel={tablet} onPress={onToggleShowCompleted} />
       </ScrollView>
 
@@ -623,7 +721,7 @@ export function MakeReadyBoard({
           {unscheduled.length > 0 ? (
             <BandHeader
               label={t("makeReady.bands.unscheduled", { count: unscheduled.length })}
-              color="#4C556F"
+              color={dark ? "rgba(255,255,255,0.72)" : "#4C556F"}
               pad={pad}
             />
           ) : null}

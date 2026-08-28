@@ -1,3 +1,4 @@
+import { useColorScheme } from "nativewind";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -37,6 +38,8 @@ export function JobTimeCard({
 }) {
   const palette = useAccentPalette();
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   const entry = useJobTime((s) => s.entries[workOrderId]);
   const start = useJobTime((s) => s.start);
   const pause = useJobTime((s) => s.pause);
@@ -81,19 +84,29 @@ export function JobTimeCard({
             width: 10,
             height: 10,
             borderRadius: 5,
-            backgroundColor: running ? RED : "rgba(9,27,84,0.18)",
+            backgroundColor: running ? RED : dark ? "rgba(255,255,255,0.20)" : "rgba(9,27,84,0.18)",
           }}
         />
         <View style={{ flex: 1 }}>
           <Text
             className="text-muted dark:text-white/50"
-            style={{ fontSize: 9.5, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase" }}
+            style={{
+              fontSize: 9.5,
+              fontWeight: "800",
+              letterSpacing: 1,
+              textTransform: "uppercase",
+            }}
           >
             {t("jobTime.onThisJob")}
           </Text>
           <Text
             className="text-navy dark:text-white"
-            style={{ fontSize: 27, fontWeight: "800", letterSpacing: -0.6, fontVariant: ["tabular-nums"] }}
+            style={{
+              fontSize: 27,
+              fontWeight: "800",
+              letterSpacing: -0.6,
+              fontVariant: ["tabular-nums"],
+            }}
           >
             {formatDuration(elapsed)}
           </Text>
@@ -115,7 +128,11 @@ export function JobTimeCard({
             borderColor: running ? "rgba(209,56,46,0.28)" : `${palette.text}47`,
           }}
         >
-          <Ionicons name={running ? "pause" : "play"} size={13} color={running ? RED : palette.text} />
+          <Ionicons
+            name={running ? "pause" : "play"}
+            size={13}
+            color={running ? RED : palette.text}
+          />
           <Text style={{ fontSize: 12.5, fontWeight: "800", color: running ? RED : palette.text }}>
             {running ? t("jobTime.pause") : elapsed > 0 ? t("jobTime.resume") : t("jobTime.start")}
           </Text>
@@ -126,7 +143,13 @@ export function JobTimeCard({
       <View style={{ borderTopWidth: 1, borderTopColor: hairline, paddingTop: 11, gap: 2 }}>
         <Text
           className="text-muted dark:text-white/50"
-          style={{ fontSize: 9.5, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}
+          style={{
+            fontSize: 9.5,
+            fontWeight: "800",
+            letterSpacing: 1,
+            textTransform: "uppercase",
+            marginBottom: 4,
+          }}
         >
           {t("jobTime.partsUsed")}
         </Text>
@@ -153,7 +176,10 @@ export function JobTimeCard({
         ))}
 
         {parts.length === 0 ? (
-          <Text className="text-muted dark:text-white/50" style={{ fontSize: 12.5, paddingVertical: 4 }}>
+          <Text
+            className="text-muted dark:text-white/50"
+            style={{ fontSize: 12.5, paddingVertical: 4 }}
+          >
             {t("jobTime.noParts")}
           </Text>
         ) : null}
@@ -163,7 +189,7 @@ export function JobTimeCard({
             value={draftPart}
             onChangeText={setDraftPart}
             placeholder={t("jobTime.addPartPlaceholder")}
-            placeholderTextColor={MUTED}
+            placeholderTextColor={muted}
             returnKeyType="done"
             onSubmitEditing={() => {
               addPart(workOrderId, draftPart);
@@ -195,13 +221,17 @@ export function JobTimeCard({
               alignItems: "center",
               justifyContent: "center",
               backgroundColor:
-                draftPart.trim().length === 0 ? "rgba(9,27,84,0.05)" : `${palette.text}24`,
+                draftPart.trim().length === 0
+                  ? dark
+                    ? "rgba(255,255,255,0.06)"
+                    : "rgba(9,27,84,0.05)"
+                  : `${palette.text}24`,
             }}
           >
             <Ionicons
               name="add"
               size={20}
-              color={draftPart.trim().length === 0 ? MUTED : palette.text}
+              color={draftPart.trim().length === 0 ? muted : palette.text}
             />
           </Pressable>
         </View>
@@ -222,6 +252,8 @@ function Stepper({
   hairline: string;
 }) {
   const { t } = useTranslation();
+  const stepDark = useColorScheme().colorScheme === "dark";
+  const stepInk = stepDark ? "rgba(255,255,255,0.5)" : MUTED;
   return (
     <View
       style={{
@@ -240,11 +272,17 @@ function Stepper({
         hitSlop={6}
         style={{ paddingHorizontal: 11, paddingVertical: 5 }}
       >
-        <Ionicons name={quantity <= 1 ? "trash-outline" : "remove"} size={14} color={MUTED} />
+        <Ionicons name={quantity <= 1 ? "trash-outline" : "remove"} size={14} color={stepInk} />
       </Pressable>
       <Text
         className="text-navy dark:text-white"
-        style={{ fontSize: 13, fontWeight: "800", minWidth: 22, textAlign: "center", fontVariant: ["tabular-nums"] }}
+        style={{
+          fontSize: 13,
+          fontWeight: "800",
+          minWidth: 22,
+          textAlign: "center",
+          fontVariant: ["tabular-nums"],
+        }}
       >
         {quantity}
       </Text>
@@ -255,7 +293,7 @@ function Stepper({
         hitSlop={6}
         style={{ paddingHorizontal: 11, paddingVertical: 5 }}
       >
-        <Ionicons name="add" size={14} color={MUTED} />
+        <Ionicons name="add" size={14} color={stepInk} />
       </Pressable>
     </View>
   );

@@ -1,3 +1,4 @@
+import { useColorScheme } from "nativewind";
 import React from "react";
 import { Text, View } from "react-native";
 import Svg, { Circle, Line, Path, Rect, Text as SvgText } from "react-native-svg";
@@ -19,6 +20,10 @@ export function niceMax(value: number): number {
 
 const AXIS = "rgba(9,27,84,0.35)";
 const GRID = "rgba(9,27,84,0.08)";
+// Dark-scheme equivalents: the charts draw on the adaptive overlay sheets.
+const axisFor = (dark: boolean) => (dark ? "rgba(255,255,255,0.45)" : AXIS);
+const gridFor = (dark: boolean) => (dark ? "rgba(255,255,255,0.10)" : GRID);
+const inkFor = (dark: boolean) => (dark ? "#FFFFFF" : NAVY);
 
 export interface LinePoint {
   x: number;
@@ -43,6 +48,9 @@ export function LineChart({
   formatY?: (v: number) => string;
   formatX?: (x: number, index: number) => string;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
+  const axis = axisFor(dark);
+  const grid = gridFor(dark);
   const padL = 34;
   const padB = formatX ? 16 : 6;
   const padT = 8;
@@ -51,15 +59,32 @@ export function LineChart({
   const maxY = niceMax(Math.max(...points.map((p) => p.y), targetY ?? 0, 1));
   const px = (i: number) => padL + (points.length <= 1 ? w / 2 : (i / (points.length - 1)) * w);
   const py = (v: number) => padT + h - (v / maxY) * h;
-  const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${px(i).toFixed(1)},${py(p.y).toFixed(1)}`).join(" ");
+  const path = points
+    .map((p, i) => `${i === 0 ? "M" : "L"}${px(i).toFixed(1)},${py(p.y).toFixed(1)}`)
+    .join(" ");
 
   return (
     <Svg width={width} height={height}>
       {[0, 0.5, 1].map((f) => (
-        <Line key={f} x1={padL} x2={padL + w} y1={py(maxY * f)} y2={py(maxY * f)} stroke={GRID} strokeWidth={1} />
+        <Line
+          key={f}
+          x1={padL}
+          x2={padL + w}
+          y1={py(maxY * f)}
+          y2={py(maxY * f)}
+          stroke={grid}
+          strokeWidth={1}
+        />
       ))}
       {[0, 0.5, 1].map((f) => (
-        <SvgText key={`l${f}`} x={padL - 5} y={py(maxY * f) + 3} fontSize={8.5} fill={AXIS} textAnchor="end">
+        <SvgText
+          key={`l${f}`}
+          x={padL - 5}
+          y={py(maxY * f) + 3}
+          fontSize={8.5}
+          fill={axis}
+          textAnchor="end"
+        >
           {formatY(maxY * f)}
         </SvgText>
       ))}
@@ -69,7 +94,7 @@ export function LineChart({
           x2={padL + w}
           y1={py(targetY)}
           y2={py(targetY)}
-          stroke={AXIS}
+          stroke={axis}
           strokeWidth={1}
           strokeDasharray="4 3"
         />
@@ -81,7 +106,14 @@ export function LineChart({
       {formatX
         ? points.map((p, i) =>
             i % Math.ceil(points.length / 6) === 0 ? (
-              <SvgText key={`x${i}`} x={px(i)} y={height - 3} fontSize={8} fill={AXIS} textAnchor="middle">
+              <SvgText
+                key={`x${i}`}
+                x={px(i)}
+                y={height - 3}
+                fontSize={8}
+                fill={axis}
+                textAnchor="middle"
+              >
                 {formatX(p.x, i)}
               </SvgText>
             ) : null,
@@ -102,6 +134,9 @@ export function BarChart({
   height?: number;
   width?: number;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
+  const axis = axisFor(dark);
+  const ink = inkFor(dark);
   const padB = 18;
   const padT = 14;
   const h = height - padT - padB;
@@ -115,7 +150,16 @@ export function BarChart({
         const x = slot * i + (slot - barW) / 2;
         const y = padT + h - bh;
         return (
-          <Rect key={b.label} x={x} y={y} width={barW} height={Math.max(bh, 2)} rx={8} fill={color} opacity={0.9} />
+          <Rect
+            key={b.label}
+            x={x}
+            y={y}
+            width={barW}
+            height={Math.max(bh, 2)}
+            rx={8}
+            fill={color}
+            opacity={0.9}
+          />
         );
       })}
       {bars.map((b, i) => (
@@ -125,7 +169,7 @@ export function BarChart({
           y={padT + h - (b.value / maxV) * h - 4}
           fontSize={9.5}
           fontWeight="700"
-          fill={NAVY}
+          fill={ink}
           textAnchor="middle"
         >
           {b.value.toLocaleString()}
@@ -137,7 +181,7 @@ export function BarChart({
           x={slot * i + slot / 2}
           y={height - 4}
           fontSize={9}
-          fill={AXIS}
+          fill={axis}
           textAnchor="middle"
         >
           {b.label}
@@ -161,6 +205,9 @@ export function PairedBarChart({
   height?: number;
   width?: number;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
+  const axis = axisFor(dark);
+  const ink = inkFor(dark);
   const padB = 18;
   const padT = 14;
   const h = height - padT - padB;
@@ -176,8 +223,24 @@ export function PairedBarChart({
         const cx = slot * i + slot / 2;
         return (
           <React.Fragment key={p.label}>
-            <Rect x={cx - barW - gap / 2} y={padT + h - ah} width={barW} height={Math.max(ah, 2)} rx={5} fill={colorA} opacity={0.85} />
-            <Rect x={cx + gap / 2} y={padT + h - bh} width={barW} height={Math.max(bh, 2)} rx={5} fill={colorB} opacity={0.9} />
+            <Rect
+              x={cx - barW - gap / 2}
+              y={padT + h - ah}
+              width={barW}
+              height={Math.max(ah, 2)}
+              rx={5}
+              fill={colorA}
+              opacity={0.85}
+            />
+            <Rect
+              x={cx + gap / 2}
+              y={padT + h - bh}
+              width={barW}
+              height={Math.max(bh, 2)}
+              rx={5}
+              fill={colorB}
+              opacity={0.9}
+            />
           </React.Fragment>
         );
       })}
@@ -188,14 +251,21 @@ export function PairedBarChart({
           y={padT + h - (Math.max(p.a, p.b) / maxV) * h - 4}
           fontSize={9}
           fontWeight="700"
-          fill={NAVY}
+          fill={ink}
           textAnchor="middle"
         >
           {`${p.a}·${p.b}`}
         </SvgText>
       ))}
       {pairs.map((p, i) => (
-        <SvgText key={`l${p.label}`} x={slot * i + slot / 2} y={height - 4} fontSize={9} fill={AXIS} textAnchor="middle">
+        <SvgText
+          key={`l${p.label}`}
+          x={slot * i + slot / 2}
+          y={height - 4}
+          fontSize={9}
+          fill={axis}
+          textAnchor="middle"
+        >
           {p.label}
         </SvgText>
       ))}
@@ -217,6 +287,9 @@ export function ScatterChart({
   width?: number;
   formatY?: (v: number) => string;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
+  const axis = axisFor(dark);
+  const grid = gridFor(dark);
   const padL = 34;
   const padB = 14;
   const padT = 8;
@@ -229,12 +302,27 @@ export function ScatterChart({
   const py = (v: number) => padT + h - (v / maxY) * h;
   return (
     <Svg width={width} height={height}>
-      <Line x1={padL} x2={padL + w} y1={padT + h} y2={padT + h} stroke={GRID} strokeWidth={1} />
+      <Line x1={padL} x2={padL + w} y1={padT + h} y2={padT + h} stroke={grid} strokeWidth={1} />
       {targetY !== undefined ? (
-        <Line x1={padL} x2={padL + w} y1={py(targetY)} y2={py(targetY)} stroke={AXIS} strokeWidth={1} strokeDasharray="4 3" />
+        <Line
+          x1={padL}
+          x2={padL + w}
+          y1={py(targetY)}
+          y2={py(targetY)}
+          stroke={axis}
+          strokeWidth={1}
+          strokeDasharray="4 3"
+        />
       ) : null}
       {[0.5, 1].map((f) => (
-        <SvgText key={f} x={padL - 5} y={py(maxY * f) + 3} fontSize={8.5} fill={AXIS} textAnchor="end">
+        <SvgText
+          key={f}
+          x={padL - 5}
+          y={py(maxY * f) + 3}
+          fontSize={8.5}
+          fill={axis}
+          textAnchor="end"
+        >
           {formatY(maxY * f)}
         </SvgText>
       ))}
@@ -249,11 +337,17 @@ export function ScatterChart({
         />
       ))}
       {points.map((p) => (
-        <SvgText key={`t${p.label}`} x={px(p.x)} y={py(p.y) - 8} fontSize={8} fill={CALLBACK_TINT} textAnchor="middle">
+        <SvgText
+          key={`t${p.label}`}
+          x={px(p.x)}
+          y={py(p.y) - 8}
+          fontSize={8}
+          fill={CALLBACK_TINT}
+          textAnchor="middle"
+        >
           {p.label}
         </SvgText>
       ))}
     </Svg>
   );
 }
-

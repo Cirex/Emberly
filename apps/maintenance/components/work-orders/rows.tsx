@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useColorScheme } from "nativewind";
 import { Text, View } from "react-native";
 import { classificationColor, workOrderStatusColor } from "@/lib/derived/status";
 import { CALLBACK_TINT } from "@/theme/tokens";
@@ -17,6 +18,7 @@ import { useTranslated } from "@/lib/translation/use-translated";
 const ROW_COLS = { id: 62, status: 96 } as const;
 
 export function ColumnHeader({ labels }: { labels: [string, string, string, string] }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View
       style={{
@@ -26,7 +28,7 @@ export function ColumnHeader({ labels }: { labels: [string, string, string, stri
         paddingTop: 9,
         paddingBottom: 3,
         borderTopWidth: 1,
-        borderTopColor: "rgba(9,27,84,0.08)",
+        borderTopColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.08)",
       }}
     >
       <HeaderCell width={ROW_COLS.id} text={labels[0]} />
@@ -71,7 +73,10 @@ export function StatusText({ status, size = 11.5 }: { status: string; size?: num
   // ResMan's English to a Spanish reader.
   const { t } = useTranslation();
   return (
-    <Text numberOfLines={1} style={{ fontSize: size, fontWeight: "600", color: workOrderStatusColor(status) }}>
+    <Text
+      numberOfLines={1}
+      style={{ fontSize: size, fontWeight: "600", color: workOrderStatusColor(status) }}
+    >
       {statusLabel(t, status)}
     </Text>
   );
@@ -134,7 +139,9 @@ export function TechBadge({ name, size = 25 }: { name: string; size?: number }) 
         justifyContent: "center",
       }}
     >
-      <Text style={{ fontSize: size * 0.38, fontWeight: "700", color: palette.fg }}>{initialsOf(name)}</Text>
+      <Text style={{ fontSize: size * 0.38, fontWeight: "700", color: palette.fg }}>
+        {initialsOf(name)}
+      </Text>
     </View>
   );
 }
@@ -163,6 +170,7 @@ export function WorkOrderRow({
   // title once covers them all — and any future caller — rather than leaving
   // each list to remember on its own.
   const tr = useTranslated();
+  const dark = useColorScheme().colorScheme === "dark";
   const titleShown = tr(title).shown;
   return (
     <View
@@ -171,7 +179,7 @@ export function WorkOrderRow({
         paddingTop: 11,
         paddingBottom: 12,
         borderTopWidth: 1,
-        borderTopColor: "rgba(9,27,84,0.06)",
+        borderTopColor: dark ? "rgba(255,255,255,0.07)" : "rgba(9,27,84,0.06)",
       }}
     >
       <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
@@ -192,7 +200,9 @@ export function WorkOrderRow({
         <View style={{ width: ROW_COLS.status }}>
           <StatusText status={status} />
         </View>
-        <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 5 }}>{middle}</View>
+        <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 5 }}>
+          {middle}
+        </View>
         {trailing ? (
           <Text
             className="text-muted dark:text-white/60"

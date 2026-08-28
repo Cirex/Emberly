@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useColorScheme } from "nativewind";
 import { Alert, Modal, Pressable, Text, TextInput, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,8 +15,16 @@ const NAVY = "#091B54";
 const MUTED = "#70788F";
 
 function SectionLabel({ children }: { children: string }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
-    <Text style={{ fontSize: 9, fontWeight: "800", letterSpacing: 1, color: MUTED }}>
+    <Text
+      style={{
+        fontSize: 9,
+        fontWeight: "800",
+        letterSpacing: 1,
+        color: dark ? "rgba(255,255,255,0.5)" : MUTED,
+      }}
+    >
       {children.toUpperCase()}
     </Text>
   );
@@ -37,6 +46,8 @@ export function UtilityAnnotationDialog({
 }) {
   const palette = useAccentPalette();
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
+  const ink = dark ? "#FFFFFF" : NAVY;
   const insets = useSafeAreaInsets();
   const remove = useAnnotations((s) => s.remove);
   const update = useAnnotations((s) => s.update);
@@ -50,12 +61,17 @@ export function UtilityAnnotationDialog({
   // the row has no provenance (local-only or an older server).
   const meta = [
     t(`utility.types.${utilityType}`),
-    isLine && annotation.points ? t("utility.pointCount", { count: annotation.points.length }) : null,
+    isLine && annotation.points
+      ? t("utility.pointCount", { count: annotation.points.length })
+      : null,
     annotation.createdBy
       ? t("utility.addedBy", {
           name: annotation.createdBy,
           date: annotation.createdAt
-            ? new Date(annotation.createdAt).toLocaleDateString(activeLocale(), { month: "short", day: "numeric" })
+            ? new Date(annotation.createdAt).toLocaleDateString(activeLocale(), {
+                month: "short",
+                day: "numeric",
+              })
             : "",
         }).trim()
       : null,
@@ -80,34 +96,75 @@ export function UtilityAnnotationDialog({
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: "rgba(9,27,84,0.30)", justifyContent: "flex-end" }}>
-        <Pressable style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0 }} onPress={onClose} />
+        <Pressable
+          style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0 }}
+          onPress={onClose}
+        />
         <View
           style={{
-            backgroundColor: "rgba(250,247,240,0.99)",
+            backgroundColor: dark ? "#1C2129" : "rgba(250,247,240,0.99)",
             borderTopLeftRadius: 22,
             borderTopRightRadius: 22,
             paddingBottom: insets.bottom + 14,
           }}
         >
           <View style={{ alignItems: "center", paddingTop: 8 }}>
-            <View style={{ width: 34, height: 4, borderRadius: 2, backgroundColor: "rgba(9,27,84,0.16)" }} />
+            <View
+              style={{
+                width: 34,
+                height: 4,
+                borderRadius: 2,
+                backgroundColor: dark ? "rgba(255,255,255,0.18)" : "rgba(9,27,84,0.16)",
+              }}
+            />
           </View>
 
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 18, paddingTop: 10 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              paddingHorizontal: 18,
+              paddingTop: 10,
+            }}
+          >
             <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: color }} />
-            <Text style={{ flex: 1, fontSize: 16, fontWeight: "800", letterSpacing: -0.3, color: NAVY }} numberOfLines={1}>
+            <Text
+              style={{ flex: 1, fontSize: 16, fontWeight: "800", letterSpacing: -0.3, color: ink }}
+              numberOfLines={1}
+            >
               {isLine && annotation.title.trim() ? annotation.title : kindLabel}
             </Text>
             <Pressable
               onPress={onClose}
               accessibilityRole="button"
               accessibilityLabel={t("utility.close")}
-              style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: "rgba(9,27,84,0.06)", alignItems: "center", justifyContent: "center" }}
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: 13,
+                backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.06)",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
             >
-              <Ionicons name="close" size={13} color="#4C556F" />
+              <Ionicons
+                name="close"
+                size={13}
+                color={dark ? "rgba(255,255,255,0.72)" : "#4C556F"}
+              />
             </Pressable>
           </View>
-          <Text style={{ paddingHorizontal: 18, paddingTop: 3, fontSize: 10.5, color: MUTED }}>{meta}</Text>
+          <Text
+            style={{
+              paddingHorizontal: 18,
+              paddingTop: 3,
+              fontSize: 10.5,
+              color: dark ? "rgba(255,255,255,0.5)" : MUTED,
+            }}
+          >
+            {meta}
+          </Text>
 
           {!isLine ? (
             // Pin styling (icon · color · type). Changing the type also swaps
@@ -131,7 +188,14 @@ export function UtilityAnnotationDialog({
                         })
                       }
                       preview={
-                        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: UTILITY_COLORS[type] }} />
+                        <View
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: 4,
+                            backgroundColor: UTILITY_COLORS[type],
+                          }}
+                        />
                       }
                     />
                   ))}
@@ -152,7 +216,7 @@ export function UtilityAnnotationDialog({
                         borderRadius: 13,
                         backgroundColor: hex,
                         borderWidth: annotation.color === hex ? 2.5 : 0,
-                        borderColor: NAVY,
+                        borderColor: dark ? "#FFFFFF" : NAVY,
                       }}
                     />
                   ))}
@@ -176,10 +240,18 @@ export function UtilityAnnotationDialog({
                           borderRadius: 16,
                           alignItems: "center",
                           justifyContent: "center",
-                          backgroundColor: active ? color : "rgba(9,27,84,0.06)",
+                          backgroundColor: active
+                            ? color
+                            : dark
+                              ? "rgba(255,255,255,0.08)"
+                              : "rgba(9,27,84,0.06)",
                         }}
                       >
-                        <Ionicons name={choice.name} size={15} color={active ? "#FFFFFF" : "#4C556F"} />
+                        <Ionicons
+                          name={choice.name}
+                          size={15}
+                          color={active ? "#FFFFFF" : dark ? "rgba(255,255,255,0.72)" : "#4C556F"}
+                        />
                       </Pressable>
                     );
                   })}
@@ -196,17 +268,17 @@ export function UtilityAnnotationDialog({
                   value={annotation.title}
                   onChangeText={(title) => update(annotation.id, { title })}
                   placeholder={t("utility.labelPlaceholder")}
-                  placeholderTextColor="rgba(112,120,143,0.6)"
+                  placeholderTextColor={dark ? "rgba(255,255,255,0.35)" : "rgba(112,120,143,0.6)"}
                   style={{
                     borderWidth: 1,
-                    borderColor: "rgba(9,27,84,0.15)",
+                    borderColor: dark ? "rgba(255,255,255,0.18)" : "rgba(9,27,84,0.15)",
                     borderRadius: 10,
                     paddingHorizontal: 10,
                     paddingVertical: 8,
                     fontSize: 13,
                     fontWeight: "600",
-                    color: NAVY,
-                    backgroundColor: "#FBF9F1",
+                    color: ink,
+                    backgroundColor: dark ? "rgba(255,255,255,0.08)" : "#FBF9F1",
                   }}
                 />
               </View>
@@ -241,11 +313,23 @@ export function UtilityAnnotationDialog({
             </View>
           ) : null}
 
-          <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 18, paddingTop: 16 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 18,
+              paddingTop: 16,
+            }}
+          >
             <Pressable
               onPress={confirmDelete}
               accessibilityRole="button"
-              style={{ borderRadius: 999, paddingHorizontal: 15, paddingVertical: 8, backgroundColor: "rgba(192,57,43,0.09)" }}
+              style={{
+                borderRadius: 999,
+                paddingHorizontal: 15,
+                paddingVertical: 8,
+                backgroundColor: "rgba(192,57,43,0.09)",
+              }}
             >
               <Text style={{ color: "#C0392B", fontSize: 12, fontWeight: "800" }}>
                 {isLine ? t("utility.deleteRun") : t("utility.delete")}
@@ -255,9 +339,16 @@ export function UtilityAnnotationDialog({
             <Pressable
               onPress={onClose}
               accessibilityRole="button"
-              style={{ borderRadius: 999, paddingHorizontal: 18, paddingVertical: 8, backgroundColor: `${palette.fill}EB` }}
+              style={{
+                borderRadius: 999,
+                paddingHorizontal: 18,
+                paddingVertical: 8,
+                backgroundColor: `${palette.fill}EB`,
+              }}
             >
-              <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "800" }}>{t("utility.done")}</Text>
+              <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "800" }}>
+                {t("utility.done")}
+              </Text>
             </Pressable>
           </View>
         </View>

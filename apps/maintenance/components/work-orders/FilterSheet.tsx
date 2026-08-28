@@ -1,16 +1,11 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
+import { useColorScheme } from "nativewind";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TechBadge } from "@/components/work-orders/rows";
 import { useTranslation } from "react-i18next";
-import {
-  axesOf,
-  directionKeys,
-  fieldKey,
-  optionFor,
-  sortFieldsFor,
-} from "@/lib/derived/sort-axes";
+import { axesOf, directionKeys, fieldKey, optionFor, sortFieldsFor } from "@/lib/derived/sort-axes";
 import { classificationColor } from "@/lib/derived/status";
 import { tagIconName } from "@/lib/derived/tags";
 import type { FilterSets } from "@/lib/derived/types";
@@ -26,7 +21,6 @@ import { useAccentPalette } from "@/lib/hooks/use-accent";
  * (exempt from the screens' no-store-in-components rule) so the host screen
  * only has to render <FilterSheet /> once.
  */
-
 
 const STATUS_OPTIONS_OPEN = ["Not Started", "Scheduled", "In Progress"];
 const STATUS_OPTIONS_CLOSED = ["Completed", "Closed", "Canceled"];
@@ -72,7 +66,8 @@ function SheetChip({
   leading?: React.ReactNode;
   onPress: () => void;
 }) {
-      const palette = useAccentPalette();
+  const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <Pressable
       onPress={onPress}
@@ -85,16 +80,35 @@ function SheetChip({
         height: 30,
         paddingHorizontal: 11,
         borderRadius: 999,
-        backgroundColor: selected ? `${palette.fill}D9` : "rgba(255,255,255,0.65)",
+        backgroundColor: selected
+          ? `${palette.fill}D9`
+          : dark
+            ? "rgba(255,255,255,0.06)"
+            : "rgba(255,255,255,0.65)",
         borderWidth: 1,
-        borderColor: selected ? `${palette.fill}80` : HAIRLINE_STRONG,
+        borderColor: selected
+          ? `${palette.fill}80`
+          : dark
+            ? "rgba(255,255,255,0.12)"
+            : HAIRLINE_STRONG,
       }}
     >
       {leading}
-      <Text style={{ fontSize: 11.3, fontWeight: "600", color: selected ? "#FFFFFF" : NAVY }}>
+      <Text
+        style={{
+          fontSize: 11.3,
+          fontWeight: "600",
+          color: selected || dark ? "#FFFFFF" : NAVY,
+        }}
+      >
         {label}
         {count !== undefined && count > 0 ? (
-          <Text style={{ color: selected ? "rgba(255,255,255,0.75)" : MUTED, fontWeight: "500" }}>
+          <Text
+            style={{
+              color: selected ? "rgba(255,255,255,0.75)" : dark ? "rgba(255,255,255,0.5)" : MUTED,
+              fontWeight: "500",
+            }}
+          >
             {" · "}
             {count}
           </Text>
@@ -109,11 +123,12 @@ function SheetChip({
  * shape a single-choice control should have had all along.
  */
 function SegmentedRow({ children }: { children: React.ReactNode }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View
       style={{
         flexDirection: "row",
-        backgroundColor: "rgba(9,27,84,0.055)",
+        backgroundColor: dark ? "rgba(255,255,255,0.06)" : "rgba(9,27,84,0.055)",
         borderRadius: 12,
         padding: 3,
         gap: 2,
@@ -133,6 +148,7 @@ function Segment({
   selected: boolean;
   onPress: () => void;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <Pressable
       onPress={onPress}
@@ -144,7 +160,7 @@ function Segment({
         paddingVertical: 7,
         paddingHorizontal: 4,
         borderRadius: 9,
-        backgroundColor: selected ? "#FFFFFF" : "transparent",
+        backgroundColor: selected ? (dark ? "rgba(255,255,255,0.14)" : "#FFFFFF") : "transparent",
       }}
     >
       <Text
@@ -152,7 +168,7 @@ function Segment({
         style={{
           fontSize: 11.5,
           fontWeight: "700",
-          color: selected ? NAVY : MUTED,
+          color: selected ? (dark ? "#FFFFFF" : NAVY) : dark ? "rgba(255,255,255,0.55)" : MUTED,
         }}
       >
         {label}
@@ -177,6 +193,7 @@ function DirectionButton({
   onPress: () => void;
 }) {
   const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <Pressable
       onPress={onPress}
@@ -190,13 +207,25 @@ function DirectionButton({
         gap: 6,
         paddingVertical: 9,
         borderRadius: 11,
-        backgroundColor: selected ? `${palette.fill}E6` : "rgba(9,27,84,0.055)",
+        backgroundColor: selected
+          ? `${palette.fill}E6`
+          : dark
+            ? "rgba(255,255,255,0.06)"
+            : "rgba(9,27,84,0.055)",
       }}
     >
-      <Ionicons name={arrow} size={13} color={selected ? "#FFFFFF" : MUTED} />
+      <Ionicons
+        name={arrow}
+        size={13}
+        color={selected ? "#FFFFFF" : dark ? "rgba(255,255,255,0.5)" : MUTED}
+      />
       <Text
         numberOfLines={1}
-        style={{ fontSize: 12, fontWeight: "700", color: selected ? "#FFFFFF" : MUTED }}
+        style={{
+          fontSize: 12,
+          fontWeight: "700",
+          color: selected ? "#FFFFFF" : dark ? "rgba(255,255,255,0.5)" : MUTED,
+        }}
       >
         {label}
       </Text>
@@ -205,13 +234,14 @@ function DirectionButton({
 }
 
 function SectionLabel({ text }: { text: string }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <Text
       style={{
         fontSize: 10.5,
         fontWeight: "700",
         letterSpacing: 0.8,
-        color: MUTED,
+        color: dark ? "rgba(255,255,255,0.5)" : MUTED,
         marginTop: 16,
         marginBottom: 8,
       }}
@@ -227,6 +257,9 @@ function ChipWrapRow({ children }: { children: React.ReactNode }) {
 
 export function FilterSheet() {
   const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
+  const ink = dark ? "#FFFFFF" : NAVY;
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   const insets = useSafeAreaInsets();
   const view = useWorkOrdersView(
     useShallow((s) => ({
@@ -262,12 +295,7 @@ export function FilterSheet() {
   const tagOptions = panel.tagOptions;
 
   return (
-    <Modal
-      visible={view.filterSheetOpen}
-      transparent
-      animationType="slide"
-      onRequestClose={close}
-    >
+    <Modal visible={view.filterSheetOpen} transparent animationType="slide" onRequestClose={close}>
       <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <Pressable
           onPress={close}
@@ -281,244 +309,262 @@ export function FilterSheet() {
             borderTopRightRadius: 26,
             overflow: "hidden",
             borderWidth: 1,
-            borderColor: HAIRLINE_STRONG,
+            borderColor: dark ? "rgba(255,255,255,0.12)" : HAIRLINE_STRONG,
           }}
         >
           {/* Liquid glass sheet: blur over the dimmed workspace, warm-paper wash on top. */}
-          <BlurView intensity={44} tint="light" style={{ backgroundColor: "rgba(252,250,244,0.72)" }}>
-          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 16 }}>
-            {/* Header ------------------------------------------------------ */}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
-              <Ionicons name="funnel-outline" size={15} color={NAVY} />
-              <Text style={{ fontSize: 15, fontWeight: "700", color: NAVY }}>Filters</Text>
-              {activeCount > 0 ? (
-                <View
+          <BlurView
+            intensity={44}
+            tint={dark ? "dark" : "light"}
+            style={{
+              backgroundColor: dark ? "rgba(20,24,31,0.78)" : "rgba(252,250,244,0.72)",
+            }}
+          >
+            <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 16 }}>
+              {/* Header ------------------------------------------------------ */}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+                <Ionicons name="funnel-outline" size={15} color={ink} />
+                <Text style={{ fontSize: 15, fontWeight: "700", color: ink }}>Filters</Text>
+                {activeCount > 0 ? (
+                  <View
+                    style={{
+                      backgroundColor: `${palette.fill}2E`,
+                      borderRadius: 999,
+                      paddingHorizontal: 8,
+                      paddingVertical: 2.5,
+                    }}
+                  >
+                    <Text style={{ fontSize: 10.5, fontWeight: "700", color: palette.text }}>
+                      {activeCount} active
+                    </Text>
+                  </View>
+                ) : null}
+                <View style={{ flex: 1 }} />
+                {activeCount > 0 ? (
+                  <Pressable onPress={view.clearFilters} hitSlop={8} accessibilityRole="button">
+                    <Text style={{ fontSize: 12, fontWeight: "600", color: palette.text }}>
+                      Clear
+                    </Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  onPress={close}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                  hitSlop={8}
                   style={{
-                    backgroundColor: `${palette.fill}2E`,
-                    borderRadius: 999,
-                    paddingHorizontal: 8,
-                    paddingVertical: 2.5,
+                    width: 26,
+                    height: 26,
+                    borderRadius: 13,
+                    backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.07)",
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
                 >
-                  <Text style={{ fontSize: 10.5, fontWeight: "700", color: palette.text }}>
-                    {activeCount} active
-                  </Text>
-                </View>
-              ) : null}
-              <View style={{ flex: 1 }} />
-              {activeCount > 0 ? (
-                <Pressable onPress={view.clearFilters} hitSlop={8} accessibilityRole="button">
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: palette.text }}>Clear</Text>
+                  <Ionicons name="close" size={15} color={ink} />
                 </Pressable>
-              ) : null}
-              <Pressable
-                onPress={close}
-                accessibilityRole="button"
-                accessibilityLabel="Close"
-                hitSlop={8}
-                style={{
-                  width: 26,
-                  height: 26,
-                  borderRadius: 13,
-                  backgroundColor: "rgba(9,27,84,0.07)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Ionicons name="close" size={15} color={NAVY} />
-              </Pressable>
-            </View>
+              </View>
 
-            {/* Sort by ------------------------------------------------------
+              {/* Sort by ------------------------------------------------------
                 Two axes, not twelve pills. The flat list wrapped to four rows
                 for a single choice, and three of the fields had only one
                 direction available at all. `modeKey` folds every other board
                 mode onto "open" for the field list. */}
-            <SectionLabel text={t("workOrders.sort.title")} />
-            <SegmentedRow>
-              {sortFieldsFor(modeKey).map((field) => (
-                <Segment
-                  key={field}
-                  label={t(`workOrders.sort.field.${fieldKey(field)}`)}
-                  selected={activeAxes.field === field}
-                  onPress={() => view.setSortOption(optionFor(field, activeAxes.direction))}
-                />
-              ))}
-            </SegmentedRow>
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 9 }}>
-              {(["desc", "asc"] as const).map((direction) => (
-                <DirectionButton
-                  key={direction}
-                  label={t(
-                    `workOrders.sort.direction.${directionKeys(activeAxes.field)[direction]}`,
-                  )}
-                  arrow={direction === "desc" ? "arrow-down" : "arrow-up"}
-                  selected={activeAxes.direction === direction}
-                  onPress={() => view.setSortOption(optionFor(activeAxes.field, direction))}
-                />
-              ))}
-            </View>
+              <SectionLabel text={t("workOrders.sort.title")} />
+              <SegmentedRow>
+                {sortFieldsFor(modeKey).map((field) => (
+                  <Segment
+                    key={field}
+                    label={t(`workOrders.sort.field.${fieldKey(field)}`)}
+                    selected={activeAxes.field === field}
+                    onPress={() => view.setSortOption(optionFor(field, activeAxes.direction))}
+                  />
+                ))}
+              </SegmentedRow>
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 9 }}>
+                {(["desc", "asc"] as const).map((direction) => (
+                  <DirectionButton
+                    key={direction}
+                    label={t(
+                      `workOrders.sort.direction.${directionKeys(activeAxes.field)[direction]}`,
+                    )}
+                    arrow={direction === "desc" ? "arrow-down" : "arrow-up"}
+                    selected={activeAxes.direction === direction}
+                    onPress={() => view.setSortOption(optionFor(activeAxes.field, direction))}
+                  />
+                ))}
+              </View>
 
-            {/* Signals (open mode) — single-select; tapping the active one
+              {/* Signals (open mode) — single-select; tapping the active one
                 clears back to "all". Lived in the control bar until rev 6. */}
-            {modeKey === "open" ? (
-              <>
-                <SectionLabel text="Signals" />
-                <ChipWrapRow>
-                  {(
-                    [
-                      { id: "callbacks", label: "Callbacks", icon: "arrow-u-left-top" },
-                      { id: "duplicates", label: "Duplicates", icon: "content-duplicate" },
-                    ] as const
-                  ).map((s) => {
-                    const selected = view.signalFilter === s.id;
-                    return (
-                      <SheetChip
-                        key={s.id}
-                        label={s.label}
-                        count={selected ? panel.signalWorkOrderCount : undefined}
-                        selected={selected}
-                        onPress={() => view.setSignalFilter(selected ? "all" : s.id)}
-                        leading={
-                          <MaterialCommunityIcons
-                            name={s.icon}
-                            size={11}
-                            color={selected ? "#FFFFFF" : MUTED}
-                          />
-                        }
+              {modeKey === "open" ? (
+                <>
+                  <SectionLabel text="Signals" />
+                  <ChipWrapRow>
+                    {(
+                      [
+                        { id: "callbacks", label: "Callbacks", icon: "arrow-u-left-top" },
+                        { id: "duplicates", label: "Duplicates", icon: "content-duplicate" },
+                      ] as const
+                    ).map((s) => {
+                      const selected = view.signalFilter === s.id;
+                      return (
+                        <SheetChip
+                          key={s.id}
+                          label={s.label}
+                          count={selected ? panel.signalWorkOrderCount : undefined}
+                          selected={selected}
+                          onPress={() => view.setSignalFilter(selected ? "all" : s.id)}
+                          leading={
+                            <MaterialCommunityIcons
+                              name={s.icon}
+                              size={11}
+                              color={selected ? "#FFFFFF" : muted}
+                            />
+                          }
+                        />
+                      );
+                    })}
+                  </ChipWrapRow>
+                </>
+              ) : null}
+
+              {/* Status ------------------------------------------------------- */}
+              <SectionLabel text="Status" />
+              <ChipWrapRow>
+                {statusOptions.map((status) => (
+                  <SheetChip
+                    key={status}
+                    label={status}
+                    count={panel.statusCounts.get(status)}
+                    selected={filters.status.includes(status)}
+                    onPress={() => toggle("status", status)}
+                  />
+                ))}
+              </ChipWrapRow>
+
+              {/* Classification ----------------------------------------------- */}
+              <SectionLabel text="Classification" />
+              <ChipWrapRow>
+                {classificationOptions(panel.classificationCounts).map((classification) => (
+                  <SheetChip
+                    key={classification}
+                    label={classification}
+                    count={panel.classificationCounts.get(classification)}
+                    selected={filters.classification.includes(classification)}
+                    onPress={() => toggle("classification", classification)}
+                    leading={
+                      <View
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: 3,
+                          backgroundColor: classificationColor(classification),
+                        }}
                       />
-                    );
-                  })}
-                </ChipWrapRow>
-              </>
-            ) : null}
+                    }
+                  />
+                ))}
+              </ChipWrapRow>
 
-            {/* Status ------------------------------------------------------- */}
-            <SectionLabel text="Status" />
-            <ChipWrapRow>
-              {statusOptions.map((status) => (
-                <SheetChip
-                  key={status}
-                  label={status}
-                  count={panel.statusCounts.get(status)}
-                  selected={filters.status.includes(status)}
-                  onPress={() => toggle("status", status)}
-                />
-              ))}
-            </ChipWrapRow>
+              {/* Occupancy ---------------------------------------------------- */}
+              <SectionLabel text="Occupancy" />
+              <ChipWrapRow>
+                {OCCUPANCY_OPTIONS.map((occupancy) => (
+                  <SheetChip
+                    key={occupancy}
+                    label={occupancy}
+                    count={panel.occupancyCounts.get(occupancy)}
+                    selected={filters.occupancy.includes(occupancy)}
+                    onPress={() => toggle("occupancy", occupancy)}
+                  />
+                ))}
+              </ChipWrapRow>
 
-            {/* Classification ----------------------------------------------- */}
-            <SectionLabel text="Classification" />
-            <ChipWrapRow>
-              {classificationOptions(panel.classificationCounts).map((classification) => (
-                <SheetChip
-                  key={classification}
-                  label={classification}
-                  count={panel.classificationCounts.get(classification)}
-                  selected={filters.classification.includes(classification)}
-                  onPress={() => toggle("classification", classification)}
-                  leading={
-                    <View
+              {/* Technician --------------------------------------------------- */}
+              <SectionLabel text="Technician" />
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                {panel.technicianOptions.map((name) => {
+                  const count = panel.technicianCounts.get(name);
+                  const selected = filters.technician.includes(name);
+                  const disabled = !selected && !count;
+                  return (
+                    <Pressable
+                      key={name}
+                      disabled={disabled}
+                      onPress={() => toggle("technician", name)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected, disabled }}
                       style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: classificationColor(classification),
+                        flexBasis: "48%",
+                        flexGrow: 1,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 7,
+                        paddingHorizontal: 9,
+                        paddingVertical: 7,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: selected
+                          ? `${palette.fill}80`
+                          : dark
+                            ? "rgba(255,255,255,0.12)"
+                            : HAIRLINE_STRONG,
+                        backgroundColor: selected
+                          ? `${palette.fill}1A`
+                          : dark
+                            ? "rgba(255,255,255,0.06)"
+                            : "rgba(255,255,255,0.65)",
+                        opacity: disabled ? 0.4 : 1,
                       }}
-                    />
-                  }
-                />
-              ))}
-            </ChipWrapRow>
-
-            {/* Occupancy ---------------------------------------------------- */}
-            <SectionLabel text="Occupancy" />
-            <ChipWrapRow>
-              {OCCUPANCY_OPTIONS.map((occupancy) => (
-                <SheetChip
-                  key={occupancy}
-                  label={occupancy}
-                  count={panel.occupancyCounts.get(occupancy)}
-                  selected={filters.occupancy.includes(occupancy)}
-                  onPress={() => toggle("occupancy", occupancy)}
-                />
-              ))}
-            </ChipWrapRow>
-
-            {/* Technician --------------------------------------------------- */}
-            <SectionLabel text="Technician" />
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-              {panel.technicianOptions.map((name) => {
-                const count = panel.technicianCounts.get(name);
-                const selected = filters.technician.includes(name);
-                const disabled = !selected && !count;
-                return (
-                  <Pressable
-                    key={name}
-                    disabled={disabled}
-                    onPress={() => toggle("technician", name)}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected, disabled }}
-                    style={{
-                      flexBasis: "48%",
-                      flexGrow: 1,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 7,
-                      paddingHorizontal: 9,
-                      paddingVertical: 7,
-                      borderRadius: 12,
-                      borderWidth: 1,
-                      borderColor: selected ? `${palette.fill}80` : HAIRLINE_STRONG,
-                      backgroundColor: selected ? `${palette.fill}1A` : "rgba(255,255,255,0.65)",
-                      opacity: disabled ? 0.4 : 1,
-                    }}
-                  >
-                    <TechBadge name={name} size={22} />
-                    <Text
-                      numberOfLines={1}
-                      style={{ flex: 1, fontSize: 11, fontWeight: "600", color: NAVY }}
                     >
-                      {name}
-                    </Text>
-                    {count ? (
-                      <Text style={{ fontSize: 10.5, color: MUTED, fontVariant: ["tabular-nums"] }}>
-                        {count}
+                      <TechBadge name={name} size={22} />
+                      <Text
+                        numberOfLines={1}
+                        style={{ flex: 1, fontSize: 11, fontWeight: "600", color: ink }}
+                      >
+                        {name}
                       </Text>
-                    ) : null}
-                  </Pressable>
-                );
-              })}
-            </View>
+                      {count ? (
+                        <Text
+                          style={{ fontSize: 10.5, color: muted, fontVariant: ["tabular-nums"] }}
+                        >
+                          {count}
+                        </Text>
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
 
-            {/* Tags --------------------------------------------------------- */}
-            {tagOptions.length > 0 ? (
-              <>
-                <SectionLabel text="Tags" />
-                <ChipWrapRow>
-                  {tagOptions.map((tag) => {
-                    const selected = filters.tags.includes(tag);
-                    return (
-                      <SheetChip
-                        key={tag}
-                        label={tag}
-                        count={panel.tagCounts.get(tag)}
-                        selected={selected}
-                        onPress={() => toggle("tags", tag)}
-                        leading={
-                          <MaterialCommunityIcons
-                            name={tagIconName(tag, selected) as never}
-                            size={11}
-                            color={selected ? "#FFFFFF" : MUTED}
-                          />
-                        }
-                      />
-                    );
-                  })}
-                </ChipWrapRow>
-              </>
-            ) : null}
-          </ScrollView>
+              {/* Tags --------------------------------------------------------- */}
+              {tagOptions.length > 0 ? (
+                <>
+                  <SectionLabel text="Tags" />
+                  <ChipWrapRow>
+                    {tagOptions.map((tag) => {
+                      const selected = filters.tags.includes(tag);
+                      return (
+                        <SheetChip
+                          key={tag}
+                          label={tag}
+                          count={panel.tagCounts.get(tag)}
+                          selected={selected}
+                          onPress={() => toggle("tags", tag)}
+                          leading={
+                            <MaterialCommunityIcons
+                              name={tagIconName(tag, selected) as never}
+                              size={11}
+                              color={selected ? "#FFFFFF" : muted}
+                            />
+                          }
+                        />
+                      );
+                    })}
+                  </ChipWrapRow>
+                </>
+              ) : null}
+            </ScrollView>
           </BlurView>
         </View>
       </View>

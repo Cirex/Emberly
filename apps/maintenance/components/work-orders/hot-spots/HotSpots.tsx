@@ -1,3 +1,4 @@
+import { useColorScheme } from "nativewind";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useMemo } from "react";
@@ -75,7 +76,15 @@ function TrendStrip({ rows, nowMs, pad }: { rows: HotSpotRow[]; nowMs: number; p
       >
         {t("hotSpots.signalsPerWeek").toUpperCase()}
       </Text>
-      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 5, height: TREND_H, marginTop: 8 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "flex-end",
+          gap: 5,
+          height: TREND_H,
+          marginTop: 8,
+        }}
+      >
         {buckets.map((v, i) => (
           <View
             key={i}
@@ -97,6 +106,7 @@ function TrendStrip({ rows, nowMs, pad }: { rows: HotSpotRow[]; nowMs: number; p
 /** 74px risk meter track + tinted numeric score. */
 function RiskMeter({ score, high }: { score: number; high: boolean }) {
   const color = high ? RED : AMBER;
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
       <View
@@ -104,15 +114,22 @@ function RiskMeter({ score, high }: { score: number; high: boolean }) {
           width: 74,
           height: 4,
           borderRadius: 2,
-          backgroundColor: "rgba(9,27,84,0.08)",
+          backgroundColor: dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.08)",
           overflow: "hidden",
         }}
       >
         <View
-          style={{ width: `${Math.min(score, 100)}%`, height: 4, borderRadius: 2, backgroundColor: color }}
+          style={{
+            width: `${Math.min(score, 100)}%`,
+            height: 4,
+            borderRadius: 2,
+            backgroundColor: color,
+          }}
         />
       </View>
-      <Text style={{ fontSize: 12, fontWeight: "800", fontVariant: ["tabular-nums"], color }}>{score}</Text>
+      <Text style={{ fontSize: 12, fontWeight: "800", fontVariant: ["tabular-nums"], color }}>
+        {score}
+      </Text>
     </View>
   );
 }
@@ -140,7 +157,15 @@ function Sparkline({ row, nowMs }: { row: HotSpotRow; nowMs: number }) {
   const buckets = useMemo(() => hotSpotSparkline(row, nowMs), [row, nowMs]);
   const max = Math.max(...buckets, 1);
   return (
-    <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 2, height: 14, marginLeft: "auto" }}>
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "flex-end",
+        gap: 2,
+        height: 14,
+        marginLeft: "auto",
+      }}
+    >
       {buckets.map((v, i) => (
         <View
           key={i}
@@ -157,14 +182,15 @@ function Sparkline({ row, nowMs }: { row: HotSpotRow; nowMs: number }) {
 }
 
 function BandHeader({ label, color, pad }: { label: string; color: string; pad: number }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View
       style={{
         paddingHorizontal: pad,
         paddingVertical: 8,
         borderTopWidth: 1,
-        borderTopColor: HAIRLINE,
-        backgroundColor: "rgba(9,27,84,0.03)",
+        borderTopColor: dark ? "rgba(255,255,255,0.10)" : HAIRLINE,
+        backgroundColor: dark ? "rgba(255,255,255,0.04)" : "rgba(9,27,84,0.03)",
       }}
     >
       <Text style={{ fontSize: 10.5, fontWeight: "800", letterSpacing: 0.9, color }}>{label}</Text>
@@ -197,6 +223,7 @@ function RankRow({
   onShowOnMap: () => void;
 }) {
   const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
   const { t } = useTranslation();
   const high = row.riskLevel === "High";
   const topTrade = hotSpotTopTrade(row);
@@ -210,7 +237,7 @@ function RankRow({
         paddingVertical: 10,
         gap: 7,
         borderTopWidth: 1,
-        borderTopColor: HAIRLINE_SOFT,
+        borderTopColor: dark ? "rgba(255,255,255,0.07)" : HAIRLINE_SOFT,
         backgroundColor:
           highlightSelection && selected ? `${palette.fill}1A` : high ? HIGH_ROW_WASH : undefined,
       }}
@@ -218,7 +245,12 @@ function RankRow({
       <View style={{ flexDirection: "row", alignItems: "center", gap: RANK_GAP }}>
         <Text
           className="text-muted dark:text-white/50"
-          style={{ width: RANK_W, fontSize: 11.5, fontWeight: "700", fontVariant: ["tabular-nums"] }}
+          style={{
+            width: RANK_W,
+            fontSize: 11.5,
+            fontWeight: "700",
+            fontVariant: ["tabular-nums"],
+          }}
         >
           {rank}
         </Text>
@@ -247,10 +279,14 @@ function RankRow({
             borderRadius: 14,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: "rgba(9,27,84,0.06)",
+            backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.06)",
           }}
         >
-          <Ionicons name="location-outline" size={14} color="#4C556F" />
+          <Ionicons
+            name="location-outline"
+            size={14}
+            color={dark ? "rgba(255,255,255,0.72)" : "#4C556F"}
+          />
         </Pressable>
       </View>
       <View
@@ -263,7 +299,10 @@ function RankRow({
         }}
       >
         {row.callbackCount > 0 ? (
-          <SignalChip label={t("hotSpots.chips.callbacks", { count: row.callbackCount })} color={CALLBACK_CHIP} />
+          <SignalChip
+            label={t("hotSpots.chips.callbacks", { count: row.callbackCount })}
+            color={CALLBACK_CHIP}
+          />
         ) : null}
         {topTrade ? (
           <SignalChip
@@ -272,10 +311,16 @@ function RankRow({
           />
         ) : null}
         {row.openCount > 0 ? (
-          <SignalChip label={t("hotSpots.chips.open", { count: row.openCount })} color={OPEN_CHIP} />
+          <SignalChip
+            label={t("hotSpots.chips.open", { count: row.openCount })}
+            color={OPEN_CHIP}
+          />
         ) : null}
         {row.oldestOpenDays !== null ? (
-          <SignalChip label={t("hotSpots.chips.oldest", { count: row.oldestOpenDays })} color={MUTED} />
+          <SignalChip
+            label={t("hotSpots.chips.oldest", { count: row.oldestOpenDays })}
+            color={dark ? "rgba(255,255,255,0.5)" : MUTED}
+          />
         ) : null}
         <Sparkline row={row} nowMs={nowMs} />
       </View>
@@ -301,6 +346,7 @@ function HotSpotList({
   pad: number;
 }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
   const high = rows.filter((r) => r.riskLevel === "High");
   const watch = rows.filter((r) => r.riskLevel !== "High");
   // Overall rank across the full ranked list, continuing through both bands.
@@ -326,11 +372,19 @@ function HotSpotList({
   return (
     <View>
       {high.length > 0 ? (
-        <BandHeader label={t("hotSpots.bandHigh", { count: high.length })} color={HIGH_BAND_LABEL} pad={pad} />
+        <BandHeader
+          label={t("hotSpots.bandHigh", { count: high.length })}
+          color={HIGH_BAND_LABEL}
+          pad={pad}
+        />
       ) : null}
       {high.map(renderRow)}
       {watch.length > 0 ? (
-        <BandHeader label={t("hotSpots.bandWatch", { count: watch.length })} color="#4C556F" pad={pad} />
+        <BandHeader
+          label={t("hotSpots.bandWatch", { count: watch.length })}
+          color={dark ? "rgba(255,255,255,0.72)" : "#4C556F"}
+          pad={pad}
+        />
       ) : null}
       {watch.map(renderRow)}
     </View>
@@ -352,7 +406,9 @@ function RiskBadge({ score, riskLevel }: { score: number; riskLevel: HotSpotRow[
         backgroundColor: tint.bg,
       }}
     >
-      <Text style={{ fontSize: 15, fontWeight: "800", fontVariant: ["tabular-nums"], color: tint.fg }}>
+      <Text
+        style={{ fontSize: 15, fontWeight: "800", fontVariant: ["tabular-nums"], color: tint.fg }}
+      >
         {score}
       </Text>
       <Text style={{ fontSize: 7.8, fontWeight: "700", letterSpacing: 0.6, color: tint.fg }}>
@@ -363,6 +419,7 @@ function RiskBadge({ score, riskLevel }: { score: number; riskLevel: HotSpotRow[
 }
 
 function MetricCell({ label, value, color }: { label: string; value: string; color?: string }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View
       style={{
@@ -370,8 +427,8 @@ function MetricCell({ label, value, color }: { label: string; value: string; col
         flexGrow: 1,
         borderRadius: 11,
         borderWidth: 1,
-        borderColor: HAIRLINE,
-        backgroundColor: "rgba(255,255,255,0.55)",
+        borderColor: dark ? "rgba(255,255,255,0.10)" : HAIRLINE,
+        backgroundColor: dark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.55)",
         padding: 8,
       }}
     >
@@ -384,7 +441,13 @@ function MetricCell({ label, value, color }: { label: string; value: string; col
       </Text>
       <Text
         className={color ? "" : "text-navy dark:text-white"}
-        style={{ fontSize: 14, fontWeight: "700", marginTop: 3, fontVariant: ["tabular-nums"], color }}
+        style={{
+          fontSize: 14,
+          fontWeight: "700",
+          marginTop: 3,
+          fontVariant: ["tabular-nums"],
+          color,
+        }}
       >
         {value}
       </Text>
@@ -394,6 +457,7 @@ function MetricCell({ label, value, color }: { label: string; value: string; col
 
 function DetailPane({ row, nowMs }: { row: HotSpotRow; nowMs: number }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
   const shown = row.detail.slice(0, DETAIL_CAP);
   const overflow = row.detail.length - shown.length;
   return (
@@ -456,7 +520,11 @@ function DetailPane({ row, nowMs }: { row: HotSpotRow; nowMs: number }) {
           title={wo.title}
           signal={rowSignal(wo)}
           middle={
-            <Text className="text-muted dark:text-white/60" numberOfLines={1} style={{ fontSize: 10.5 }}>
+            <Text
+              className="text-muted dark:text-white/60"
+              numberOfLines={1}
+              style={{ fontSize: 10.5 }}
+            >
               {wo.technicianDisplay}
             </Text>
           }
@@ -464,7 +532,14 @@ function DetailPane({ row, nowMs }: { row: HotSpotRow; nowMs: number }) {
         />
       ))}
       {overflow > 0 ? (
-        <View style={{ borderTopWidth: 1, borderTopColor: HAIRLINE_SOFT, paddingHorizontal: 14, paddingVertical: 8 }}>
+        <View
+          style={{
+            borderTopWidth: 1,
+            borderTopColor: dark ? "rgba(255,255,255,0.07)" : HAIRLINE_SOFT,
+            paddingHorizontal: 14,
+            paddingVertical: 8,
+          }}
+        >
           <Text className="text-muted dark:text-white/50" style={{ fontSize: 10.5 }}>
             {t("hotSpots.detail.more", { count: overflow })}
           </Text>
@@ -493,6 +568,7 @@ export function HotSpots({
   pad: number;
 }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
   const router = useRouter();
   const tablet = width >= 768;
 
@@ -509,7 +585,10 @@ export function HotSpots({
   if (rows.length === 0) {
     return (
       <View style={{ paddingHorizontal: pad }}>
-        <AppCardSurface kind="panel" style={{ paddingVertical: 30, paddingHorizontal: 20, alignItems: "center" }}>
+        <AppCardSurface
+          kind="panel"
+          style={{ paddingVertical: 30, paddingHorizontal: 20, alignItems: "center" }}
+        >
           <Text className="text-navy dark:text-white" style={{ fontSize: 13, fontWeight: "700" }}>
             {t("hotSpots.emptyTitle")}
           </Text>
@@ -537,8 +616,14 @@ export function HotSpots({
             hitSlop={8}
             style={{ alignSelf: "flex-start", marginBottom: 8 }}
           >
-            <Text style={{ fontSize: 12.5, fontWeight: "600", color: "#4C556F" }}>
-              ‹  {t("hotSpots.allHotSpots")}
+            <Text
+              style={{
+                fontSize: 12.5,
+                fontWeight: "600",
+                color: dark ? "rgba(255,255,255,0.72)" : "#4C556F",
+              }}
+            >
+              ‹ {t("hotSpots.allHotSpots")}
             </Text>
           </Pressable>
           <DetailPane row={selectedRow} nowMs={nowMs} />
@@ -566,7 +651,9 @@ export function HotSpots({
   return (
     <View>
       <TrendStrip rows={rows} nowMs={nowMs} pad={pad} />
-      <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start", paddingHorizontal: pad }}>
+      <View
+        style={{ flexDirection: "row", gap: 12, alignItems: "flex-start", paddingHorizontal: pad }}
+      >
         <View style={{ width: 372 }}>
           <AppCardSurface kind="panel" style={{ overflow: "hidden" }}>
             <HotSpotList

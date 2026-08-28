@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
+import { useColorScheme } from "nativewind";
 import { useState } from "react";
 import {
   Alert,
@@ -36,7 +37,7 @@ type IconName = React.ComponentProps<typeof Ionicons>["name"];
 function HeaderIconBtn({
   icon,
   label,
-  color = NAVY,
+  color,
   onPress,
 }: {
   icon: IconName;
@@ -44,6 +45,7 @@ function HeaderIconBtn({
   color?: string;
   onPress: () => void;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <Pressable
       onPress={onPress}
@@ -54,12 +56,12 @@ function HeaderIconBtn({
         width: 26,
         height: 26,
         borderRadius: 13,
-        backgroundColor: "rgba(9,27,84,0.07)",
+        backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.07)",
         alignItems: "center",
         justifyContent: "center",
       }}
     >
-      <Ionicons name={icon} size={14} color={color} />
+      <Ionicons name={icon} size={14} color={color ?? (dark ? "#FFFFFF" : NAVY)} />
     </Pressable>
   );
 }
@@ -68,7 +70,7 @@ function HeaderIconBtn({
 function RowIconBtn({
   icon,
   label,
-  color = MUTED,
+  color,
   disabled,
   onPress,
 }: {
@@ -78,6 +80,7 @@ function RowIconBtn({
   disabled?: boolean;
   onPress: () => void;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <Pressable
       onPress={onPress}
@@ -95,7 +98,7 @@ function RowIconBtn({
         opacity: disabled ? 0.3 : 1,
       }}
     >
-      <Ionicons name={icon} size={15} color={color} />
+      <Ionicons name={icon} size={15} color={color ?? (dark ? "rgba(255,255,255,0.5)" : MUTED)} />
     </Pressable>
   );
 }
@@ -126,11 +129,14 @@ function StopRow({
   onRemove: () => void;
 }) {
   const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
+  const ink = dark ? "#FFFFFF" : NAVY;
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   return (
     <View
       style={{
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderColor: HAIRLINE_STRONG,
+        borderColor: dark ? "rgba(255,255,255,0.14)" : HAIRLINE_STRONG,
         paddingVertical: 9,
         gap: 8,
       }}
@@ -164,28 +170,43 @@ function StopRow({
             style={{
               fontSize: 13.5,
               fontWeight: "700",
-              color: stop.isDone ? MUTED : NAVY,
+              color: stop.isDone ? muted : ink,
               textDecorationLine: stop.isDone ? "line-through" : "none",
             }}
           >
             Unit {stop.unitNumber}
           </Text>
           {!editingNote && stop.note ? (
-            <Text numberOfLines={1} style={{ fontSize: 11.5, color: MUTED, fontStyle: "italic" }}>
+            <Text numberOfLines={1} style={{ fontSize: 11.5, color: muted, fontStyle: "italic" }}>
               {stop.note}
             </Text>
           ) : null}
         </View>
 
-        <RowIconBtn icon="chevron-up" label="Move up" disabled={isFirst} onPress={() => onMove(-1)} />
-        <RowIconBtn icon="chevron-down" label="Move down" disabled={isLast} onPress={() => onMove(1)} />
+        <RowIconBtn
+          icon="chevron-up"
+          label="Move up"
+          disabled={isFirst}
+          onPress={() => onMove(-1)}
+        />
+        <RowIconBtn
+          icon="chevron-down"
+          label="Move down"
+          disabled={isLast}
+          onPress={() => onMove(1)}
+        />
         <RowIconBtn
           icon={editingNote ? "chevron-up" : "document-text-outline"}
           label={editingNote ? "Hide note" : "Edit note"}
-          color={stop.note || editingNote ? palette.text : MUTED}
+          color={stop.note || editingNote ? palette.text : undefined}
           onPress={onToggleNote}
         />
-        <RowIconBtn icon="location-outline" label="Show on map" color={palette.text} onPress={onLocate} />
+        <RowIconBtn
+          icon="location-outline"
+          label="Show on map"
+          color={palette.text}
+          onPress={onLocate}
+        />
         <RowIconBtn icon="close" label="Remove stop" color={RED} onPress={onRemove} />
       </View>
 
@@ -194,16 +215,16 @@ function StopRow({
           value={stop.note}
           onChangeText={onNoteChange}
           placeholder="Add a note for this stop…"
-          placeholderTextColor={MUTED}
+          placeholderTextColor={muted}
           multiline
           autoFocus
           style={{
             marginLeft: 38,
             fontSize: 12.5,
-            color: NAVY,
-            backgroundColor: "rgba(255,255,255,0.65)",
+            color: ink,
+            backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.65)",
             borderWidth: 1,
-            borderColor: HAIRLINE_STRONG,
+            borderColor: dark ? "rgba(255,255,255,0.14)" : HAIRLINE_STRONG,
             borderRadius: 10,
             paddingHorizontal: 10,
             paddingVertical: 7,
@@ -219,6 +240,8 @@ function StopRow({
 function HistoryRow({ tour, onDelete }: { tour: CompletedTour; onDelete: () => void }) {
   const d = new Date(tour.completedAt);
   const done = tour.stops.filter((s) => s.isDone).length;
+  const dark = useColorScheme().colorScheme === "dark";
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   return (
     <View
       style={{
@@ -226,7 +249,7 @@ function HistoryRow({ tour, onDelete }: { tour: CompletedTour; onDelete: () => v
         alignItems: "center",
         gap: 10,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderColor: HAIRLINE_STRONG,
+        borderColor: dark ? "rgba(255,255,255,0.14)" : HAIRLINE_STRONG,
         paddingVertical: 10,
       }}
     >
@@ -235,24 +258,26 @@ function HistoryRow({ tour, onDelete }: { tour: CompletedTour; onDelete: () => v
           width: 28,
           height: 28,
           borderRadius: 14,
-          backgroundColor: "rgba(9,27,84,0.07)",
+          backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.07)",
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <Ionicons name="flag" size={13} color={MUTED} />
+        <Ionicons name="flag" size={13} color={muted} />
       </View>
       <View style={{ flex: 1, gap: 1 }}>
-        <Text style={{ fontSize: 13, fontWeight: "700", color: NAVY }}>
+        <Text style={{ fontSize: 13, fontWeight: "700", color: dark ? "#FFFFFF" : NAVY }}>
           {d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-          <Text style={{ fontWeight: "500", color: MUTED }}>
+          <Text style={{ fontWeight: "500", color: muted }}>
             {"  ·  "}
             {d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
           </Text>
         </Text>
-        <Text style={{ fontSize: 11.5, color: MUTED }}>
+        <Text style={{ fontSize: 11.5, color: muted }}>
           {tour.stops.length} stop{tour.stops.length === 1 ? "" : "s"}
-          {done > 0 ? <Text style={{ color: GREEN, fontWeight: "600" }}> · {done} done</Text> : null}
+          {done > 0 ? (
+            <Text style={{ color: GREEN, fontWeight: "600" }}> · {done} done</Text>
+          ) : null}
         </Text>
       </View>
       <RowIconBtn icon="trash-outline" label="Delete tour" color={RED} onPress={onDelete} />
@@ -269,7 +294,9 @@ export function TourSheet({
   onClose: () => void;
   onLocate: (unitNumber: string) => void;
 }) {
-    const palette = useAccentPalette();
+  const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
+  const ink = dark ? "#FFFFFF" : NAVY;
   const insets = useSafeAreaInsets();
   const tour = useTour();
   const [showHistory, setShowHistory] = useState(false);
@@ -321,11 +348,17 @@ export function TourSheet({
             borderTopRightRadius: 26,
             overflow: "hidden",
             borderWidth: 1,
-            borderColor: HAIRLINE_STRONG,
+            borderColor: dark ? "rgba(255,255,255,0.12)" : HAIRLINE_STRONG,
           }}
         >
           {/* Liquid glass sheet: blur over the dimmed map, warm-paper wash on top. */}
-          <BlurView intensity={44} tint="light" style={{ backgroundColor: "rgba(252,250,244,0.72)" }}>
+          <BlurView
+            intensity={44}
+            tint={dark ? "dark" : "light"}
+            style={{
+              backgroundColor: dark ? "rgba(20,24,31,0.78)" : "rgba(252,250,244,0.72)",
+            }}
+          >
             <ScrollView
               contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 16 }}
               keyboardShouldPersistTaps="handled"
@@ -334,13 +367,19 @@ export function TourSheet({
               <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
                 {historyView ? (
                   <>
-                    <HeaderIconBtn icon="chevron-back" label="Back to route" onPress={() => setShowHistory(false)} />
-                    <Text style={{ fontSize: 15, fontWeight: "700", color: NAVY }}>Tour History</Text>
+                    <HeaderIconBtn
+                      icon="chevron-back"
+                      label="Back to route"
+                      onPress={() => setShowHistory(false)}
+                    />
+                    <Text style={{ fontSize: 15, fontWeight: "700", color: ink }}>
+                      Tour History
+                    </Text>
                   </>
                 ) : (
                   <>
-                    <Ionicons name="footsteps" size={15} color={NAVY} />
-                    <Text style={{ fontSize: 15, fontWeight: "700", color: NAVY }}>Tour Route</Text>
+                    <Ionicons name="footsteps" size={15} color={ink} />
+                    <Text style={{ fontSize: 15, fontWeight: "700", color: ink }}>Tour Route</Text>
                     {tour.stops.length > 0 ? (
                       <View
                         style={{
@@ -359,16 +398,35 @@ export function TourSheet({
                 )}
                 <View style={{ flex: 1 }} />
                 {!historyView && tour.history.length > 0 ? (
-                  <HeaderIconBtn icon="time-outline" label="Tour history" onPress={() => setShowHistory(true)} />
+                  <HeaderIconBtn
+                    icon="time-outline"
+                    label="Tour history"
+                    onPress={() => setShowHistory(true)}
+                  />
                 ) : null}
                 {!historyView && tour.stops.length > 2 ? (
-                  <HeaderIconBtn icon="shuffle" label="Optimize route order" color={palette.text} onPress={tour.optimize} />
+                  <HeaderIconBtn
+                    icon="shuffle"
+                    label="Optimize route order"
+                    color={palette.text}
+                    onPress={tour.optimize}
+                  />
                 ) : null}
                 {!historyView && tour.stops.length > 0 ? (
-                  <HeaderIconBtn icon="flag" label="Complete tour" color={GREEN} onPress={confirmComplete} />
+                  <HeaderIconBtn
+                    icon="flag"
+                    label="Complete tour"
+                    color={GREEN}
+                    onPress={confirmComplete}
+                  />
                 ) : null}
                 {!historyView && tour.stops.length > 0 ? (
-                  <HeaderIconBtn icon="trash-outline" label="Clear all stops" color={RED} onPress={confirmClear} />
+                  <HeaderIconBtn
+                    icon="trash-outline"
+                    label="Clear all stops"
+                    color={RED}
+                    onPress={confirmClear}
+                  />
                 ) : null}
                 <HeaderIconBtn icon="close" label="Close" onPress={close} />
               </View>
@@ -382,12 +440,18 @@ export function TourSheet({
                 </View>
               ) : tour.stops.length === 0 ? (
                 <View style={{ alignItems: "center", paddingVertical: 44, gap: 10 }}>
-                  <Ionicons name="map-outline" size={34} color="rgba(9,27,84,0.25)" />
-                  <Text style={{ fontSize: 13.5, fontWeight: "700", color: NAVY }}>No stops yet</Text>
+                  <Ionicons
+                    name="map-outline"
+                    size={34}
+                    color={dark ? "rgba(255,255,255,0.25)" : "rgba(9,27,84,0.25)"}
+                  />
+                  <Text style={{ fontSize: 13.5, fontWeight: "700", color: ink }}>
+                    No stops yet
+                  </Text>
                   <Text
                     style={{
                       fontSize: 12,
-                      color: MUTED,
+                      color: dark ? "rgba(255,255,255,0.5)" : MUTED,
                       textAlign: "center",
                       paddingHorizontal: 32,
                       lineHeight: 17,
@@ -407,7 +471,9 @@ export function TourSheet({
                       isLast={index === tour.stops.length - 1}
                       editingNote={noteEditId === stop.id}
                       onToggleDone={() => tour.toggleDone(stop.id)}
-                      onToggleNote={() => setNoteEditId((prev) => (prev === stop.id ? undefined : stop.id))}
+                      onToggleNote={() =>
+                        setNoteEditId((prev) => (prev === stop.id ? undefined : stop.id))
+                      }
                       onNoteChange={(t) => tour.setNote(stop.id, t)}
                       onLocate={() => {
                         onLocate(stop.unitNumber);

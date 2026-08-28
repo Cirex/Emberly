@@ -1,4 +1,5 @@
 import { useRouter } from "expo-router";
+import { useColorScheme } from "nativewind";
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
@@ -77,6 +78,7 @@ export const ClosedRow = memo(function ClosedRow({
   const router = useRouter();
   const { t } = useTranslation();
   const tr = useTranslated();
+  const dark = useColorScheme().colorScheme === "dark";
   const tint = techTint(row.technicianDisplay);
   // Canceled work is not a closure. Flag it rather than let it read as done.
   const canceled = /^cancell?ed$/i.test(row.status);
@@ -93,7 +95,7 @@ export const ClosedRow = memo(function ClosedRow({
         paddingVertical: 11,
         alignItems: "flex-start",
         borderTopWidth: 1,
-        borderTopColor: "rgba(9,27,84,0.08)",
+        borderTopColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.08)",
         backgroundColor: today ? "rgba(51,166,102,0.05)" : "transparent",
       }}
     >
@@ -175,13 +177,14 @@ export const ClosedBand = memo(function ClosedBand({
   label: string;
   count: number;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View
       style={{
         paddingHorizontal: 18,
         paddingTop: 14,
         paddingBottom: 5,
-        backgroundColor: "rgba(246,244,238,0.96)",
+        backgroundColor: dark ? "rgba(23,27,34,0.96)" : "rgba(246,244,238,0.96)",
       }}
     >
       <Text
@@ -189,7 +192,7 @@ export const ClosedBand = memo(function ClosedBand({
           fontSize: 10,
           fontWeight: "700",
           letterSpacing: 1,
-          color: MUTED,
+          color: dark ? "rgba(255,255,255,0.5)" : MUTED,
           fontVariant: ["tabular-nums"],
         }}
       >

@@ -1,7 +1,13 @@
+import { useColorScheme } from "nativewind";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, TextInput, View } from "react-native";
-import { unitMatchesGroup, type GroupCondition, type GroupUnit, type MapFilterGroup } from "@emberly/core";
+import {
+  unitMatchesGroup,
+  type GroupCondition,
+  type GroupUnit,
+  type MapFilterGroup,
+} from "@emberly/core";
 import {
   CONDITION_KINDS,
   LEASE_WINDOW_PRESETS,
@@ -29,6 +35,7 @@ function Chip({
   onPress: () => void;
 }) {
   const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <Pressable
       onPress={onPress}
@@ -39,11 +46,27 @@ function Chip({
         paddingVertical: 5,
         borderRadius: 999,
         borderWidth: 1,
-        backgroundColor: on ? `${palette.fill}24` : "rgba(9,27,84,0.04)",
-        borderColor: danger ? "rgba(209,56,46,0.4)" : on ? `${palette.fill}8C` : "rgba(9,27,84,0.12)",
+        backgroundColor: on
+          ? `${palette.fill}24`
+          : dark
+            ? "rgba(255,255,255,0.06)"
+            : "rgba(9,27,84,0.04)",
+        borderColor: danger
+          ? "rgba(209,56,46,0.4)"
+          : on
+            ? `${palette.fill}8C`
+            : dark
+              ? "rgba(255,255,255,0.14)"
+              : "rgba(9,27,84,0.12)",
       }}
     >
-      <Text style={{ fontSize: 11, fontWeight: "600", color: danger ? "#D1382E" : on ? "#767B24" : "#4C556F" }}>
+      <Text
+        style={{
+          fontSize: 11,
+          fontWeight: "600",
+          color: danger ? "#D1382E" : on ? "#767B24" : dark ? "rgba(255,255,255,0.72)" : "#4C556F",
+        }}
+      >
         {label}
       </Text>
     </Pressable>
@@ -59,24 +82,25 @@ function NumberField({
   placeholder: string;
   onChange: (raw: string) => void;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <TextInput
       value={value}
       onChangeText={onChange}
       placeholder={placeholder}
-      placeholderTextColor="rgba(112,120,143,0.6)"
+      placeholderTextColor={dark ? "rgba(255,255,255,0.35)" : "rgba(112,120,143,0.6)"}
       keyboardType="number-pad"
       style={{
         minWidth: 74,
         borderWidth: 1,
-        borderColor: "rgba(9,27,84,0.15)",
+        borderColor: dark ? "rgba(255,255,255,0.18)" : "rgba(9,27,84,0.15)",
         borderRadius: 8,
         paddingHorizontal: 8,
         paddingVertical: 5,
         fontSize: 12,
         fontWeight: "600",
-        color: NAVY,
-        backgroundColor: "#FBF9F1",
+        color: dark ? "#FFFFFF" : NAVY,
+        backgroundColor: dark ? "rgba(255,255,255,0.08)" : "#FBF9F1",
       }}
     />
   );
@@ -101,6 +125,8 @@ export function GroupConditionBuilder({
   onSet: (kind: ConditionKind, next: GroupCondition | null) => void;
 }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   const [openKind, setOpenKind] = useState<ConditionKind | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -111,7 +137,6 @@ export function GroupConditionBuilder({
     [units, group, nowMs],
   );
 
-
   /** The per-kind parameter editor, shown under an expanded row. */
   const editorFor = (c: GroupCondition) => {
     switch (c.kind) {
@@ -119,7 +144,12 @@ export function GroupConditionBuilder({
         return (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
             {OCCUPANCY_VALUES.map((v) => (
-              <Chip key={v} label={v} on={c.value === v} onPress={() => onSet("occupancy", { kind: "occupancy", value: v })} />
+              <Chip
+                key={v}
+                label={v}
+                on={c.value === v}
+                onPress={() => onSet("occupancy", { kind: "occupancy", value: v })}
+              />
             ))}
           </View>
         );
@@ -134,7 +164,7 @@ export function GroupConditionBuilder({
                 onSet("balanceBand", { ...c, min: Number.isNaN(min) ? 0 : min });
               }}
             />
-            <Text style={{ fontSize: 11, color: MUTED, fontWeight: "700" }}>–</Text>
+            <Text style={{ fontSize: 11, color: muted, fontWeight: "700" }}>–</Text>
             <NumberField
               value={c.max === null ? "" : String(c.max)}
               placeholder={t("mapGroups.maxPlaceholder")}
@@ -161,7 +191,8 @@ export function GroupConditionBuilder({
               placeholder={t("mapGroups.customDays")}
               onChange={(raw) => {
                 const days = Number.parseInt(raw, 10);
-                if (!Number.isNaN(days) && days > 0) onSet("leaseEndsWithin", { kind: "leaseEndsWithin", days });
+                if (!Number.isNaN(days) && days > 0)
+                  onSet("leaseEndsWithin", { kind: "leaseEndsWithin", days });
               }}
             />
           </View>
@@ -210,7 +241,7 @@ export function GroupConditionBuilder({
 
   return (
     <View style={{ gap: 8 }}>
-      <Text style={{ fontSize: 9.5, fontWeight: "700", letterSpacing: 1, color: MUTED }}>
+      <Text style={{ fontSize: 9.5, fontWeight: "700", letterSpacing: 1, color: muted }}>
         {t("mapGroups.conditionsLabel").toUpperCase()}
       </Text>
 
@@ -226,7 +257,7 @@ export function GroupConditionBuilder({
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               <Chip label={t(`mapGroups.fields.${parts.fieldKey}`)} on={open} onPress={toggle} />
               {parts.opKey ? (
-                <Text style={{ fontSize: 9, fontWeight: "700", letterSpacing: 0.5, color: MUTED }}>
+                <Text style={{ fontSize: 9, fontWeight: "700", letterSpacing: 0.5, color: muted }}>
                   {t(`mapGroups.ops.${parts.opKey}`).toUpperCase()}
                 </Text>
               ) : null}
@@ -266,11 +297,13 @@ export function GroupConditionBuilder({
         </View>
       ) : unusedKinds.length > 0 ? (
         <Pressable onPress={() => setAdding(true)} accessibilityRole="button">
-          <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#767B24" }}>{t("mapGroups.addCondition")}</Text>
+          <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#767B24" }}>
+            {t("mapGroups.addCondition")}
+          </Text>
         </Pressable>
       ) : null}
 
-      <Text style={{ fontSize: 11, color: "#4C556F" }}>
+      <Text style={{ fontSize: 11, color: dark ? "rgba(255,255,255,0.72)" : "#4C556F" }}>
         {t("mapGroups.matchCount", { count: matchCount })}
       </Text>
     </View>

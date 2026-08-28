@@ -114,7 +114,10 @@ function buildUtilityPath(points: UtilityPoint[]) {
 
 /** Ionicons rendered straight onto the pins via the bundled typeface. */
 const IONICONS_TTF = require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf");
-const IONICONS_GLYPHS: Record<string, number> = require("@expo/vector-icons/build/vendor/react-native-vector-icons/glyphmaps/Ionicons.json");
+const IONICONS_GLYPHS: Record<
+  string,
+  number
+> = require("@expo/vector-icons/build/vendor/react-native-vector-icons/glyphmaps/Ionicons.json");
 const PIN_ICON_SIZE = 26;
 
 function pinGlyph(name: string | undefined): string {
@@ -161,7 +164,18 @@ function blockClip(unitNumber: string) {
   return b ? rrect(rect(b.x, b.y, b.w, b.h), BLOCK_RADIUS, BLOCK_RADIUS) : undefined;
 }
 
-const UnitsLayer = memo(function UnitsLayer({ matchFill, matched, hasQuery, colorMap, showPlan }: UnitsLayerProps) {
+const UnitsLayer = memo(function UnitsLayer({
+  matchFill,
+  matched,
+  hasQuery,
+  colorMap,
+  showPlan,
+}: UnitsLayerProps) {
+  // The flat ink veils follow the scheme: navy tints vanish over the dark
+  // canvas ground, so dark mode lifts them to white washes instead.
+  const layerDark = useColorScheme().colorScheme === "dark";
+  const defaultFill = layerDark ? "rgba(255,255,255,0.10)" : DEFAULT_FILL;
+  const fadedFill = layerDark ? "rgba(255,255,255,0.045)" : FADED_FILL;
   // Tints clip to their building card so corner units follow the card's
   // rounded contour instead of drawing square shoulders over it. Grouping by
   // block keeps it to one clip per building rather than one per unit.
@@ -175,8 +189,8 @@ const UnitsLayer = memo(function UnitsLayer({ matchFill, matched, hasQuery, colo
     const fill = matched.has(u.number)
       ? matchFill
       : hasQuery
-        ? FADED_FILL
-        : (c?.fill ?? (showPlan ? undefined : DEFAULT_FILL));
+        ? fadedFill
+        : (c?.fill ?? (showPlan ? undefined : defaultFill));
     if (!fill) continue;
     const idx = UNIT_BLOCK.get(u.number);
     if (idx == null) orphans.push({ u, fill });
@@ -352,7 +366,8 @@ export function SkiaMapCanvas({
         .join(" · ");
       if (text) {
         const mid = polylineMidpoint(a.points, PAGE_WIDTH, PAGE_HEIGHT);
-        if (mid) label = { text, x: mid.x, y: mid.y - RUN_LABEL_LIFT, w: runLabelFont.getTextWidth(text) };
+        if (mid)
+          label = { text, x: mid.x, y: mid.y - RUN_LABEL_LIFT, w: runLabelFont.getTextWidth(text) };
       }
 
       out.push({
@@ -368,14 +383,19 @@ export function SkiaMapCanvas({
     }
     return out;
   }, [annotations, runLabelFont]);
-  const utilityPins = useMemo(() => annotations.filter((a) => a.kind === "utility_pin"), [annotations]);
+  const utilityPins = useMemo(
+    () => annotations.filter((a) => a.kind === "utility_pin"),
+    [annotations],
+  );
   const pins = useMemo(
     () => annotations.filter((a) => a.kind !== "utility_pin" && a.kind !== "utility_line"),
     [annotations],
   );
   const draftPath = useMemo(
     () =>
-      utilityDraft && utilityDraft.points.length >= 2 ? buildUtilityPath(utilityDraft.points) : null,
+      utilityDraft && utilityDraft.points.length >= 2
+        ? buildUtilityPath(utilityDraft.points)
+        : null,
     [utilityDraft],
   );
   const draftArrows = useMemo(() => {
@@ -417,7 +437,10 @@ export function SkiaMapCanvas({
       const slackY = height / 2;
       return {
         x: Math.min(Math.max(x, Math.min(0, width - w)), Math.max(0, width - w)),
-        y: Math.min(Math.max(y, Math.min(0, height - h) - slackY), Math.max(0, height - h) + slackY),
+        y: Math.min(
+          Math.max(y, Math.min(0, height - h) - slackY),
+          Math.max(0, height - h) + slackY,
+        ),
       };
     },
     [width, height],
@@ -499,7 +522,9 @@ export function SkiaMapCanvas({
     }
     const lineId = hitTestUtilityLines(annotations, wx, wy, PAGE_WIDTH, PAGE_HEIGHT);
     if (lineId) return onSelectUtility(lineId);
-    const hit = PLACED_UNITS.find((u) => wx >= u.x && wx <= u.x + u.w && wy >= u.y && wy <= u.y + u.h);
+    const hit = PLACED_UNITS.find(
+      (u) => wx >= u.x && wx <= u.x + u.w && wy >= u.y && wy <= u.y + u.h,
+    );
     // Tap-away clears the selection, like the Swift map — "" means none.
     onSelect(hit ? hit.number : "");
   };
@@ -657,324 +682,353 @@ export function SkiaMapCanvas({
   // Chevron arms hold ~2pt on screen like the strokes they ride.
   const utilityArrowStroke = useDerivedValue(() => 2 / (scale.value * baseScale), [baseScale]);
   // The selection halo: a wide soft band under the inspected run.
-  const utilityHaloStroke = useDerivedValue(() => (UTIL_STROKE * 3.2) / (scale.value * baseScale), [baseScale]);
+  const utilityHaloStroke = useDerivedValue(
+    () => (UTIL_STROKE * 3.2) / (scale.value * baseScale),
+    [baseScale],
+  );
   const strokeForWeight = (weight: LineWeight) =>
     weight === "thin" ? utilityStrokeThin : weight === "thick" ? utilityStrokeThick : utilityStroke;
 
   return (
     <View style={{ width, height }}>
       <GestureDetector gesture={gesture}>
-      <Canvas style={{ width, height }}>
-        {/* The canvas floor — what shows beyond the page edges. */}
-        <Fill color={dark ? "#101318" : "#F6F4EB"} />
-        <Group transform={transform}>
-          {showPlan ? <Picture picture={plan} /> : null}
-          <UnitsLayer
-            matchFill={`${palette.fill}${MATCH_ALPHA}`}
-            matched={matched}
-            hasQuery={hasQuery}
-            colorMap={colorMap}
-            showPlan={showPlan}
-          />
+        <Canvas style={{ width, height }}>
+          {/* The canvas floor — what shows beyond the page edges. */}
+          <Fill color={dark ? "#101318" : "#F6F4EB"} />
+          <Group transform={transform}>
+            {showPlan ? <Picture picture={plan} /> : null}
+            <UnitsLayer
+              matchFill={`${palette.fill}${MATCH_ALPHA}`}
+              matched={matched}
+              hasQuery={hasQuery}
+              colorMap={colorMap}
+              showPlan={showPlan}
+            />
 
-          {/* Selection highlight: the unit's occupancy tint at 18% with a
+            {/* Selection highlight: the unit's occupancy tint at 18% with a
               hairline. Rounded corners (and clipped to the building card) so it
               follows the soft contour instead of laying a hard square box over
               a rounded unit — matches how the occupancy tint reads. */}
-          {selected ? (
-            <Group clip={blockClip(selected.number)}>
-              {/* Tint fills the whole cell; the block clip rounds any outer
+            {selected ? (
+              <Group clip={blockClip(selected.number)}>
+                {/* Tint fills the whole cell; the block clip rounds any outer
                   corner so it reads like the occupancy fill. */}
-              <Rect
-                x={selected.x}
-                y={selected.y}
-                width={selected.w}
-                height={selected.h}
-                color={selectedTint ?? MUTED}
-                opacity={0.18}
-              />
-              {/* Border inset off the cell edge so the clip can't shave it. */}
-              <RoundedRect
-                rect={rrect(
-                  rect(
-                    selected.x + SEL_INSET,
-                    selected.y + SEL_INSET,
-                    selected.w - SEL_INSET * 2,
-                    selected.h - SEL_INSET * 2,
-                  ),
-                  SEL_RADIUS,
-                  SEL_RADIUS,
-                )}
-                color={selectedTint ?? MUTED}
-                style="stroke"
-                strokeWidth={highlightStroke}
-              />
-            </Group>
-          ) : null}
-          {/* Utility runs: beneath the pins, above the plan/units. Style,
+                <Rect
+                  x={selected.x}
+                  y={selected.y}
+                  width={selected.w}
+                  height={selected.h}
+                  color={selectedTint ?? MUTED}
+                  opacity={0.18}
+                />
+                {/* Border inset off the cell edge so the clip can't shave it. */}
+                <RoundedRect
+                  rect={rrect(
+                    rect(
+                      selected.x + SEL_INSET,
+                      selected.y + SEL_INSET,
+                      selected.w - SEL_INSET * 2,
+                      selected.h - SEL_INSET * 2,
+                    ),
+                    SEL_RADIUS,
+                    SEL_RADIUS,
+                  )}
+                  color={selectedTint ?? MUTED}
+                  style="stroke"
+                  strokeWidth={highlightStroke}
+                />
+              </Group>
+            ) : null}
+            {/* Utility runs: beneath the pins, above the plan/units. Style,
               weight, and flow arrows come from the record (effectiveLineStyle
               keeps pre-style rows on the old sewer-dashed/gas-dotted look). */}
-          {utilityLines.map((l) => (
-            <Group key={l.id}>
-              {/* Selection treatment (mockup): a soft same-hue halo under the
+            {utilityLines.map((l) => (
+              <Group key={l.id}>
+                {/* Selection treatment (mockup): a soft same-hue halo under the
                   inspected run, white vertex dots on top of it below. */}
-              {l.id === selectedUtilityId ? (
+                {l.id === selectedUtilityId ? (
+                  <Path
+                    path={l.path}
+                    style="stroke"
+                    strokeWidth={utilityHaloStroke}
+                    strokeCap="round"
+                    strokeJoin="round"
+                    color={l.color}
+                    opacity={0.16}
+                  />
+                ) : null}
                 <Path
                   path={l.path}
                   style="stroke"
-                  strokeWidth={utilityHaloStroke}
+                  strokeWidth={strokeForWeight(l.weight)}
                   strokeCap="round"
                   strokeJoin="round"
                   color={l.color}
-                  opacity={0.16}
-                />
-              ) : null}
-              <Path
-                path={l.path}
-                style="stroke"
-                strokeWidth={strokeForWeight(l.weight)}
-                strokeCap="round"
-                strokeJoin="round"
-                color={l.color}
-              >
-                {l.style === "dashed" ? (
-                  <DashPathEffect intervals={utilityDashDashed} />
-                ) : l.style === "dotted" ? (
-                  <DashPathEffect intervals={utilityDashDotted} />
-                ) : null}
-              </Path>
-              {l.arrows ? (
-                <Path
-                  path={l.arrows}
-                  style="stroke"
-                  strokeWidth={utilityArrowStroke}
-                  strokeCap="round"
-                  strokeJoin="round"
-                  color={l.color}
-                />
-              ) : null}
-              {l.id === selectedUtilityId
-                ? l.points.map((p, i) => (
-                    <Group key={i}>
-                      <Circle cx={p.x * PAGE_WIDTH} cy={p.y * PAGE_HEIGHT} r={DRAFT_VERTEX_R} color="#FFFFFF" />
-                      <Circle
-                        cx={p.x * PAGE_WIDTH}
-                        cy={p.y * PAGE_HEIGHT}
-                        r={DRAFT_VERTEX_R}
-                        color={l.color}
-                        style="stroke"
-                        strokeWidth={2.6}
-                      />
-                    </Group>
-                  ))
-                : null}
-              {l.label ? (
-                <Group>
-                  <RoundedRect
-                    x={l.label.x - l.label.w / 2 - RUN_LABEL_PAD_X}
-                    y={l.label.y - RUN_LABEL_SIZE / 2 - RUN_LABEL_PAD_Y}
-                    width={l.label.w + RUN_LABEL_PAD_X * 2}
-                    height={RUN_LABEL_SIZE + RUN_LABEL_PAD_Y * 2}
-                    r={(RUN_LABEL_SIZE + RUN_LABEL_PAD_Y * 2) / 2}
-                    color={l.color}
-                    opacity={0.92}
-                  />
-                  <SkiaText
-                    x={l.label.x - l.label.w / 2}
-                    y={l.label.y + RUN_LABEL_SIZE * 0.36}
-                    text={l.label.text}
-                    font={runLabelFont}
-                    color="#FFFFFF"
-                  />
-                </Group>
-              ) : null}
-            </Group>
-          ))}
-
-          {/* The in-progress draw: live polyline plus a disc per vertex, so
-              the first tap is visible before there's a segment to stroke. */}
-          {utilityDraft ? (
-            <Group>
-              {draftPath ? (
-                <Path
-                  path={draftPath}
-                  style="stroke"
-                  strokeWidth={strokeForWeight(utilityDraft.weight ?? "medium")}
-                  strokeCap="round"
-                  strokeJoin="round"
-                  color={utilityDraft.color}
-                  opacity={0.9}
                 >
-                  {utilityDraft.style === "dashed" ? (
+                  {l.style === "dashed" ? (
                     <DashPathEffect intervals={utilityDashDashed} />
-                  ) : utilityDraft.style === "dotted" ? (
+                  ) : l.style === "dotted" ? (
                     <DashPathEffect intervals={utilityDashDotted} />
                   ) : null}
                 </Path>
-              ) : null}
-              {draftArrows ? (
-                <Path
-                  path={draftArrows}
-                  style="stroke"
-                  strokeWidth={utilityArrowStroke}
-                  strokeCap="round"
-                  strokeJoin="round"
-                  color={utilityDraft.color}
-                  opacity={0.9}
-                />
-              ) : null}
-              {utilityDraft.points.map((p, i) => (
-                <Group key={i}>
-                  <Circle cx={p.x * PAGE_WIDTH} cy={p.y * PAGE_HEIGHT} r={DRAFT_VERTEX_R} color={utilityDraft.color} />
-                  <Circle
-                    cx={p.x * PAGE_WIDTH}
-                    cy={p.y * PAGE_HEIGHT}
-                    r={DRAFT_VERTEX_R}
-                    color="rgba(255,255,255,0.85)"
+                {l.arrows ? (
+                  <Path
+                    path={l.arrows}
                     style="stroke"
-                    strokeWidth={2}
-                  />
-                </Group>
-              ))}
-            </Group>
-          ) : null}
-
-          {/* Utility pins: the annotation pin treatment at ~70% — the pin's
-              own color (falling back to its type's) with its icon glyph, so
-              a customized pin reads at a glance. */}
-          {utilityPins.map((a) => {
-            const cx = a.x * PAGE_WIDTH;
-            const cy = a.y * PAGE_HEIGHT;
-            const fill = a.color || utilityColor(a);
-            const glyph = pinGlyph(a.icon || "construct");
-            const glyphW = utilPinIconFont ? utilPinIconFont.getTextWidth(glyph) : 0;
-            return (
-              <Group key={a.id}>
-                <Circle cx={cx} cy={cy} r={UTIL_PIN_R} color={fill} />
-                <Circle
-                  cx={cx}
-                  cy={cy}
-                  r={UTIL_PIN_R}
-                  color="rgba(255,255,255,0.85)"
-                  style="stroke"
-                  strokeWidth={UTIL_PIN_RING}
-                />
-                {utilPinIconFont ? (
-                  <SkiaText
-                    x={cx - glyphW / 2}
-                    y={cy + UTIL_PIN_ICON_SIZE * 0.36}
-                    text={glyph}
-                    font={utilPinIconFont}
-                    color="#FFFFFF"
+                    strokeWidth={utilityArrowStroke}
+                    strokeCap="round"
+                    strokeJoin="round"
+                    color={l.color}
                   />
                 ) : null}
+                {l.id === selectedUtilityId
+                  ? l.points.map((p, i) => (
+                      <Group key={i}>
+                        <Circle
+                          cx={p.x * PAGE_WIDTH}
+                          cy={p.y * PAGE_HEIGHT}
+                          r={DRAFT_VERTEX_R}
+                          color="#FFFFFF"
+                        />
+                        <Circle
+                          cx={p.x * PAGE_WIDTH}
+                          cy={p.y * PAGE_HEIGHT}
+                          r={DRAFT_VERTEX_R}
+                          color={l.color}
+                          style="stroke"
+                          strokeWidth={2.6}
+                        />
+                      </Group>
+                    ))
+                  : null}
+                {l.label ? (
+                  <Group>
+                    <RoundedRect
+                      x={l.label.x - l.label.w / 2 - RUN_LABEL_PAD_X}
+                      y={l.label.y - RUN_LABEL_SIZE / 2 - RUN_LABEL_PAD_Y}
+                      width={l.label.w + RUN_LABEL_PAD_X * 2}
+                      height={RUN_LABEL_SIZE + RUN_LABEL_PAD_Y * 2}
+                      r={(RUN_LABEL_SIZE + RUN_LABEL_PAD_Y * 2) / 2}
+                      color={l.color}
+                      opacity={0.92}
+                    />
+                    <SkiaText
+                      x={l.label.x - l.label.w / 2}
+                      y={l.label.y + RUN_LABEL_SIZE * 0.36}
+                      text={l.label.text}
+                      font={runLabelFont}
+                      color="#FFFFFF"
+                    />
+                  </Group>
+                ) : null}
               </Group>
-            );
-          })}
+            ))}
 
-          {/* Pins: colored disc, white ring, and the pin's chosen Ionicons
-              glyph (note, unlocked door, trash, …) drawn with the real font. */}
-          {pins.map((a) => {
-            const cx = a.x * PAGE_WIDTH;
-            const cy = a.y * PAGE_HEIGHT;
-            const glyph = pinGlyph(a.icon);
-            const glyphW = pinIconFont ? pinIconFont.getTextWidth(glyph) : 0;
-            return (
-              <Group key={a.id}>
-                <Circle cx={cx} cy={cy} r={PIN_R} color={a.color} />
-                <Circle cx={cx} cy={cy} r={PIN_R} color="rgba(255,255,255,0.85)" style="stroke" strokeWidth={3.4} />
-                {pinIconFont ? (
-                  <SkiaText
-                    x={cx - glyphW / 2}
-                    y={cy + PIN_ICON_SIZE * 0.36}
-                    text={glyph}
-                    font={pinIconFont}
-                    color="#FFFFFF"
+            {/* The in-progress draw: live polyline plus a disc per vertex, so
+              the first tap is visible before there's a segment to stroke. */}
+            {utilityDraft ? (
+              <Group>
+                {draftPath ? (
+                  <Path
+                    path={draftPath}
+                    style="stroke"
+                    strokeWidth={strokeForWeight(utilityDraft.weight ?? "medium")}
+                    strokeCap="round"
+                    strokeJoin="round"
+                    color={utilityDraft.color}
+                    opacity={0.9}
+                  >
+                    {utilityDraft.style === "dashed" ? (
+                      <DashPathEffect intervals={utilityDashDashed} />
+                    ) : utilityDraft.style === "dotted" ? (
+                      <DashPathEffect intervals={utilityDashDotted} />
+                    ) : null}
+                  </Path>
+                ) : null}
+                {draftArrows ? (
+                  <Path
+                    path={draftArrows}
+                    style="stroke"
+                    strokeWidth={utilityArrowStroke}
+                    strokeCap="round"
+                    strokeJoin="round"
+                    color={utilityDraft.color}
+                    opacity={0.9}
                   />
-                ) : (
-                  <>
-                    <Rect x={cx - 9} y={cy - 6} width={18} height={3.6} color="#FFFFFF" />
-                    <Rect x={cx - 9} y={cy + 2.4} width={12} height={3.6} color="#FFFFFF" />
-                  </>
-                )}
+                ) : null}
+                {utilityDraft.points.map((p, i) => (
+                  <Group key={i}>
+                    <Circle
+                      cx={p.x * PAGE_WIDTH}
+                      cy={p.y * PAGE_HEIGHT}
+                      r={DRAFT_VERTEX_R}
+                      color={utilityDraft.color}
+                    />
+                    <Circle
+                      cx={p.x * PAGE_WIDTH}
+                      cy={p.y * PAGE_HEIGHT}
+                      r={DRAFT_VERTEX_R}
+                      color="rgba(255,255,255,0.85)"
+                      style="stroke"
+                      strokeWidth={2}
+                    />
+                  </Group>
+                ))}
               </Group>
-            );
-          })}
+            ) : null}
 
-          {/* The route line first, so the numbered discs sit on top of it. */}
-          {tourRoutePath ? (
-            <Path
-              path={tourRoutePath}
-              style="stroke"
-              strokeWidth={TOUR_ROUTE_WIDTH}
-              strokeCap="round"
-              strokeJoin="round"
-              color={`${palette.text}${TOUR_ROUTE_ALPHA}`}
-            >
-              <DashPathEffect intervals={[TOUR_BADGE_R, TOUR_BADGE_R * 0.7]} />
-            </Path>
-          ) : null}
+            {/* Utility pins: the annotation pin treatment at ~70% — the pin's
+              own color (falling back to its type's) with its icon glyph, so
+              a customized pin reads at a glance. */}
+            {utilityPins.map((a) => {
+              const cx = a.x * PAGE_WIDTH;
+              const cy = a.y * PAGE_HEIGHT;
+              const fill = a.color || utilityColor(a);
+              const glyph = pinGlyph(a.icon || "construct");
+              const glyphW = utilPinIconFont ? utilPinIconFont.getTextWidth(glyph) : 0;
+              return (
+                <Group key={a.id}>
+                  <Circle cx={cx} cy={cy} r={UTIL_PIN_R} color={fill} />
+                  <Circle
+                    cx={cx}
+                    cy={cy}
+                    r={UTIL_PIN_R}
+                    color="rgba(255,255,255,0.85)"
+                    style="stroke"
+                    strokeWidth={UTIL_PIN_RING}
+                  />
+                  {utilPinIconFont ? (
+                    <SkiaText
+                      x={cx - glyphW / 2}
+                      y={cy + UTIL_PIN_ICON_SIZE * 0.36}
+                      text={glyph}
+                      font={utilPinIconFont}
+                      color="#FFFFFF"
+                    />
+                  ) : null}
+                </Group>
+              );
+            })}
 
-          {/* Tour route badges (TourRouteMapOverlayLayout.swift): a numbered
+            {/* Pins: colored disc, white ring, and the pin's chosen Ionicons
+              glyph (note, unlocked door, trash, …) drawn with the real font. */}
+            {pins.map((a) => {
+              const cx = a.x * PAGE_WIDTH;
+              const cy = a.y * PAGE_HEIGHT;
+              const glyph = pinGlyph(a.icon);
+              const glyphW = pinIconFont ? pinIconFont.getTextWidth(glyph) : 0;
+              return (
+                <Group key={a.id}>
+                  <Circle cx={cx} cy={cy} r={PIN_R} color={a.color} />
+                  <Circle
+                    cx={cx}
+                    cy={cy}
+                    r={PIN_R}
+                    color="rgba(255,255,255,0.85)"
+                    style="stroke"
+                    strokeWidth={3.4}
+                  />
+                  {pinIconFont ? (
+                    <SkiaText
+                      x={cx - glyphW / 2}
+                      y={cy + PIN_ICON_SIZE * 0.36}
+                      text={glyph}
+                      font={pinIconFont}
+                      color="#FFFFFF"
+                    />
+                  ) : (
+                    <>
+                      <Rect x={cx - 9} y={cy - 6} width={18} height={3.6} color="#FFFFFF" />
+                      <Rect x={cx - 9} y={cy + 2.4} width={12} height={3.6} color="#FFFFFF" />
+                    </>
+                  )}
+                </Group>
+              );
+            })}
+
+            {/* The route line first, so the numbered discs sit on top of it. */}
+            {tourRoutePath ? (
+              <Path
+                path={tourRoutePath}
+                style="stroke"
+                strokeWidth={TOUR_ROUTE_WIDTH}
+                strokeCap="round"
+                strokeJoin="round"
+                color={`${palette.text}${TOUR_ROUTE_ALPHA}`}
+              >
+                <DashPathEffect intervals={[TOUR_BADGE_R, TOUR_BADGE_R * 0.7]} />
+              </Path>
+            ) : null}
+
+            {/* Tour route badges (TourRouteMapOverlayLayout.swift): a numbered
               disc at each stop's unit centroid — accent while pending, green
               with a checkmark once done. Pure rendering: handleTap never
               looks at these, so they can't steal taps from the units. */}
-          {tourStops?.map((s, i) => {
-            const u = TOUR_UNIT_CENTER.get(s.unitNumber);
-            if (!u) return null;
-            const label = s.isDone ? String.fromCodePoint(IONICONS_GLYPHS["checkmark"]) : `${i + 1}`;
-            const font = s.isDone ? tourCheckFont : tourNumberFont;
-            const size = s.isDone ? TOUR_CHECK_SIZE : TOUR_NUM_SIZE;
-            const labelW = font ? font.getTextWidth(label) : 0;
-            return (
-              <Group key={`tour-${s.unitNumber}`}>
-                <Circle cx={u.cx} cy={u.cy} r={TOUR_BADGE_R} color={s.isDone ? TOUR_DONE : palette.fill} />
-                <Circle
-                  cx={u.cx}
-                  cy={u.cy}
-                  r={TOUR_BADGE_R}
-                  color="rgba(255,255,255,0.95)"
-                  style="stroke"
-                  strokeWidth={2.2}
-                />
-                {font ? (
-                  <SkiaText
-                    x={u.cx - labelW / 2}
-                    y={u.cy + size * 0.36}
-                    text={label}
-                    font={font}
-                    color="#FFFFFF"
+            {tourStops?.map((s, i) => {
+              const u = TOUR_UNIT_CENTER.get(s.unitNumber);
+              if (!u) return null;
+              const label = s.isDone
+                ? String.fromCodePoint(IONICONS_GLYPHS["checkmark"])
+                : `${i + 1}`;
+              const font = s.isDone ? tourCheckFont : tourNumberFont;
+              const size = s.isDone ? TOUR_CHECK_SIZE : TOUR_NUM_SIZE;
+              const labelW = font ? font.getTextWidth(label) : 0;
+              return (
+                <Group key={`tour-${s.unitNumber}`}>
+                  <Circle
+                    cx={u.cx}
+                    cy={u.cy}
+                    r={TOUR_BADGE_R}
+                    color={s.isDone ? TOUR_DONE : palette.fill}
                   />
-                ) : null}
-              </Group>
-            );
-          })}
-        </Group>
+                  <Circle
+                    cx={u.cx}
+                    cy={u.cy}
+                    r={TOUR_BADGE_R}
+                    color="rgba(255,255,255,0.95)"
+                    style="stroke"
+                    strokeWidth={2.2}
+                  />
+                  {font ? (
+                    <SkiaText
+                      x={u.cx - labelW / 2}
+                      y={u.cy + size * 0.36}
+                      text={label}
+                      font={font}
+                      color="#FFFFFF"
+                    />
+                  ) : null}
+                </Group>
+              );
+            })}
+          </Group>
 
-        {/* Connector between card and unit — screen space, so the dashes stay
+          {/* Connector between card and unit — screen space, so the dashes stay
             1.5pt at every zoom (Swift drew this the same way). */}
-        {selected && tooltip ? (
-          <>
-            <Path
-              path={connectorPath}
-              style="stroke"
-              strokeWidth={1.5}
-              strokeCap="round"
-              color={selectedTint ?? MUTED}
-              opacity={0.65}
-            >
-              <DashPathEffect intervals={[5, 3.5]} />
-            </Path>
-            <Circle cx={connectorDotX} cy={connectorDotY} r={3.5} color={selectedTint ?? MUTED} />
-          </>
-        ) : null}
-      </Canvas>
+          {selected && tooltip ? (
+            <>
+              <Path
+                path={connectorPath}
+                style="stroke"
+                strokeWidth={1.5}
+                strokeCap="round"
+                color={selectedTint ?? MUTED}
+                opacity={0.65}
+              >
+                <DashPathEffect intervals={[5, 3.5]} />
+              </Path>
+              <Circle cx={connectorDotX} cy={connectorDotY} r={3.5} color={selectedTint ?? MUTED} />
+            </>
+          ) : null}
+        </Canvas>
       </GestureDetector>
 
       {/* Outside the GestureDetector so its own controls receive touches
           instead of the canvas tap hit-testing units underneath the card. */}
       {selected && tooltip ? (
-        <Animated.View style={[{ position: "absolute", width: TIP_W }, tooltipStyle]}>{tooltip}</Animated.View>
+        <Animated.View style={[{ position: "absolute", width: TIP_W }, tooltipStyle]}>
+          {tooltip}
+        </Animated.View>
       ) : null}
     </View>
   );

@@ -1,3 +1,4 @@
+import { useColorScheme } from "nativewind";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
 import type { LineStyle, LineWeight } from "@/lib/api/annotations";
@@ -25,6 +26,7 @@ export function StyleChip({
   accessibilityLabel?: string;
 }) {
   const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <Pressable
       onPress={onPress}
@@ -37,7 +39,11 @@ export function StyleChip({
         paddingHorizontal: 10,
         paddingVertical: 6,
         borderRadius: 999,
-        backgroundColor: selected ? `${palette.fill}3D` : "rgba(9,27,84,0.06)",
+        backgroundColor: selected
+          ? `${palette.fill}3D`
+          : dark
+            ? "rgba(255,255,255,0.08)"
+            : "rgba(9,27,84,0.06)",
       }}
     >
       {preview}
@@ -70,11 +76,12 @@ function Segmented<T extends string>({
   /** Fixed width — auto-width parents (the glass pill) collapse flexed rows. */
   width: number;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View
       style={{
         flexDirection: "row",
-        backgroundColor: "rgba(9,27,84,0.055)",
+        backgroundColor: dark ? "rgba(255,255,255,0.06)" : "rgba(9,27,84,0.055)",
         borderRadius: 10,
         padding: 3,
         gap: 3,
@@ -96,9 +103,18 @@ function Segmented<T extends string>({
               justifyContent: "center",
               paddingVertical: 7,
               borderRadius: 8,
-              backgroundColor: selected ? "#FFFFFF" : "transparent",
+              backgroundColor: selected
+                ? dark
+                  ? "rgba(255,255,255,0.16)"
+                  : "#FFFFFF"
+                : "transparent",
               ...(selected
-                ? { shadowColor: "#091B54", shadowOpacity: 0.12, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } }
+                ? {
+                    shadowColor: "#091B54",
+                    shadowOpacity: 0.12,
+                    shadowRadius: 4,
+                    shadowOffset: { width: 0, height: 2 },
+                  }
                 : {}),
             }}
           >
@@ -179,6 +195,7 @@ export function WeightRow({
   onChange: (w: LineWeight) => void;
 }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
   const labels: Record<LineWeight, string> = {
     thin: t("utility.weightThin"),
     medium: t("utility.weightMedium"),
@@ -198,7 +215,19 @@ export function WeightRow({
       accessibilityLabels={labels}
       width={112}
       renderOption={(w, selected) => (
-        <Text style={{ fontSize: 11, fontWeight: "800", color: selected ? "#091B54" : "#4C556F" }}>
+        <Text
+          style={{
+            fontSize: 11,
+            fontWeight: "800",
+            color: selected
+              ? dark
+                ? "#FFFFFF"
+                : "#091B54"
+              : dark
+                ? "rgba(255,255,255,0.72)"
+                : "#4C556F",
+          }}
+        >
           {shorts[w]}
         </Text>
       )}
@@ -221,7 +250,9 @@ export function FlowRow({
     <View className="flex-row items-center" style={{ gap: 6 }}>
       <StyleChip label={t("utility.flowOff")} selected={!arrows} onPress={() => onToggle(false)} />
       <StyleChip label={t("utility.flowOn")} selected={arrows} onPress={() => onToggle(true)} />
-      {onReverse ? <StyleChip label={`⇄ ${t("utility.reverse")}`} selected={false} onPress={onReverse} /> : null}
+      {onReverse ? (
+        <StyleChip label={`⇄ ${t("utility.reverse")}`} selected={false} onPress={onReverse} />
+      ) : null}
     </View>
   );
 }

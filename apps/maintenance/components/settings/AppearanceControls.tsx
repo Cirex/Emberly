@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useColorScheme } from "nativewind";
 import { memo, useState } from "react";
 import { Image, Modal, Pressable, Text, View } from "react-native";
 import { ACCENT_THEMES, HAIRLINE, MUTED, NAVY, type AccentThemeId } from "@/theme/tokens";
@@ -28,20 +29,43 @@ function Miniature({ choice, accent }: { choice: ThemeChoice; accent: string }) 
   const right = choice === "light" ? light : dark;
 
   const Line = ({ top, inset }: { top: number; inset: number }) => (
-    <View style={{ position: "absolute", left: 7, right: 7 + inset, top, height: 4, flexDirection: "row" }}>
+    <View
+      style={{
+        position: "absolute",
+        left: 7,
+        right: 7 + inset,
+        top,
+        height: 4,
+        flexDirection: "row",
+      }}
+    >
       <View style={{ flex: 1, backgroundColor: left.bar, borderRadius: 2 }} />
-      {half ? <View style={{ flex: 1, backgroundColor: right.bar, borderRadius: 2, marginLeft: 1 }} /> : null}
+      {half ? (
+        <View style={{ flex: 1, backgroundColor: right.bar, borderRadius: 2, marginLeft: 1 }} />
+      ) : null}
     </View>
   );
 
   return (
-    <View style={{ height: 56, borderTopLeftRadius: 11, borderTopRightRadius: 11, overflow: "hidden" }}>
+    <View
+      style={{ height: 56, borderTopLeftRadius: 11, borderTopRightRadius: 11, overflow: "hidden" }}
+    >
       <View style={{ ...StyleSheetAbsolute, flexDirection: "row" }}>
         <View style={{ flex: 1, backgroundColor: left.bg }} />
         {half ? <View style={{ flex: 1, backgroundColor: right.bg }} /> : null}
       </View>
       {/* The title bar carries the accent, so each card previews both choices. */}
-      <View style={{ position: "absolute", left: 7, right: 7, top: 9, height: 6, borderRadius: 3, backgroundColor: accent }} />
+      <View
+        style={{
+          position: "absolute",
+          left: 7,
+          right: 7,
+          top: 9,
+          height: 6,
+          borderRadius: 3,
+          backgroundColor: accent,
+        }}
+      />
       <Line top={21} inset={16} />
       <Line top={31} inset={8} />
       <Line top={41} inset={24} />
@@ -62,6 +86,7 @@ export const ThemeCards = memo(function ThemeCards({
   accent: string;
   onChange: (v: ThemeChoice) => void;
 }) {
+  const darkScheme = useColorScheme().colorScheme === "dark";
   return (
     <View style={{ flexDirection: "row", gap: 9, paddingVertical: 4 }}>
       {options.map((o) => {
@@ -77,19 +102,25 @@ export const ThemeCards = memo(function ThemeCards({
               flex: 1,
               borderRadius: 13,
               borderWidth: 1.5,
-              borderColor: on ? accent : HAIRLINE,
-              backgroundColor: "rgba(255,255,255,0.55)",
+              borderColor: on ? accent : darkScheme ? "rgba(255,255,255,0.10)" : HAIRLINE,
+              backgroundColor: darkScheme ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.55)",
               overflow: "hidden",
             }}
           >
             <Miniature choice={o.id} accent={accent} />
-            <View style={{ paddingVertical: 7, borderTopWidth: 1, borderTopColor: HAIRLINE }}>
+            <View
+              style={{
+                paddingVertical: 7,
+                borderTopWidth: 1,
+                borderTopColor: darkScheme ? "rgba(255,255,255,0.10)" : HAIRLINE,
+              }}
+            >
               <Text
                 style={{
                   fontSize: 11,
                   fontWeight: "700",
                   textAlign: "center",
-                  color: on ? accent : MUTED,
+                  color: on ? accent : darkScheme ? "rgba(255,255,255,0.5)" : MUTED,
                 }}
               >
                 {o.label}
@@ -114,6 +145,7 @@ export const AccentPicker = memo(function AccentPicker({
   onChange: (id: AccentThemeId) => void;
 }) {
   const theme = ACCENT_THEMES[value] ?? ACCENT_THEMES.olive;
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View style={{ paddingVertical: 6, gap: 13 }}>
       {/* The mark IS the preview: the setting shows its own effect. */}
@@ -128,7 +160,9 @@ export const AccentPicker = memo(function AccentPicker({
           <Text className="text-navy dark:text-white" style={{ fontSize: 12.5, fontWeight: "700" }}>
             {theme.label}
           </Text>
-          <Text style={{ fontSize: 10.5, color: MUTED }}>Tints the mark, tabs, and selection</Text>
+          <Text style={{ fontSize: 10.5, color: dark ? "rgba(255,255,255,0.5)" : MUTED }}>
+            Tints the mark, tabs, and selection
+          </Text>
         </View>
       </View>
       <View style={{ flexDirection: "row", gap: 12, flexWrap: "wrap" }}>
@@ -147,7 +181,7 @@ export const AccentPicker = memo(function AccentPicker({
                 borderRadius: 10,
                 backgroundColor: ACCENT_THEMES[id].hex,
                 borderWidth: on ? 2.5 : 1,
-                borderColor: on ? NAVY : "rgba(0,0,0,0.10)",
+                borderColor: on ? (dark ? "#FFFFFF" : NAVY) : "rgba(0,0,0,0.10)",
               }}
             />
           );
@@ -173,6 +207,10 @@ export function Dropdown<T extends string>({
 }) {
   const [open, setOpen] = useState(false);
   const current = options.find((o) => o.id === value) ?? options[0];
+  const dark = useColorScheme().colorScheme === "dark";
+  const ink = dark ? "#FFFFFF" : NAVY;
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
+  const hairline = dark ? "rgba(255,255,255,0.10)" : HAIRLINE;
 
   return (
     <>
@@ -188,13 +226,13 @@ export function Dropdown<T extends string>({
           paddingVertical: 7,
           borderRadius: 11,
           borderWidth: 1,
-          borderColor: "rgba(9,27,84,0.16)",
+          borderColor: dark ? "rgba(255,255,255,0.18)" : "rgba(9,27,84,0.16)",
         }}
       >
         <Text className="text-navy dark:text-white" style={{ fontSize: 13, fontWeight: "600" }}>
           {current?.label}
         </Text>
-        <Ionicons name="chevron-down" size={13} color={MUTED} />
+        <Ionicons name="chevron-down" size={13} color={muted} />
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
@@ -213,10 +251,10 @@ export function Dropdown<T extends string>({
               width: "100%",
               maxWidth: 340,
               borderRadius: 18,
-              backgroundColor: "rgba(252,250,244,0.99)",
+              backgroundColor: dark ? "#1B1D20" : "rgba(252,250,244,0.99)",
               overflow: "hidden",
               borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.6)",
+              borderColor: dark ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.6)",
             }}
           >
             {options.map((o, i) => {
@@ -237,14 +275,14 @@ export function Dropdown<T extends string>({
                     paddingHorizontal: 18,
                     paddingVertical: 14,
                     borderTopWidth: i === 0 ? 0 : 1,
-                    borderTopColor: HAIRLINE,
+                    borderTopColor: hairline,
                   }}
                 >
                   <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
-                    <Text style={{ fontSize: 14.5, fontWeight: on ? "700" : "500", color: NAVY }}>
+                    <Text style={{ fontSize: 14.5, fontWeight: on ? "700" : "500", color: ink }}>
                       {o.label}
                     </Text>
-                    {o.hint ? <Text style={{ fontSize: 11, color: MUTED }}>{o.hint}</Text> : null}
+                    {o.hint ? <Text style={{ fontSize: 11, color: muted }}>{o.hint}</Text> : null}
                   </View>
                   {on ? <Ionicons name="checkmark" size={17} color={accent} /> : null}
                 </Pressable>

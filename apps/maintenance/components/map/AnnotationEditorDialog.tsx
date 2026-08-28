@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { useColorScheme } from "nativewind";
 import { Alert, Image, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { photoUri, useAnnotationPhotos } from "@/lib/stores/annotation-photos";
 import { useAnnotations, type MapAnnotation } from "@/lib/stores/annotations";
@@ -14,9 +15,18 @@ import { useAnnotations, type MapAnnotation } from "@/lib/stores/annotations";
 /** Swift offered a full color wheel; a curated grid covers the same ground
  *  without a custom picker — brand hues first, then the practical rest. */
 const PIN_PALETTE = [
-  "#A2A921", "#767B24", "#D1382E", "#E38736",
-  "#E3B23A", "#2E8A5F", "#458ADB", "#7A6BC7",
-  "#D4537E", "#5B7C99", "#70788F", "#091B54",
+  "#A2A921",
+  "#767B24",
+  "#D1382E",
+  "#E38736",
+  "#E3B23A",
+  "#2E8A5F",
+  "#458ADB",
+  "#7A6BC7",
+  "#D4537E",
+  "#5B7C99",
+  "#70788F",
+  "#091B54",
 ];
 
 const THUMB = 84;
@@ -46,6 +56,7 @@ export function AnnotationEditorDialog({
   annotation: MapAnnotation;
   onClose: () => void;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
   const update = useAnnotations((s) => s.update);
   const removePin = useAnnotations((s) => s.remove);
   const photos = useAnnotationPhotos((s) => s.byAnnotation[annotation.id]) ?? NO_PHOTOS;
@@ -65,7 +76,9 @@ export function AnnotationEditorDialog({
       {
         text: "Choose from Library",
         onPress: () =>
-          void ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.8 }).then(attach),
+          void ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.8 }).then(
+            attach,
+          ),
       },
       { text: "Cancel", style: "cancel" },
     ]);
@@ -107,7 +120,9 @@ export function AnnotationEditorDialog({
             <Text className="text-navy dark:text-white" style={{ fontSize: 19, fontWeight: "700" }}>
               Annotation
             </Text>
-            <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: annotation.color }} />
+            <View
+              style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: annotation.color }}
+            />
           </View>
 
           <View style={{ gap: 10 }}>
@@ -115,14 +130,14 @@ export function AnnotationEditorDialog({
               value={annotation.title}
               onChangeText={(t) => update(annotation.id, { title: t })}
               placeholder="Title"
-              placeholderTextColor="rgba(112,120,143,0.6)"
+              placeholderTextColor={dark ? "rgba(255,255,255,0.35)" : "rgba(112,120,143,0.6)"}
               autoCorrect={false}
               className="text-navy dark:text-white"
               style={{
                 fontSize: 16,
                 fontWeight: "600",
                 borderWidth: 1,
-                borderColor: "rgba(9,27,84,0.14)",
+                borderColor: dark ? "rgba(255,255,255,0.18)" : "rgba(9,27,84,0.14)",
                 borderRadius: 12,
                 paddingHorizontal: 13,
                 paddingVertical: 10,
@@ -132,14 +147,14 @@ export function AnnotationEditorDialog({
               value={annotation.notes}
               onChangeText={(t) => update(annotation.id, { notes: t })}
               placeholder="Notes (optional)"
-              placeholderTextColor="rgba(112,120,143,0.6)"
+              placeholderTextColor={dark ? "rgba(255,255,255,0.35)" : "rgba(112,120,143,0.6)"}
               multiline
               className="text-slate dark:text-white/80"
               style={{
                 fontSize: 14,
                 minHeight: 64,
                 borderWidth: 1,
-                borderColor: "rgba(9,27,84,0.14)",
+                borderColor: dark ? "rgba(255,255,255,0.18)" : "rgba(9,27,84,0.14)",
                 borderRadius: 12,
                 paddingHorizontal: 13,
                 paddingVertical: 10,
@@ -149,7 +164,15 @@ export function AnnotationEditorDialog({
           </View>
 
           <View style={{ gap: 8 }}>
-            <Text className="text-slate dark:text-white/60" style={{ fontSize: 12, fontWeight: "600", letterSpacing: 0.6, textTransform: "uppercase" }}>
+            <Text
+              className="text-slate dark:text-white/60"
+              style={{
+                fontSize: 12,
+                fontWeight: "600",
+                letterSpacing: 0.6,
+                textTransform: "uppercase",
+              }}
+            >
               Pin icon
             </Text>
             <View className="flex-row flex-wrap" style={{ gap: 9 }}>
@@ -169,7 +192,11 @@ export function AnnotationEditorDialog({
                         borderRadius: 20,
                         alignItems: "center",
                         justifyContent: "center",
-                        backgroundColor: active ? annotation.color : "rgba(9,27,84,0.06)",
+                        backgroundColor: active
+                          ? annotation.color
+                          : dark
+                            ? "rgba(255,255,255,0.08)"
+                            : "rgba(9,27,84,0.06)",
                         borderWidth: active ? 2 : 0,
                         borderColor: "#FFFFFF",
                         shadowColor: "#000",
@@ -178,7 +205,11 @@ export function AnnotationEditorDialog({
                         shadowOffset: { width: 0, height: 2 },
                       }}
                     >
-                      <Ionicons name={choice.name} size={19} color={active ? "#FFFFFF" : "#70788F"} />
+                      <Ionicons
+                        name={choice.name}
+                        size={19}
+                        color={active ? "#FFFFFF" : dark ? "rgba(255,255,255,0.6)" : "#70788F"}
+                      />
                     </View>
                   </Pressable>
                 );
@@ -187,7 +218,15 @@ export function AnnotationEditorDialog({
           </View>
 
           <View style={{ gap: 8 }}>
-            <Text className="text-slate dark:text-white/60" style={{ fontSize: 12, fontWeight: "600", letterSpacing: 0.6, textTransform: "uppercase" }}>
+            <Text
+              className="text-slate dark:text-white/60"
+              style={{
+                fontSize: 12,
+                fontWeight: "600",
+                letterSpacing: 0.6,
+                textTransform: "uppercase",
+              }}
+            >
               Pin color
             </Text>
             <View className="flex-row flex-wrap" style={{ gap: 10 }}>
@@ -213,10 +252,22 @@ export function AnnotationEditorDialog({
           </View>
 
           <View style={{ gap: 8 }}>
-            <Text className="text-slate dark:text-white/60" style={{ fontSize: 12, fontWeight: "600", letterSpacing: 0.6, textTransform: "uppercase" }}>
+            <Text
+              className="text-slate dark:text-white/60"
+              style={{
+                fontSize: 12,
+                fontWeight: "600",
+                letterSpacing: 0.6,
+                textTransform: "uppercase",
+              }}
+            >
               Photos
             </Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 10 }}
+            >
               {photos.map((photoId) => (
                 <View key={photoId} style={{ width: THUMB, height: THUMB }}>
                   <Image
@@ -257,14 +308,21 @@ export function AnnotationEditorDialog({
                     borderRadius: 12,
                     borderWidth: 1.5,
                     borderStyle: "dashed",
-                    borderColor: "rgba(9,27,84,0.25)",
+                    borderColor: dark ? "rgba(255,255,255,0.28)" : "rgba(9,27,84,0.25)",
                     alignItems: "center",
                     justifyContent: "center",
                     gap: 3,
                   }}
                 >
-                  <Ionicons name="camera" size={22} color="#70788F" />
-                  <Text className="text-muted" style={{ fontSize: 11, fontWeight: "600" }}>
+                  <Ionicons
+                    name="camera"
+                    size={22}
+                    color={dark ? "rgba(255,255,255,0.5)" : "#70788F"}
+                  />
+                  <Text
+                    className="text-muted dark:text-white/50"
+                    style={{ fontSize: 11, fontWeight: "600" }}
+                  >
                     Add
                   </Text>
                 </View>
@@ -274,7 +332,11 @@ export function AnnotationEditorDialog({
 
           <View
             className="flex-row items-center justify-between"
-            style={{ borderTopWidth: 1, borderTopColor: "rgba(9,27,84,0.10)", paddingTop: 14 }}
+            style={{
+              borderTopWidth: 1,
+              borderTopColor: dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.10)",
+              paddingTop: 14,
+            }}
           >
             <Pressable onPress={confirmDelete} hitSlop={8}>
               <Text style={{ color: "#D1382E", fontSize: 15, fontWeight: "700" }}>Delete pin</Text>

@@ -1,5 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useColorScheme } from "nativewind";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -30,7 +31,7 @@ const AMBER = "#E38736";
  * sync tick; this makes that queue visible and offers a manual flush.
  */
 
-function stateColor(state: OutboxState): string {
+function stateColor(state: OutboxState, dark: boolean): string {
   switch (state) {
     case "sending":
       return INFO;
@@ -39,7 +40,9 @@ function stateColor(state: OutboxState): string {
     case "sent":
       return GREEN;
     default:
-      return SLATE;
+      // Queued is inked, not semantic — white in dark so the pill stays legible
+      // (hex on purpose: callers append an alpha suffix for the tint fill).
+      return dark ? "#FFFFFF" : SLATE;
   }
 }
 
@@ -57,6 +60,9 @@ function kindIcon(kind: OutboxItem["kind"]): keyof typeof MaterialCommunityIcons
 export default function Outbox() {
   const { t } = useTranslation();
   const router = useRouter();
+  const dark = useColorScheme().colorScheme === "dark";
+  const ink = dark ? "#FFFFFF" : NAVY;
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   const token = useConfig((s) => s.token);
   const baseUrl = useConfig((s) => s.baseUrl);
 
@@ -137,7 +143,7 @@ export default function Outbox() {
             justifyContent: "center",
           }}
         >
-          <Ionicons name="chevron-back" size={20} color={NAVY} />
+          <Ionicons name="chevron-back" size={20} color={ink} />
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text className="text-navy dark:text-white" style={{ fontSize: 24, fontWeight: "700" }}>
@@ -172,8 +178,13 @@ export default function Outbox() {
         }}
       >
         <MaterialCommunityIcons name="shield-check-outline" size={18} color={GREEN} />
-        <Text style={{ flex: 1, fontSize: 12.5, color: SLATE, fontWeight: "600" }}>
-          <Text style={{ fontWeight: "800", color: NAVY }}>{t("outbox.reassureLead")} </Text>
+        <Text
+          className="text-slate dark:text-white/70"
+          style={{ flex: 1, fontSize: 12.5, fontWeight: "600" }}
+        >
+          <Text className="text-navy dark:text-white" style={{ fontWeight: "800" }}>
+            {t("outbox.reassureLead")}{" "}
+          </Text>
           {t("outbox.reassureBody")}
         </Text>
       </View>
@@ -183,11 +194,16 @@ export default function Outbox() {
           kind="panel"
           style={{ paddingVertical: 28, alignItems: "center", marginTop: 14 }}
         >
-          <MaterialCommunityIcons name="tray-remove" size={30} color={MUTED} />
-          <Text style={{ fontSize: 14, fontWeight: "800", color: NAVY, marginTop: 10 }}>
+          <MaterialCommunityIcons name="tray-remove" size={30} color={muted} />
+          <Text
+            className="text-navy dark:text-white"
+            style={{ fontSize: 14, fontWeight: "800", marginTop: 10 }}
+          >
             {t("outbox.emptyTitle")}
           </Text>
-          <Text style={{ fontSize: 12, color: MUTED, marginTop: 3 }}>{t("outbox.emptyBody")}</Text>
+          <Text className="text-muted dark:text-white/50" style={{ fontSize: 12, marginTop: 3 }}>
+            {t("outbox.emptyBody")}
+          </Text>
         </AppCardSurface>
       ) : (
         <View style={{ marginTop: 12, gap: 9 }}>
@@ -212,13 +228,13 @@ export default function Outbox() {
                   borderRadius: 11,
                   alignItems: "center",
                   justifyContent: "center",
-                  backgroundColor: `${stateColor(item.state)}1A`,
+                  backgroundColor: `${stateColor(item.state, dark)}1A`,
                 }}
               >
                 <MaterialCommunityIcons
                   name={kindIcon(item.kind)}
                   size={19}
-                  color={stateColor(item.state)}
+                  color={stateColor(item.state, dark)}
                 />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
@@ -229,7 +245,8 @@ export default function Outbox() {
                   {itemTitle(item)}
                 </Text>
                 <Text
-                  style={{ fontSize: 11.5, color: MUTED, marginTop: 2, fontWeight: "600" }}
+                  className="text-muted dark:text-white/50"
+                  style={{ fontSize: 11.5, marginTop: 2, fontWeight: "600" }}
                   numberOfLines={1}
                 >
                   {woLabel.get(item.workOrderId) ?? t("outbox.workOrderFallback")}
@@ -243,20 +260,27 @@ export default function Outbox() {
                       paddingHorizontal: 9,
                       paddingVertical: 3.5,
                       borderRadius: 999,
-                      backgroundColor: `${stateColor(item.state)}1A`,
+                      backgroundColor: `${stateColor(item.state, dark)}1A`,
                     }}
                   >
                     {item.state === "sent" ? (
-                      <Ionicons name="checkmark" size={11} color={stateColor(item.state)} />
+                      <Ionicons name="checkmark" size={11} color={stateColor(item.state, dark)} />
                     ) : null}
                     <Text
-                      style={{ fontSize: 10.5, fontWeight: "800", color: stateColor(item.state) }}
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: "800",
+                        color: stateColor(item.state, dark),
+                      }}
                     >
                       {t(`outbox.state.${item.state}`)}
                     </Text>
                   </View>
                   {item.attempts > 1 && item.state !== "sent" ? (
-                    <Text style={{ fontSize: 10.5, color: MUTED, fontWeight: "700" }}>
+                    <Text
+                      className="text-muted dark:text-white/50"
+                      style={{ fontSize: 10.5, fontWeight: "700" }}
+                    >
                       {t("outbox.attempts", { count: item.attempts })}
                     </Text>
                   ) : null}

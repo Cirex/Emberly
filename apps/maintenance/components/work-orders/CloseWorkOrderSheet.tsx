@@ -51,6 +51,7 @@ export function CloseWorkOrderSheet({
 
   const sheetBg = dark ? "#1C2129" : "#FCFAF4";
   const ink = dark ? "#FFFFFF" : NAVY;
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
 
   const pickPhoto = () => {
     const attach = async (result: ImagePicker.ImagePickerResult) => {
@@ -107,7 +108,7 @@ export function CloseWorkOrderSheet({
           <Text style={{ fontSize: 17, fontWeight: "800", color: ink, letterSpacing: -0.3 }}>
             {t("workOrders.closeFlow.title")}
           </Text>
-          <Text style={{ fontSize: 12.5, fontWeight: "600", color: MUTED }}>
+          <Text style={{ fontSize: 12.5, fontWeight: "600", color: muted }}>
             {t("workOrders.closeFlow.subtitle", { number, unit: unitNumber })}
           </Text>
         </View>
@@ -115,10 +116,10 @@ export function CloseWorkOrderSheet({
         {/* Completion photos — optional, capped visually by the scroll row. */}
         <View style={{ paddingTop: 16, gap: 8 }}>
           <View style={{ paddingHorizontal: 20 }}>
-            <Text style={{ fontSize: 9.5, fontWeight: "800", letterSpacing: 0.9, color: MUTED }}>
+            <Text style={{ fontSize: 9.5, fontWeight: "800", letterSpacing: 0.9, color: muted }}>
               {t("workOrders.closeFlow.photosLabel").toUpperCase()}
             </Text>
-            <Text style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
+            <Text style={{ fontSize: 11, color: muted, marginTop: 2 }}>
               {t("workOrders.closeFlow.photosHint")}
             </Text>
           </View>
@@ -178,8 +179,8 @@ export function CloseWorkOrderSheet({
                   gap: 3,
                 }}
               >
-                <Ionicons name="camera" size={22} color={MUTED} />
-                <Text style={{ fontSize: 11, fontWeight: "600", color: MUTED }}>
+                <Ionicons name="camera" size={22} color={muted} />
+                <Text style={{ fontSize: 11, fontWeight: "600", color: muted }}>
                   {t("workOrders.closeFlow.add")}
                 </Text>
               </View>
@@ -220,7 +221,9 @@ export function CloseWorkOrderSheet({
             }}
           >
             <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-            <Text style={{ fontSize: 13, fontWeight: "700", color: "#FFFFFF", letterSpacing: -0.1 }}>
+            <Text
+              style={{ fontSize: 13, fontWeight: "700", color: "#FFFFFF", letterSpacing: -0.1 }}
+            >
               {t("workOrders.closeFlow.confirm")}
             </Text>
           </Pressable>

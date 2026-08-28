@@ -3,15 +3,7 @@ import { BlurView } from "expo-blur";
 import { useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
 import { useEffect, useRef, useState } from "react";
-import {
-  Alert,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { Alert, Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import Animated, {
   interpolate,
   useAnimatedStyle,
@@ -170,30 +162,48 @@ export function AccountMenu() {
             panelStyle,
           ]}
         >
-          <View style={styles.panelClip}>
-            <BlurView intensity={55} tint="light" style={styles.panelWash}>
+          <View style={[styles.panelClip, dark && { borderColor: "rgba(255,255,255,0.12)" }]}>
+            <BlurView
+              intensity={55}
+              tint={dark ? "dark" : "light"}
+              style={[styles.panelWash, dark && { backgroundColor: "rgba(27,29,32,0.88)" }]}
+            >
               <View style={styles.header}>
                 <TechBadge name={name} size={34} />
                 <View style={styles.headerText}>
-                  <Text numberOfLines={1} style={styles.name}>
+                  <Text numberOfLines={1} style={[styles.name, dark && { color: "#FFFFFF" }]}>
                     {name}
                   </Text>
                   {role ? (
-                    <Text numberOfLines={1} style={styles.role}>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.role, dark && { color: "rgba(255,255,255,0.5)" }]}
+                    >
                       {role.toUpperCase()}
                     </Text>
                   ) : null}
                 </View>
               </View>
-              <View style={styles.separator} />
+              <View
+                style={[styles.separator, dark && { backgroundColor: "rgba(255,255,255,0.10)" }]}
+              />
               <Pressable onPress={onSettings} accessibilityRole="button" style={styles.row}>
                 <View style={styles.rowIcon}>
-                  <Ionicons name="settings-outline" size={18} color={NAVY} />
+                  <Ionicons name="settings-outline" size={18} color={dark ? "#FFFFFF" : NAVY} />
                 </View>
-                <Text style={styles.rowLabel}>Settings</Text>
-                <Ionicons name="chevron-forward" size={14} color="rgba(9,27,84,0.30)" />
+                <Text style={[styles.rowLabel, dark && { color: "#FFFFFF" }]}>Settings</Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={14}
+                  color={dark ? "rgba(255,255,255,0.3)" : "rgba(9,27,84,0.30)"}
+                />
               </Pressable>
-              <View style={styles.separatorInset} />
+              <View
+                style={[
+                  styles.separatorInset,
+                  dark && { backgroundColor: "rgba(255,255,255,0.08)" },
+                ]}
+              />
               <Pressable onPress={onSignOut} accessibilityRole="button" style={styles.row}>
                 <View style={styles.rowIcon}>
                   <Ionicons name="log-out-outline" size={18} color={RED} />

@@ -1,5 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { useColorScheme } from "nativewind";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -125,6 +126,7 @@ export function MarkdownEditorSheet({
   const dirty = draft !== initialText || photos.length > 0;
 
   const hairline = dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.08)";
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   const active = activeStyles(draft, selRef.current.start, selRef.current.end);
 
   const applyEdit = (result: { text: string; selStart: number; selEnd: number }) => {
@@ -135,7 +137,9 @@ export function MarkdownEditorSheet({
   };
   const onToolbar = (kind: "bold" | "heading" | "bullet" | "checkbox") => {
     const { start, end } = selRef.current;
-    applyEdit(kind === "bold" ? toggleBold(draft, start, end) : toggleLineStyle(draft, start, end, kind));
+    applyEdit(
+      kind === "bold" ? toggleBold(draft, start, end) : toggleLineStyle(draft, start, end, kind),
+    );
   };
 
   const switchMode = (next: Mode) => {
@@ -213,7 +217,12 @@ export function MarkdownEditorSheet({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
       <View style={{ flex: 1, backgroundColor: paper, paddingBottom: mode === "write" ? kb : 0 }}>
         {/* Header — unchanged frame: Cancel / title / Save-when-dirty. */}
         <View
@@ -229,9 +238,11 @@ export function MarkdownEditorSheet({
           }}
         >
           <Pressable onPress={onClose} accessibilityRole="button" hitSlop={8}>
-            <Text style={{ fontSize: 13.5, fontWeight: "600", color: MUTED }}>Cancel</Text>
+            <Text style={{ fontSize: 13.5, fontWeight: "600", color: muted }}>Cancel</Text>
           </Pressable>
-          <Text style={{ fontSize: 13.5, fontWeight: "800", color: ink, letterSpacing: -0.1 }}>{title}</Text>
+          <Text style={{ fontSize: 13.5, fontWeight: "800", color: ink, letterSpacing: -0.1 }}>
+            {title}
+          </Text>
           <Pressable
             onPress={() => onSave(draft, photos)}
             disabled={!dirty}
@@ -241,12 +252,18 @@ export function MarkdownEditorSheet({
               paddingHorizontal: 14,
               height: 30,
               borderRadius: 999,
-              backgroundColor: dirty ? palette.text : dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.08)",
+              backgroundColor: dirty
+                ? palette.text
+                : dark
+                  ? "rgba(255,255,255,0.10)"
+                  : "rgba(9,27,84,0.08)",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Text style={{ fontSize: 12.5, fontWeight: "700", color: dirty ? "#FFFFFF" : MUTED }}>Save</Text>
+            <Text style={{ fontSize: 12.5, fontWeight: "700", color: dirty ? "#FFFFFF" : muted }}>
+              Save
+            </Text>
           </Pressable>
         </View>
 
@@ -281,15 +298,23 @@ export function MarkdownEditorSheet({
                     paddingHorizontal: 16,
                     paddingVertical: 5,
                     borderRadius: 999,
-                    backgroundColor: on ? (dark ? "rgba(255,255,255,0.14)" : "#FFFFFF") : "transparent",
+                    backgroundColor: on
+                      ? dark
+                        ? "rgba(255,255,255,0.14)"
+                        : "#FFFFFF"
+                      : "transparent",
                     shadowColor: NAVY,
                     shadowOpacity: on && !dark ? 0.14 : 0,
                     shadowRadius: 6,
                     shadowOffset: { width: 0, height: 2 },
                   }}
                 >
-                  <Ionicons name={icon} size={12} color={on ? palette.text : MUTED} />
-                  <Text style={{ fontSize: 11.5, fontWeight: "700", color: on ? palette.text : MUTED }}>{label}</Text>
+                  <Ionicons name={icon} size={12} color={on ? palette.text : muted} />
+                  <Text
+                    style={{ fontSize: 11.5, fontWeight: "700", color: on ? palette.text : muted }}
+                  >
+                    {label}
+                  </Text>
                 </Pressable>
               );
             })}
@@ -316,8 +341,15 @@ export function MarkdownEditorSheet({
               autoFocus
               textAlignVertical="top"
               placeholder={`Write the ${title.toLowerCase()}…`}
-              placeholderTextColor={MUTED}
-              style={{ flex: 1, padding: 18, paddingTop: 14, fontSize: 14.5, lineHeight: 21, color: ink }}
+              placeholderTextColor={muted}
+              style={{
+                flex: 1,
+                padding: 18,
+                paddingTop: 14,
+                fontSize: 14.5,
+                lineHeight: 21,
+                color: ink,
+              }}
             >
               <HighlightedSource text={draft} ink={ink} dark={dark} />
             </TextInput>
@@ -396,9 +428,21 @@ export function MarkdownEditorSheet({
             ) : null}
 
             {/* Formatting toolbar — sits above the tracked keyboard overlap. */}
-            <Toolbar dark={dark} hairline={hairline} bottomInset={kb === 0 ? Math.max(insets.bottom, 8) : 8}>
+            <Toolbar
+              dark={dark}
+              hairline={hairline}
+              bottomInset={kb === 0 ? Math.max(insets.bottom, 8) : 8}
+            >
               <ToolButton on={active.bold} onPress={() => onToolbar("bold")} label="Bold">
-                <Text style={{ fontSize: 15, fontWeight: "800", color: active.bold ? palette.text : toolIdle(dark) }}>B</Text>
+                <Text
+                  style={{
+                    fontSize: 15,
+                    fontWeight: "800",
+                    color: active.bold ? palette.text : toolIdle(dark),
+                  }}
+                >
+                  B
+                </Text>
               </ToolButton>
               <ToolButton
                 on={active.line === "h1" || active.line === "h2"}
@@ -409,21 +453,30 @@ export function MarkdownEditorSheet({
                   style={{
                     fontSize: 15,
                     fontWeight: "800",
-                    color: active.line === "h1" || active.line === "h2" ? palette.text : toolIdle(dark),
+                    color:
+                      active.line === "h1" || active.line === "h2" ? palette.text : toolIdle(dark),
                   }}
                 >
                   H{active.line === "h2" ? "2" : active.line === "h1" ? "1" : ""}
                 </Text>
               </ToolButton>
               <View style={{ width: 1, height: 20, backgroundColor: hairline }} />
-              <ToolButton on={active.line === "bullet"} onPress={() => onToolbar("bullet")} label="Bullet list">
+              <ToolButton
+                on={active.line === "bullet"}
+                onPress={() => onToolbar("bullet")}
+                label="Bullet list"
+              >
                 <MaterialCommunityIcons
                   name="format-list-bulleted"
                   size={18}
                   color={active.line === "bullet" ? palette.text : toolIdle(dark)}
                 />
               </ToolButton>
-              <ToolButton on={active.line === "checkbox"} onPress={() => onToolbar("checkbox")} label="Checklist">
+              <ToolButton
+                on={active.line === "checkbox"}
+                onPress={() => onToolbar("checkbox")}
+                label="Checklist"
+              >
                 <MaterialCommunityIcons
                   name="checkbox-marked-outline"
                   size={18}
@@ -434,7 +487,11 @@ export function MarkdownEditorSheet({
                 <View style={{ width: 1, height: 20, backgroundColor: hairline }} />
               ) : null}
               {allowPhotos ? (
-                <ToolButton on={false} onPress={pickPhoto} label={t("workOrders.closeFlow.addPhoto")}>
+                <ToolButton
+                  on={false}
+                  onPress={pickPhoto}
+                  label={t("workOrders.closeFlow.addPhoto")}
+                >
                   <MaterialCommunityIcons name="camera-outline" size={20} color={toolIdle(dark)} />
                 </ToolButton>
               ) : null}
@@ -451,9 +508,7 @@ export function MarkdownEditorSheet({
                   <MaterialCommunityIcons
                     name={dictation.listening ? "microphone" : "microphone-outline"}
                     size={20}
-                    color={
-                      dictation.listening ? RED : dictationUsable ? toolIdle(dark) : MUTED
-                    }
+                    color={dictation.listening ? RED : dictationUsable ? toolIdle(dark) : muted}
                     style={dictationUsable ? undefined : { opacity: 0.55 }}
                   />
                 </ToolButton>
@@ -472,7 +527,7 @@ export function MarkdownEditorSheet({
                 onToggleLine={(line) => setDraft((d) => toggleCheckboxAtLine(d, line))}
               />
             ) : (
-              <Text style={{ fontSize: 12.5, color: MUTED }}>Nothing to preview yet.</Text>
+              <Text style={{ fontSize: 12.5, color: muted }}>Nothing to preview yet.</Text>
             )}
           </ScrollView>
         )}
@@ -482,7 +537,7 @@ export function MarkdownEditorSheet({
           the marked image is what rides the upload queue. */}
       <PhotoMarkupSheet
         visible={markupIndex !== null}
-        sourceUri={markupIndex !== null ? photos[markupIndex] ?? null : null}
+        sourceUri={markupIndex !== null ? (photos[markupIndex] ?? null) : null}
         onCancel={() => setMarkupIndex(null)}
         onSave={(markedUri, strokes) => {
           // Retain the original alongside the marked copy in the markup store,
@@ -526,7 +581,8 @@ function DictationBand({
   hairline: string;
   onDismissError: () => void;
 }) {
-              const palette = useAccentPalette();
+  const palette = useAccentPalette();
+  const bandDark = useColorScheme().colorScheme === "dark";
   const { t } = useTranslation();
   if (error) {
     return (
@@ -575,7 +631,10 @@ function DictationBand({
       <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: RED }} />
       <Text style={{ flex: 1, fontSize: 11.5, fontWeight: "800", color: RED }}>
         {t("dictation.listening")}
-        <Text style={{ fontWeight: "600", color: MUTED }}> · {t("dictation.onDevice")}</Text>
+        <Text style={{ fontWeight: "600", color: bandDark ? "rgba(255,255,255,0.5)" : MUTED }}>
+          {" "}
+          · {t("dictation.onDevice")}
+        </Text>
       </Text>
       <View
         style={{

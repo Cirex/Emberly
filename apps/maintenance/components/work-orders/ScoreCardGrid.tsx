@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useColorScheme } from "nativewind";
 import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import type { ScoreCard } from "@/lib/derived/score-cards";
 import { useAccentPalette } from "@/lib/hooks/use-accent";
@@ -20,6 +21,8 @@ export function ScoreCardGrid({
   onAction: (action: NonNullable<ScoreCard["action"]>) => void;
 }) {
   const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
+  const hairline = dark ? "rgba(255,255,255,0.10)" : HAIRLINE;
   const { width } = useWindowDimensions();
   const columns = width >= 768 ? 4 : 2;
 
@@ -40,21 +43,28 @@ export function ScoreCardGrid({
               paddingLeft: col === 0 ? 0 : 16,
               paddingRight: 6,
               borderLeftWidth: col === 0 ? 0 : 1,
-              borderLeftColor: HAIRLINE,
+              borderLeftColor: hairline,
               borderTopWidth: row === 0 ? 0 : 1,
-              borderTopColor: HAIRLINE,
+              borderTopColor: hairline,
             }}
           >
             {card.interactive ? (
               <Ionicons
                 name="chevron-forward"
                 size={11}
-                color="rgba(9,27,84,0.28)"
+                color={dark ? "rgba(255,255,255,0.3)" : "rgba(9,27,84,0.28)"}
                 style={{ position: "absolute", top: 12, right: 8 }}
               />
             ) : null}
             <Text
-              style={{ fontSize: 24, fontWeight: "800", letterSpacing: -0.5, fontVariant: ["tabular-nums"], lineHeight: 28, color: card.tint ?? palette.text }}
+              style={{
+                fontSize: 24,
+                fontWeight: "800",
+                letterSpacing: -0.5,
+                fontVariant: ["tabular-nums"],
+                lineHeight: 28,
+                color: card.tint ?? palette.text,
+              }}
             >
               {card.value}
             </Text>
@@ -65,7 +75,11 @@ export function ScoreCardGrid({
             >
               {card.title}
             </Text>
-            <Text className="text-muted dark:text-white/50" numberOfLines={1} style={{ fontSize: 9.5, marginTop: 1 }}>
+            <Text
+              className="text-muted dark:text-white/50"
+              numberOfLines={1}
+              style={{ fontSize: 9.5, marginTop: 1 }}
+            >
               {card.caption}
             </Text>
           </Pressable>

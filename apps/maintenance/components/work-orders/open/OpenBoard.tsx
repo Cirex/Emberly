@@ -1,10 +1,15 @@
+import { useColorScheme } from "nativewind";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { memo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { ClassificationChip, TechBadge } from "@/components/work-orders/rows";
-import { timelineGapTitle, type OpenWorkOrderGroup, type TimelineEvent } from "@/lib/derived/open-groups";
+import {
+  timelineGapTitle,
+  type OpenWorkOrderGroup,
+  type TimelineEvent,
+} from "@/lib/derived/open-groups";
 import { classificationColor, workOrderStatusColor } from "@/lib/derived/status";
 import { tagIconName } from "@/lib/derived/tags";
 import { abbreviatedDate, calendarDaysBetween, startOfDay } from "@/lib/derived/time";
@@ -31,7 +36,8 @@ const DOT_ACCENTS = ["#458ADB", "#3D9461", "#7A6BC7", "#D19438"] as const;
  *  the same unit's dots keep their colors across rebuilds). */
 function dotAccent(e: TimelineEvent): string {
   let h = 0;
-  for (const wo of e.workOrders) for (let i = 0; i < wo.id.length; i++) h = (h + wo.id.charCodeAt(i)) % 997;
+  for (const wo of e.workOrders)
+    for (let i = 0; i < wo.id.length; i++) h = (h + wo.id.charCodeAt(i)) % 997;
   return DOT_ACCENTS[h % DOT_ACCENTS.length];
 }
 
@@ -117,7 +123,14 @@ function TimelineRail({ group, nowMs }: { group: OpenWorkOrderGroup; nowMs: numb
   const endLabel = abbreviatedDate(lastDay, nowMs);
   return (
     <View style={{ marginTop: 8 }}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 2, marginBottom: 3 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          paddingHorizontal: 2,
+          marginBottom: 3,
+        }}
+      >
         <Text
           className={startsAtMoveIn ? undefined : "text-muted dark:text-white/50"}
           style={{
@@ -200,14 +213,25 @@ function TimelineRail({ group, nowMs }: { group: OpenWorkOrderGroup; nowMs: numb
                   }}
                 >
                   <MaterialCommunityIcons name="account-plus" size={8} color={MOVE_IN_TINT} />
-                  <View style={{ width: 1.2, height: 9, backgroundColor: MOVE_IN_TINT, borderRadius: 0.6 }} />
+                  <View
+                    style={{
+                      width: 1.2,
+                      height: 9,
+                      backgroundColor: MOVE_IN_TINT,
+                      borderRadius: 0.6,
+                    }}
+                  />
                 </View>
               ) : null}
               {/* Dots. */}
               {events.map((e, i) => {
                 const latest = i === events.length - 1;
                 const signalTint =
-                  e.signal === "callback" ? CALLBACK_TINT : e.signal === "duplicate" ? DUPLICATE_TINT : null;
+                  e.signal === "callback"
+                    ? CALLBACK_TINT
+                    : e.signal === "duplicate"
+                      ? DUPLICATE_TINT
+                      : null;
                 const tint = signalTint ?? dotAccent(e);
                 const single = e.workOrders.length === 1;
                 const primaryTag = single ? e.workOrders[0].tags[0] : undefined;
@@ -245,7 +269,9 @@ function TimelineRail({ group, nowMs }: { group: OpenWorkOrderGroup; nowMs: numb
                           height: size + 6,
                           borderRadius: (size + 6) / 2,
                           borderWidth: 2,
-                          borderColor: e.isFirstIssueAfterMoveIn ? `${ATTENTION_TINT}CC` : `${tint}45`,
+                          borderColor: e.isFirstIssueAfterMoveIn
+                            ? `${ATTENTION_TINT}CC`
+                            : `${tint}45`,
                         }}
                       />
                     ) : null}
@@ -317,8 +343,17 @@ function TimelineRail({ group, nowMs }: { group: OpenWorkOrderGroup; nowMs: numb
   );
 }
 
-function TagChip({ tag, count, signal }: { tag: string; count: number; signal: "callback" | "duplicate" | null }) {
-  const color = signal === "callback" ? CALLBACK_TINT : signal === "duplicate" ? DUPLICATE_TINT : "#2A66AC";
+function TagChip({
+  tag,
+  count,
+  signal,
+}: {
+  tag: string;
+  count: number;
+  signal: "callback" | "duplicate" | null;
+}) {
+  const color =
+    signal === "callback" ? CALLBACK_TINT : signal === "duplicate" ? DUPLICATE_TINT : "#2A66AC";
   return (
     <View
       style={{
@@ -364,6 +399,7 @@ function WorkOrderTicket({
 }) {
   const { t } = useTranslation();
   const tr = useTranslated();
+  const dark = useColorScheme().colorScheme === "dark";
   const statusColor = workOrderStatusColor(wo.status);
   return (
     <Pressable
@@ -377,7 +413,7 @@ function WorkOrderTicket({
         paddingLeft: pad - 3.5,
         paddingRight: pad,
         borderTopWidth: first ? 0 : 1,
-        borderTopColor: "rgba(9,27,84,0.05)",
+        borderTopColor: dark ? "rgba(255,255,255,0.06)" : "rgba(9,27,84,0.05)",
       }}
     >
       <View style={{ width: 48, flexShrink: 0 }}>
@@ -389,7 +425,13 @@ function WorkOrderTicket({
         </Text>
         <Text
           className="text-slate dark:text-white/60"
-          style={{ fontSize: 8.5, fontWeight: "700", fontVariant: ["tabular-nums"], marginTop: 1, opacity: 0.8 }}
+          style={{
+            fontSize: 8.5,
+            fontWeight: "700",
+            fontVariant: ["tabular-nums"],
+            marginTop: 1,
+            opacity: 0.8,
+          }}
         >
           {abbreviatedDate(wo.reportedAt, nowMs)}
         </Text>
@@ -402,11 +444,16 @@ function WorkOrderTicket({
         >
           {tr(wo.title).shown || "Untitled work order"}
         </Text>
-        <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "700", color: statusColor, marginTop: 1 }}>
+        <Text
+          numberOfLines={1}
+          style={{ fontSize: 10, fontWeight: "700", color: statusColor, marginTop: 1 }}
+        >
           {statusLabel(t, wo.status)}
         </Text>
       </View>
-      {wo.technicianDisplay !== "Unassigned" ? <TechBadge name={wo.technicianDisplay} size={22} /> : null}
+      {wo.technicianDisplay !== "Unassigned" ? (
+        <TechBadge name={wo.technicianDisplay} size={22} />
+      ) : null}
     </Pressable>
   );
 }
@@ -449,6 +496,7 @@ export const OpenGroupCard = memo(function OpenGroupCard({
   pad?: number;
 }) {
   const router = useRouter();
+  const dark = useColorScheme().colorScheme === "dark";
   const tint = classificationColor(group.classification);
   const collapsed = !expanded;
   return (
@@ -464,7 +512,9 @@ export const OpenGroupCard = memo(function OpenGroupCard({
         accessibilityRole="button"
         accessibilityState={{ expanded }}
       >
-        <View style={{ paddingLeft: pad - 3.5, paddingRight: pad, paddingTop: 11, paddingBottom: 4 }}>
+        <View
+          style={{ paddingLeft: pad - 3.5, paddingRight: pad, paddingTop: 11, paddingBottom: 4 }}
+        >
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Text className="text-navy dark:text-white" style={{ fontSize: 16, fontWeight: "800" }}>
               {group.unitNumber}
@@ -474,10 +524,13 @@ export const OpenGroupCard = memo(function OpenGroupCard({
                 paddingHorizontal: 8,
                 paddingVertical: 1.5,
                 borderRadius: 999,
-                backgroundColor: "rgba(9,27,84,0.08)",
+                backgroundColor: dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.08)",
               }}
             >
-              <Text className="text-slate dark:text-white/70" style={{ fontSize: 10.5, fontWeight: "800", fontVariant: ["tabular-nums"] }}>
+              <Text
+                className="text-slate dark:text-white/70"
+                style={{ fontSize: 10.5, fontWeight: "800", fontVariant: ["tabular-nums"] }}
+              >
                 {group.workOrders.length}
               </Text>
             </View>
@@ -491,7 +544,11 @@ export const OpenGroupCard = memo(function OpenGroupCard({
                 {abbreviatedDate(group.latestDateMs, nowMs)}
               </Text>
             ) : null}
-            <Ionicons name={expanded ? "chevron-down" : "chevron-forward"} size={14} color="rgba(9,27,84,0.32)" />
+            <Ionicons
+              name={expanded ? "chevron-down" : "chevron-forward"}
+              size={14}
+              color={dark ? "rgba(255,255,255,0.3)" : "rgba(9,27,84,0.32)"}
+            />
           </View>
           <TimelineRail group={group} nowMs={nowMs} />
         </View>
@@ -535,7 +592,9 @@ export const OpenGroupCard = memo(function OpenGroupCard({
         {group.callbackWorkOrderIds.length > 0 ? (
           <TagChip tag="Callback" count={group.callbackWorkOrderIds.length} signal="callback" />
         ) : null}
-        {group.hasPossibleDuplicate ? <TagChip tag="Duplicate" count={1} signal="duplicate" /> : null}
+        {group.hasPossibleDuplicate ? (
+          <TagChip tag="Duplicate" count={1} signal="duplicate" />
+        ) : null}
         {collapsed ? (
           <>
             <View style={{ flex: 1 }} />

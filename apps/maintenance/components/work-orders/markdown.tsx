@@ -1,3 +1,4 @@
+import { useColorScheme } from "nativewind";
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, Text, View } from "react-native";
 import { MUTED } from "@/theme/tokens";
@@ -44,6 +45,8 @@ export function MarkdownLite({
   onToggleLine?: (lineIndex: number) => void;
 }) {
   const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   const BODY = { fontSize: 13, color: ink, lineHeight: 19.5 } as const;
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   return (
@@ -79,7 +82,7 @@ export function MarkdownLite({
               <Ionicons
                 name={checked ? "checkbox-outline" : "square-outline"}
                 size={13}
-                color={checked ? palette.text : MUTED}
+                color={checked ? palette.text : muted}
                 style={{ marginTop: 3 }}
               />
               <View style={{ flex: 1 }}>
@@ -106,7 +109,7 @@ export function MarkdownLite({
         if (bullet) {
           return (
             <View key={i} style={{ flexDirection: "row", alignItems: "flex-start", gap: 6 }}>
-              <Text style={{ ...BODY, color: MUTED }}>•</Text>
+              <Text style={{ ...BODY, color: muted }}>•</Text>
               <View style={{ flex: 1 }}>
                 <InlineBold text={bullet[1]} base={BODY} />
               </View>

@@ -96,6 +96,7 @@ export function DateTimeSheet({
 
   const sheetBg = dark ? "#1C2129" : "#FCFAF4";
   const ink = dark ? "#FFFFFF" : NAVY;
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -129,7 +130,7 @@ export function DateTimeSheet({
             {title}
           </Text>
           {subtitle ? (
-            <Text style={{ fontSize: 12.5, fontWeight: "600", color: MUTED }}>{subtitle}</Text>
+            <Text style={{ fontSize: 12.5, fontWeight: "600", color: muted }}>{subtitle}</Text>
           ) : null}
         </View>
 
@@ -194,7 +195,9 @@ export function DateTimeSheet({
               backgroundColor: palette.text,
             }}
           >
-            <Text style={{ fontSize: 13, fontWeight: "700", color: "#FFFFFF", letterSpacing: -0.1 }}>
+            <Text
+              style={{ fontSize: 13, fontWeight: "700", color: "#FFFFFF", letterSpacing: -0.1 }}
+            >
               {confirmLabel ?? t("workOrders.dates.set")}
             </Text>
           </Pressable>

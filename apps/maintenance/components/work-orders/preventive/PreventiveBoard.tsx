@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useColorScheme } from "nativewind";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
@@ -41,8 +42,22 @@ function DueChip({ template, nowMs }: { template: PmTemplateRound; nowMs: number
 
   if (late > 0 && pending > 0) {
     return (
-      <View style={{ paddingHorizontal: 8, paddingVertical: 2.5, borderRadius: 999, backgroundColor: RED }}>
-        <Text style={{ fontSize: 9.5, fontWeight: "800", color: "#FFFFFF", fontVariant: ["tabular-nums"] }}>
+      <View
+        style={{
+          paddingHorizontal: 8,
+          paddingVertical: 2.5,
+          borderRadius: 999,
+          backgroundColor: RED,
+        }}
+      >
+        <Text
+          style={{
+            fontSize: 9.5,
+            fontWeight: "800",
+            color: "#FFFFFF",
+            fontVariant: ["tabular-nums"],
+          }}
+        >
           {t("preventive.chip.late", { count: late })}
         </Text>
       </View>
@@ -60,7 +75,9 @@ function DueChip({ template, nowMs }: { template: PmTemplateRound; nowMs: number
           borderColor: `${GREEN}42`,
         }}
       >
-        <Text style={{ fontSize: 9.5, fontWeight: "700", color: GREEN }}>{t("preventive.chip.done")}</Text>
+        <Text style={{ fontSize: 9.5, fontWeight: "700", color: GREEN }}>
+          {t("preventive.chip.done")}
+        </Text>
       </View>
     );
   }
@@ -76,7 +93,9 @@ function DueChip({ template, nowMs }: { template: PmTemplateRound; nowMs: number
         borderColor: `${AMBER}42`,
       }}
     >
-      <Text style={{ fontSize: 9.5, fontWeight: "700", color: AMBER, fontVariant: ["tabular-nums"] }}>
+      <Text
+        style={{ fontSize: 9.5, fontWeight: "700", color: AMBER, fontVariant: ["tabular-nums"] }}
+      >
         {t("preventive.chip.due", { date: abbreviatedDate(dueMs, nowMs) })}
       </Text>
     </View>
@@ -106,13 +125,22 @@ function CategoryChip({ category }: { category: string }) {
 /** Done/total progress: green fill over a faint track plus the fraction. */
 function RoundProgress({ template }: { template: PmTemplateRound }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
   const total = template.tasks.length;
   const done = template.tasks.filter((task) => task.status === "done").length;
   const skipped = template.tasks.filter((task) => task.status === "skipped").length;
   const pct = total > 0 ? (done / total) * 100 : 0;
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-      <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: "rgba(9,27,84,0.07)", overflow: "hidden" }}>
+      <View
+        style={{
+          flex: 1,
+          height: 6,
+          borderRadius: 3,
+          backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.07)",
+          overflow: "hidden",
+        }}
+      >
         <View style={{ width: `${pct}%`, height: 6, borderRadius: 3, backgroundColor: GREEN }} />
       </View>
       <Text
@@ -142,8 +170,9 @@ function RoundRow({
   pad: number;
   onPress: () => void;
 }) {
-    const palette = useAccentPalette();
+  const palette = useAccentPalette();
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
   const upcoming = template.tasks.length === 0;
   return (
     <Pressable
@@ -151,7 +180,13 @@ function RoundRow({
       disabled={upcoming}
       accessibilityRole="button"
       accessibilityLabel={t("preventive.openChecklistA11y", { name: template.name })}
-      style={{ paddingHorizontal: pad, paddingVertical: 12, gap: 9, borderTopWidth: 1, borderTopColor: HAIRLINE }}
+      style={{
+        paddingHorizontal: pad,
+        paddingVertical: 12,
+        gap: 9,
+        borderTopWidth: 1,
+        borderTopColor: dark ? "rgba(255,255,255,0.10)" : HAIRLINE,
+      }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
         <View
@@ -168,19 +203,33 @@ function RoundRow({
         </View>
         <View style={{ flex: 1, gap: 2 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Text className="text-navy dark:text-white" numberOfLines={1} style={{ flexShrink: 1, fontSize: 13.5, fontWeight: "800" }}>
+            <Text
+              className="text-navy dark:text-white"
+              numberOfLines={1}
+              style={{ flexShrink: 1, fontSize: 13.5, fontWeight: "800" }}
+            >
               {template.name}
             </Text>
             <CategoryChip category={template.category} />
           </View>
-          <Text className="text-muted dark:text-white/50" numberOfLines={1} style={{ fontSize: 9.5, fontWeight: "600" }}>
+          <Text
+            className="text-muted dark:text-white/50"
+            numberOfLines={1}
+            style={{ fontSize: 9.5, fontWeight: "600" }}
+          >
             {upcoming
               ? `${cadenceLabel(template.cadence, t)} · ${t("preventive.notGenerated")}`
               : `${cadenceLabel(template.cadence, t)} · ${t("preventive.unitsCount", { count: template.tasks.length })}`}
           </Text>
         </View>
         <DueChip template={template} nowMs={nowMs} />
-        {!upcoming ? <Ionicons name="chevron-forward" size={13} color="rgba(9,27,84,0.32)" /> : null}
+        {!upcoming ? (
+          <Ionicons
+            name="chevron-forward"
+            size={13}
+            color={dark ? "rgba(255,255,255,0.3)" : "rgba(9,27,84,0.32)"}
+          />
+        ) : null}
       </View>
       {!upcoming ? <RoundProgress template={template} /> : null}
     </Pressable>
@@ -189,14 +238,15 @@ function RoundRow({
 
 /** Band strip, same treatment as the make-ready board's BandHeader. */
 function BandHeader({ label, color, pad }: { label: string; color: string; pad: number }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View
       style={{
         paddingHorizontal: pad,
         paddingVertical: 8,
         borderTopWidth: 1,
-        borderTopColor: HAIRLINE,
-        backgroundColor: "rgba(9,27,84,0.03)",
+        borderTopColor: dark ? "rgba(255,255,255,0.10)" : HAIRLINE,
+        backgroundColor: dark ? "rgba(255,255,255,0.04)" : "rgba(9,27,84,0.03)",
       }}
     >
       <Text style={{ fontSize: 10.5, fontWeight: "800", letterSpacing: 0.9, color }}>{label}</Text>
@@ -222,6 +272,8 @@ function ChecklistRow({
   onSetStatus: (taskId: string, status: PmTaskStatus) => void;
 }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   const done = task.status === "done";
   const skipped = task.status === "skipped";
   return (
@@ -233,7 +285,7 @@ function ChecklistRow({
         paddingHorizontal: 18,
         paddingVertical: 9,
         borderTopWidth: 1,
-        borderTopColor: HAIRLINE,
+        borderTopColor: dark ? "rgba(255,255,255,0.10)" : HAIRLINE,
       }}
     >
       {/* Check circle: pending → done, done/skipped → back to pending. */}
@@ -253,13 +305,23 @@ function ChecklistRow({
           borderRadius: 12,
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: done ? GREEN : skipped ? "rgba(9,27,84,0.08)" : "transparent",
+          backgroundColor: done
+            ? GREEN
+            : skipped
+              ? dark
+                ? "rgba(255,255,255,0.10)"
+                : "rgba(9,27,84,0.08)"
+              : "transparent",
           borderWidth: done ? 0 : 1.5,
-          borderColor: skipped ? "transparent" : "rgba(9,27,84,0.25)",
+          borderColor: skipped
+            ? "transparent"
+            : dark
+              ? "rgba(255,255,255,0.28)"
+              : "rgba(9,27,84,0.25)",
         }}
       >
         {done ? <Ionicons name="checkmark" size={14} color="#FFFFFF" /> : null}
-        {skipped ? <Ionicons name="remove" size={14} color={MUTED} /> : null}
+        {skipped ? <Ionicons name="remove" size={14} color={muted} /> : null}
       </Pressable>
 
       <Text
@@ -276,13 +338,25 @@ function ChecklistRow({
       </Text>
 
       {skipped ? (
-        <View style={{ paddingHorizontal: 7, paddingVertical: 1.5, borderRadius: 999, backgroundColor: "rgba(112,120,143,0.14)" }}>
-          <Text style={{ fontSize: 8.5, fontWeight: "700", color: MUTED }}>{t("preventive.sheet.skipped")}</Text>
+        <View
+          style={{
+            paddingHorizontal: 7,
+            paddingVertical: 1.5,
+            borderRadius: 999,
+            backgroundColor: "rgba(112,120,143,0.14)",
+          }}
+        >
+          <Text style={{ fontSize: 8.5, fontWeight: "700", color: muted }}>
+            {t("preventive.sheet.skipped")}
+          </Text>
         </View>
       ) : null}
 
       {done || skipped ? (
-        <Text className="text-muted dark:text-white/50" style={{ fontSize: 9.5, fontWeight: "700" }}>
+        <Text
+          className="text-muted dark:text-white/50"
+          style={{ fontSize: 9.5, fontWeight: "700" }}
+        >
           {attribution(task, nowMs) || "—"}
         </Text>
       ) : (
@@ -296,10 +370,18 @@ function ChecklistRow({
             paddingVertical: 4,
             borderRadius: 999,
             borderWidth: 1,
-            borderColor: "rgba(9,27,84,0.16)",
+            borderColor: dark ? "rgba(255,255,255,0.18)" : "rgba(9,27,84,0.16)",
           }}
         >
-          <Text style={{ fontSize: 10.5, fontWeight: "700", color: "#4C556F" }}>{t("preventive.sheet.skip")}</Text>
+          <Text
+            style={{
+              fontSize: 10.5,
+              fontWeight: "700",
+              color: dark ? "rgba(255,255,255,0.72)" : "#4C556F",
+            }}
+          >
+            {t("preventive.sheet.skip")}
+          </Text>
         </Pressable>
       )}
     </View>
@@ -321,6 +403,9 @@ export function UnitChecklistSheet({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
+  const ink = dark ? "#FFFFFF" : NAVY;
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   const insets = useSafeAreaInsets();
   const done = template?.tasks.filter((task) => task.status === "done").length ?? 0;
   const total = template?.tasks.length ?? 0;
@@ -335,7 +420,7 @@ export function UnitChecklistSheet({
       />
       <View
         style={{
-          backgroundColor: "#FCFAF4",
+          backgroundColor: dark ? "#1C2129" : "#FCFAF4",
           borderTopLeftRadius: 22,
           borderTopRightRadius: 22,
           paddingTop: 8,
@@ -349,12 +434,23 @@ export function UnitChecklistSheet({
             width: 36,
             height: 4,
             borderRadius: 2,
-            backgroundColor: "rgba(9,27,84,0.15)",
+            backgroundColor: dark ? "rgba(255,255,255,0.18)" : "rgba(9,27,84,0.15)",
             marginBottom: 10,
           }}
         />
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 18, paddingBottom: 2 }}>
-          <Text numberOfLines={1} style={{ flex: 1, fontSize: 17, fontWeight: "800", letterSpacing: -0.3, color: NAVY }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            paddingHorizontal: 18,
+            paddingBottom: 2,
+          }}
+        >
+          <Text
+            numberOfLines={1}
+            style={{ flex: 1, fontSize: 17, fontWeight: "800", letterSpacing: -0.3, color: ink }}
+          >
             {template?.name ?? ""}
           </Text>
           <Pressable
@@ -366,20 +462,22 @@ export function UnitChecklistSheet({
               width: 26,
               height: 26,
               borderRadius: 13,
-              backgroundColor: "rgba(9,27,84,0.06)",
+              backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.06)",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Ionicons name="close" size={14} color="#4C556F" />
+            <Ionicons name="close" size={14} color={dark ? "rgba(255,255,255,0.72)" : "#4C556F"} />
           </Pressable>
         </View>
         {template ? (
-          <Text style={{ paddingHorizontal: 18, paddingBottom: 10, fontSize: 10.5, color: MUTED }}>
+          <Text style={{ paddingHorizontal: 18, paddingBottom: 10, fontSize: 10.5, color: muted }}>
             {[
               template.category.trim() || null,
               cadenceLabel(template.cadence, t),
-              dueMs !== null ? t("preventive.chip.due", { date: abbreviatedDate(dueMs, nowMs) }) : null,
+              dueMs !== null
+                ? t("preventive.chip.due", { date: abbreviatedDate(dueMs, nowMs) })
+                : null,
               t("preventive.sheet.progress", { done, total }),
             ]
               .filter((part): part is string => part !== null)
@@ -394,7 +492,7 @@ export function UnitChecklistSheet({
             fontSize: 9,
             fontWeight: "700",
             letterSpacing: 1,
-            color: MUTED,
+            color: muted,
           }}
         >
           {t("preventive.sheet.unitsHeader", { count: total }).toUpperCase()}
@@ -404,7 +502,9 @@ export function UnitChecklistSheet({
             <ChecklistRow key={task.id} task={task} nowMs={nowMs} onSetStatus={onSetStatus} />
           ))}
           {total === 0 ? (
-            <Text style={{ paddingHorizontal: 18, paddingVertical: 16, fontSize: 11.5, color: MUTED }}>
+            <Text
+              style={{ paddingHorizontal: 18, paddingVertical: 16, fontSize: 11.5, color: muted }}
+            >
               {t("preventive.sheet.empty")}
             </Text>
           ) : null}
@@ -429,6 +529,8 @@ export function PreventiveBoard({
   onSetStatus: (taskId: string, status: PmTaskStatus) => void;
 }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
+  const bandInk = dark ? "rgba(255,255,255,0.72)" : "#4C556F";
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Resolved from props so store updates flow into the open sheet live.
   const selected = templates.find((template) => template.id === selectedId) ?? null;
@@ -452,7 +554,10 @@ export function PreventiveBoard({
         <Text className="text-navy dark:text-white" style={{ fontSize: 16, fontWeight: "700" }}>
           {t("preventive.emptyTitle")}
         </Text>
-        <Text className="text-muted dark:text-white/60" style={{ fontSize: 12.5, textAlign: "center" }}>
+        <Text
+          className="text-muted dark:text-white/60"
+          style={{ fontSize: 12.5, textAlign: "center" }}
+        >
           {t("preventive.emptyBody")}
         </Text>
       </View>
@@ -472,18 +577,37 @@ export function PreventiveBoard({
   return (
     <View>
       {bands.overdue.length > 0 ? (
-        <BandHeader label={t("preventive.bands.overdue", { count: bands.overdue.length })} color="#A32D2D" pad={pad} />
+        <BandHeader
+          label={t("preventive.bands.overdue", { count: bands.overdue.length })}
+          color="#A32D2D"
+          pad={pad}
+        />
       ) : null}
       {bands.overdue.map(renderRow)}
       {bands.current.length > 0 ? (
-        <BandHeader label={t("preventive.bands.thisRound", { count: bands.current.length })} color="#4C556F" pad={pad} />
+        <BandHeader
+          label={t("preventive.bands.thisRound", { count: bands.current.length })}
+          color={bandInk}
+          pad={pad}
+        />
       ) : null}
       {bands.current.map(renderRow)}
       {bands.upcoming.length > 0 ? (
-        <BandHeader label={t("preventive.bands.upcoming", { count: bands.upcoming.length })} color="#4C556F" pad={pad} />
+        <BandHeader
+          label={t("preventive.bands.upcoming", { count: bands.upcoming.length })}
+          color={bandInk}
+          pad={pad}
+        />
       ) : null}
       {bands.upcoming.map(renderRow)}
-      <Text style={{ paddingVertical: 14, textAlign: "center", fontSize: 10.5, color: MUTED }}>
+      <Text
+        style={{
+          paddingVertical: 14,
+          textAlign: "center",
+          fontSize: 10.5,
+          color: dark ? "rgba(255,255,255,0.5)" : MUTED,
+        }}
+      >
         {t("preventive.footer")}
       </Text>
 

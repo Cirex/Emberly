@@ -103,6 +103,7 @@ export default function WorkOrderDetail() {
   const paper = dark ? "#14181F" : "#FAF7F0";
   const ink = dark ? "#FFFFFF" : NAVY;
   const hairline = dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.08)";
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
 
   if (!wo) {
     return (
@@ -116,7 +117,7 @@ export default function WorkOrderDetail() {
           gap: 8,
         }}
       >
-        <Ionicons name="document-text-outline" size={28} color={MUTED} />
+        <Ionicons name="document-text-outline" size={28} color={muted} />
         <Text className="text-navy dark:text-white" style={{ fontSize: 15, fontWeight: "700" }}>
           {t("workOrders.detail.notFoundTitle")}
         </Text>
@@ -304,7 +305,7 @@ export default function WorkOrderDetail() {
               fontSize: 10,
               fontWeight: "700",
               letterSpacing: 1,
-              color: MUTED,
+              color: muted,
               paddingRight: 44,
             }}
           >
@@ -346,7 +347,7 @@ export default function WorkOrderDetail() {
                     width: 7,
                     height: 7,
                     borderRadius: 4,
-                    backgroundColor: occupancy === "Occupied" ? OCCUPIED_GREEN : MUTED,
+                    backgroundColor: occupancy === "Occupied" ? OCCUPIED_GREEN : muted,
                   }}
                 />
                 <Text
@@ -363,7 +364,7 @@ export default function WorkOrderDetail() {
             {occupiedDays !== null ? (
               <>
                 <Dot />
-                <Text style={{ fontSize: 12.5, color: MUTED }}>
+                <Text style={{ fontSize: 12.5, color: muted }}>
                   {t("workOrders.detail.occupiedDays", { count: occupiedDays })}
                 </Text>
               </>
@@ -514,7 +515,7 @@ export default function WorkOrderDetail() {
               </Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 }}>
                 <Text
-                  style={{ fontSize: 9.5, fontWeight: "700", letterSpacing: 0.8, color: MUTED }}
+                  style={{ fontSize: 9.5, fontWeight: "700", letterSpacing: 0.8, color: muted }}
                 >
                   ASSIGNED TECHNICIAN
                 </Text>
@@ -547,7 +548,7 @@ export default function WorkOrderDetail() {
             {descriptionShown.trim().length > 0 ? (
               <MarkdownLite text={descriptionShown} ink={ink} />
             ) : (
-              <Text style={{ fontSize: 12.5, color: MUTED }}>
+              <Text style={{ fontSize: 12.5, color: muted }}>
                 {t("workOrders.detail.noDescription")}
               </Text>
             )}
@@ -579,7 +580,7 @@ export default function WorkOrderDetail() {
             {completionNotesShown.trim().length > 0 ? (
               <MarkdownLite text={completionNotesShown} ink={ink} />
             ) : (
-              <Text style={{ fontSize: 12.5, color: MUTED }}>
+              <Text style={{ fontSize: 12.5, color: muted }}>
                 No technician notes yet. Tap to add.
               </Text>
             )}
@@ -603,7 +604,7 @@ export default function WorkOrderDetail() {
           flushBody
         >
           {related.length === 0 ? (
-            <Text style={{ fontSize: 12, color: MUTED, paddingHorizontal: 20 }}>
+            <Text style={{ fontSize: 12, color: muted, paddingHorizontal: 20 }}>
               No other work orders for this unit.
             </Text>
           ) : (
@@ -627,7 +628,7 @@ export default function WorkOrderDetail() {
                     width: 48,
                     fontSize: 11,
                     fontWeight: "800",
-                    color: MUTED,
+                    color: muted,
                     fontVariant: ["tabular-nums"],
                   }}
                 >
@@ -673,7 +674,7 @@ export default function WorkOrderDetail() {
                   style={{
                     fontSize: 11,
                     fontWeight: "600",
-                    color: MUTED,
+                    color: muted,
                     fontVariant: ["tabular-nums"],
                   }}
                 >
@@ -884,7 +885,12 @@ function isCallback(wo: ParsedWorkOrder): boolean {
 }
 
 function Dot() {
-  return <Text style={{ fontSize: 12, color: MUTED, opacity: 0.6 }}>·</Text>;
+  const dark = useColorScheme().colorScheme === "dark";
+  return (
+    <Text style={{ fontSize: 12, color: dark ? "rgba(255,255,255,0.5)" : MUTED, opacity: 0.6 }}>
+      ·
+    </Text>
+  );
 }
 
 /** Tag/status/signal chip — same anatomy as the My Day ChipTag, sized up a
@@ -900,6 +906,7 @@ function Chip({
   icon?: string;
   emphasized?: boolean;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View
       style={{
@@ -910,7 +917,11 @@ function Chip({
         paddingRight: 11,
         height: 26,
         borderRadius: 999,
-        backgroundColor: emphasized ? `${color}14` : "rgba(255,255,255,0.55)",
+        backgroundColor: emphasized
+          ? `${color}14`
+          : dark
+            ? "rgba(255,255,255,0.06)"
+            : "rgba(255,255,255,0.55)",
         borderWidth: 1,
         borderColor: `${color}4D`,
       }}
@@ -939,6 +950,8 @@ function Section({
   flushBody?: boolean;
   children: React.ReactNode;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   return (
     <View
       style={{
@@ -958,12 +971,12 @@ function Section({
             marginBottom: 11,
           }}
         >
-          <Text style={{ fontSize: 9.5, fontWeight: "800", letterSpacing: 0.9, color: MUTED }}>
+          <Text style={{ fontSize: 9.5, fontWeight: "800", letterSpacing: 0.9, color: muted }}>
             {label.toUpperCase()}
           </Text>
           {trailing ??
             (meta ? (
-              <Text style={{ fontSize: 10, fontWeight: "600", color: MUTED }}>{meta}</Text>
+              <Text style={{ fontSize: 10, fontWeight: "600", color: muted }}>{meta}</Text>
             ) : null)}
         </View>
       ) : null}
@@ -1021,6 +1034,8 @@ function OriginalReveal({
   t: (key: string) => string;
 }) {
   const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   return (
     <View style={{ marginTop: 9 }}>
       <Pressable
@@ -1038,10 +1053,10 @@ function OriginalReveal({
         <View
           style={{ marginTop: 7, borderLeftWidth: 2, borderLeftColor: hairline, paddingLeft: 11 }}
         >
-          <Text style={{ fontSize: 9, fontWeight: "800", letterSpacing: 0.8, color: MUTED }}>
+          <Text style={{ fontSize: 9, fontWeight: "800", letterSpacing: 0.8, color: muted }}>
             {t("translation.originalLabel").toUpperCase()}
           </Text>
-          <Text style={{ fontSize: 12, color: MUTED, marginTop: 3, lineHeight: 17 }}>
+          <Text style={{ fontSize: 12, color: muted, marginTop: 3, lineHeight: 17 }}>
             {original}
           </Text>
         </View>
@@ -1113,7 +1128,7 @@ function TechnicianPicker({
             fontSize: 9.5,
             fontWeight: "800",
             letterSpacing: 0.9,
-            color: MUTED,
+            color: dark ? "rgba(255,255,255,0.5)" : MUTED,
             paddingHorizontal: 20,
             paddingTop: 12,
             paddingBottom: 6,
@@ -1210,6 +1225,7 @@ function Journey({
 }) {
   const { t } = useTranslation();
   const palette = useAccentPalette();
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   // Reported is ResMan's record of when the resident called it in — not the
   // technician's to rewrite, so it is the one stop that doesn't respond.
   // `id` is the React key and stays in English: a translated label would change
@@ -1321,7 +1337,7 @@ function Journey({
                 fontSize: 9,
                 fontWeight: "800",
                 letterSpacing: 0.7,
-                color: MUTED,
+                color: muted,
                 marginTop: 8,
               }}
             >
@@ -1334,7 +1350,7 @@ function Journey({
                   fontWeight: filled ? "700" : "600",
                   // An editable stop that is still empty reads as an invitation
                   // (accent) rather than as missing data (grey).
-                  color: filled ? (dark ? "#FFFFFF" : NAVY) : s.onPress ? palette.text : MUTED,
+                  color: filled ? (dark ? "#FFFFFF" : NAVY) : s.onPress ? palette.text : muted,
                   fontVariant: ["tabular-nums"],
                 }}
               >
@@ -1344,7 +1360,7 @@ function Journey({
                 <Ionicons
                   name="chevron-down"
                   size={10}
-                  color={filled ? MUTED : palette.text}
+                  color={filled ? muted : palette.text}
                   style={{ marginTop: 1 }}
                 />
               ) : null}

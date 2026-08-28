@@ -68,6 +68,9 @@ export default function MyDayScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const dark = useColorScheme().colorScheme === "dark";
+  const hairline = dark ? "rgba(255,255,255,0.10)" : HAIRLINE;
+  const band = dark ? "rgba(255,255,255,0.04)" : BAND;
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
   const accentHexValue = useAccentHex();
 
   const admin = useConfig((s) => s.admin);
@@ -385,7 +388,7 @@ export default function MyDayScreen() {
               textAlign: "center",
               padding: 18,
               borderTopWidth: 1,
-              borderTopColor: HAIRLINE,
+              borderTopColor: hairline,
             }}
           >
             {staffName ? t("myDay.emptySignedIn") : t("myDay.emptySignedOut")}
@@ -426,10 +429,10 @@ export default function MyDayScreen() {
                     paddingHorizontal: pad,
                     paddingVertical: 10,
                     borderTopWidth: 1,
-                    borderTopColor: HAIRLINE,
+                    borderTopColor: hairline,
                     borderBottomWidth: doneOpen ? 0 : 1,
-                    borderBottomColor: HAIRLINE,
-                    backgroundColor: BAND,
+                    borderBottomColor: hairline,
+                    backgroundColor: band,
                   }}
                 >
                   <Ionicons name="checkmark" size={13} color={GREEN} />
@@ -451,7 +454,7 @@ export default function MyDayScreen() {
                   <Ionicons
                     name={doneOpen ? "chevron-up" : "chevron-down"}
                     size={12}
-                    color={MUTED}
+                    color={muted}
                   />
                 </Pressable>
                 {doneOpen
@@ -524,7 +527,7 @@ export default function MyDayScreen() {
               <RefreshControl
                 refreshing={rebuilding}
                 onRefresh={rebuildPath}
-                tintColor={MUTED}
+                tintColor={muted}
                 progressViewOffset={insets.top}
               />
             }
@@ -609,12 +612,13 @@ function Metric({
   tint?: string;
   divider?: boolean;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View
       style={{
         flex: 1,
         borderLeftWidth: divider ? 1 : 0,
-        borderLeftColor: HAIRLINE,
+        borderLeftColor: dark ? "rgba(255,255,255,0.10)" : HAIRLINE,
         paddingLeft: divider ? 16 : 0,
       }}
     >
@@ -624,7 +628,7 @@ function Metric({
           fontWeight: "800",
           letterSpacing: -0.5,
           fontVariant: ["tabular-nums"],
-          color: tint ?? NAVY,
+          color: tint ?? (dark ? "#FFFFFF" : NAVY),
         }}
       >
         {value}
@@ -775,6 +779,8 @@ function StopRow({
 }) {
   const palette = useAccentPalette();
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
+  const hairline = dark ? "rgba(255,255,255,0.10)" : HAIRLINE;
   // The stop cards ARE My Day — the expanded list below them was the only
   // thing translated, so a full cache changed nothing a tech actually looks at.
   const tr = useTranslated();
@@ -837,7 +843,10 @@ function StopRow({
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
             {emergency ? <ChipTag label={t("myDay.emergency")} color="#FFFFFF" bg={RED} /> : null}
             {emergency && primary.technicianDisplay === "Unassigned" ? (
-              <ChipTag label={t("myDay.unassignedPinned")} color={MUTED} />
+              <ChipTag
+                label={t("myDay.unassignedPinned")}
+                color={dark ? "rgba(255,255,255,0.5)" : MUTED}
+              />
             ) : null}
             {primary.tags.slice(0, 2).map((t) => (
               <ChipTag key={t} label={t} color={tagTint(t)} icon={tagIconName(t)} />
@@ -862,7 +871,7 @@ function StopRow({
       <Ionicons
         name="chevron-forward"
         size={13}
-        color="rgba(9,27,84,0.28)"
+        color={dark ? "rgba(255,255,255,0.3)" : "rgba(9,27,84,0.28)"}
         style={{ marginTop: upNext ? 18 : 4 }}
       />
     </>
@@ -872,7 +881,7 @@ function StopRow({
     <Pressable
       onPress={onOpen}
       accessibilityRole="button"
-      style={{ borderTopWidth: 1, borderTopColor: HAIRLINE }}
+      style={{ borderTopWidth: 1, borderTopColor: hairline }}
     >
       <LinearGradient
         colors={["rgba(37,99,180,0.10)", "rgba(37,99,180,0.02)", "rgba(37,99,180,0)"]}
@@ -902,7 +911,7 @@ function StopRow({
         paddingHorizontal: pad,
         paddingVertical: 11,
         borderTopWidth: 1,
-        borderTopColor: HAIRLINE,
+        borderTopColor: hairline,
         backgroundColor: "rgba(252,250,244,0.001)",
       }}
     >
@@ -949,6 +958,7 @@ function DoneRow({
   onOpen: () => void;
 }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
   // The stop cards ARE My Day — the expanded list below them was the only
   // thing translated, so a full cache changed nothing a tech actually looks at.
   const tr = useTranslated();
@@ -964,8 +974,8 @@ function DoneRow({
         paddingHorizontal: pad,
         paddingVertical: 11,
         borderTopWidth: 1,
-        borderTopColor: HAIRLINE,
-        backgroundColor: BAND,
+        borderTopColor: dark ? "rgba(255,255,255,0.10)" : HAIRLINE,
+        backgroundColor: dark ? "rgba(255,255,255,0.04)" : BAND,
       }}
     >
       <Pressable
@@ -987,7 +997,7 @@ function DoneRow({
       </Pressable>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text
-          className="text-muted"
+          className="text-muted dark:text-white/50"
           style={{ fontSize: 13.5, fontWeight: "800", textDecorationLine: "line-through" }}
         >
           {stop.unitNumber}
@@ -996,7 +1006,7 @@ function DoneRow({
             : ""}
         </Text>
         <Text
-          className="text-muted"
+          className="text-muted dark:text-white/50"
           numberOfLines={1}
           style={{ fontSize: 12.5, marginTop: 1, textDecorationLine: "line-through" }}
         >
@@ -1004,7 +1014,7 @@ function DoneRow({
         </Text>
         <Text style={{ fontSize: 10, fontWeight: "700", color: GREEN, marginTop: 3 }}>
           {t("myDay.closedLine")}{" "}
-          <Text style={{ color: MUTED, fontWeight: "600" }}>
+          <Text style={{ color: dark ? "rgba(255,255,255,0.5)" : MUTED, fontWeight: "600" }}>
             · {t(delivered ? "myDay.savedToResman" : "myDay.syncingToResman")}
           </Text>
         </Text>
@@ -1076,6 +1086,7 @@ const QueueRow = memo(function QueueRow({
   onAdd: (wo: ParsedWorkOrder) => void;
 }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
   // Lists showed raw ResMan prose, so a full translation cache changed nothing
   // outside the detail screen — the feature looked dead from My Day.
   const tr = useTranslated();
@@ -1103,7 +1114,7 @@ const QueueRow = memo(function QueueRow({
           paddingHorizontal: pad,
           paddingVertical: 12,
           borderTopWidth: 1,
-          borderTopColor: HAIRLINE,
+          borderTopColor: dark ? "rgba(255,255,255,0.10)" : HAIRLINE,
           backgroundColor: "rgba(252,250,244,0.001)",
         }}
       >

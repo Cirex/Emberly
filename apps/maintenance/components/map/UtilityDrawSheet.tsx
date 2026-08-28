@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useColorScheme } from "nativewind";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,8 +15,16 @@ const MUTED = "#70788F";
 export type UtilityDrawSubMode = "pin" | "line";
 
 function SectionLabel({ children }: { children: string }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
-    <Text style={{ fontSize: 9, fontWeight: "800", letterSpacing: 1, color: MUTED }}>
+    <Text
+      style={{
+        fontSize: 9,
+        fontWeight: "800",
+        letterSpacing: 1,
+        color: dark ? "rgba(255,255,255,0.5)" : MUTED,
+      }}
+    >
       {children.toUpperCase()}
     </Text>
   );
@@ -64,6 +73,9 @@ export function UtilityDrawSheet({
 }) {
   const palette = useAccentPalette();
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
+  const ink = dark ? "#FFFFFF" : NAVY;
+  const slate = dark ? "rgba(255,255,255,0.72)" : "#4C556F";
   const insets = useSafeAreaInsets();
   const line = subMode === "line";
   const canFinish = line && points.length >= 2;
@@ -79,7 +91,7 @@ export function UtilityDrawSheet({
     >
       <View
         style={{
-          backgroundColor: "rgba(250,247,240,0.985)",
+          backgroundColor: dark ? "rgba(28,33,41,0.985)" : "rgba(250,247,240,0.985)",
           borderRadius: 22,
           paddingBottom: 12,
           shadowColor: "#091B54",
@@ -89,20 +101,44 @@ export function UtilityDrawSheet({
         }}
       >
         <View style={{ alignItems: "center", paddingTop: 8 }}>
-          <View style={{ width: 34, height: 4, borderRadius: 2, backgroundColor: "rgba(9,27,84,0.16)" }} />
+          <View
+            style={{
+              width: 34,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: dark ? "rgba(255,255,255,0.18)" : "rgba(9,27,84,0.16)",
+            }}
+          />
         </View>
 
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 18, paddingTop: 8 }}>
-          <Text style={{ flex: 1, fontSize: 15, fontWeight: "800", letterSpacing: -0.2, color: NAVY }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            paddingHorizontal: 18,
+            paddingTop: 8,
+          }}
+        >
+          <Text
+            style={{ flex: 1, fontSize: 15, fontWeight: "800", letterSpacing: -0.2, color: ink }}
+          >
             {line ? t("utility.newRun") : t("utility.newPin")}
           </Text>
           <Pressable
             onPress={onCancel}
             accessibilityRole="button"
             accessibilityLabel={t("utility.cancel")}
-            style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: "rgba(9,27,84,0.06)", alignItems: "center", justifyContent: "center" }}
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 13,
+              backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.06)",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
-            <Ionicons name="close" size={13} color="#4C556F" />
+            <Ionicons name="close" size={13} color={slate} />
           </Pressable>
         </View>
 
@@ -117,7 +153,14 @@ export function UtilityDrawSheet({
                   selected={utilityType === type}
                   onPress={() => onSelectType(type)}
                   preview={
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: UTILITY_COLORS[type] }} />
+                    <View
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: UTILITY_COLORS[type],
+                      }}
+                    />
                   }
                 />
               ))}
@@ -129,7 +172,11 @@ export function UtilityDrawSheet({
               <View style={{ gap: 6 }}>
                 <SectionLabel>{t("utility.lineSection")}</SectionLabel>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <StyleRow value={lineStyle} color={UTILITY_COLORS[utilityType]} onChange={onSelectStyle} />
+                  <StyleRow
+                    value={lineStyle}
+                    color={UTILITY_COLORS[utilityType]}
+                    onChange={onSelectStyle}
+                  />
                   <WeightRow value={lineWeight} onChange={onSelectWeight} />
                 </View>
               </View>
@@ -149,13 +196,17 @@ export function UtilityDrawSheet({
                   gap: 8,
                   paddingTop: 8,
                   borderTopWidth: 1,
-                  borderTopColor: "rgba(9,27,84,0.08)",
+                  borderTopColor: dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.08)",
                 }}
               >
-                <Text style={{ flex: 1, fontSize: 11.5, color: "#4C556F", fontVariant: ["tabular-nums"] }}>
+                <Text
+                  style={{ flex: 1, fontSize: 11.5, color: slate, fontVariant: ["tabular-nums"] }}
+                >
                   {points.length === 0
                     ? t("utility.lineHint")
-                    : [t("utility.pointCount", { count: points.length }), length].filter(Boolean).join(" · ")}
+                    : [t("utility.pointCount", { count: points.length }), length]
+                        .filter(Boolean)
+                        .join(" · ")}
                 </Text>
                 <Pressable
                   onPress={onUndo}
@@ -165,11 +216,13 @@ export function UtilityDrawSheet({
                     borderRadius: 999,
                     paddingHorizontal: 14,
                     paddingVertical: 7,
-                    backgroundColor: "rgba(9,27,84,0.06)",
+                    backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.06)",
                     opacity: points.length === 0 ? 0.4 : 1,
                   }}
                 >
-                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#4C556F" }}>{t("utility.undo")}</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: slate }}>
+                    {t("utility.undo")}
+                  </Text>
                 </Pressable>
                 <Pressable
                   onPress={onFinish}
@@ -183,12 +236,14 @@ export function UtilityDrawSheet({
                     opacity: canFinish ? 1 : 0.4,
                   }}
                 >
-                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#FFFFFF" }}>{t("utility.finish")}</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#FFFFFF" }}>
+                    {t("utility.finish")}
+                  </Text>
                 </Pressable>
               </View>
             </>
           ) : (
-            <Text style={{ fontSize: 11.5, color: "#4C556F" }}>{t("utility.pinHint")}</Text>
+            <Text style={{ fontSize: 11.5, color: slate }}>{t("utility.pinHint")}</Text>
           )}
         </View>
       </View>

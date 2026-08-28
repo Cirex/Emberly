@@ -37,7 +37,13 @@ import { useLocalSearchParams, useFocusEffect } from "expo-router";
 import { useMyDay } from "@/lib/stores/my-day";
 import { useTour } from "@/lib/stores/tour";
 import { useUnits } from "@/lib/stores/units";
-import { CLASSIFICATION_TINT, MUTED, STATUS_TINT, HEADER_TOP_PAD, screenHPad } from "@/theme/tokens";
+import {
+  CLASSIFICATION_TINT,
+  MUTED,
+  STATUS_TINT,
+  HEADER_TOP_PAD,
+  screenHPad,
+} from "@/theme/tokens";
 import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 const OCC_TINT: Record<string, string> = {
@@ -102,8 +108,9 @@ export default function PropertyMapScreen() {
   /** Drawn runs on the layer (hidden ones included — they still exist). */
   const runCount = useMemo(
     () =>
-      ann.annotations.filter((a) => !a.removed && a.kind === "utility_line" && (a.points?.length ?? 0) >= 2)
-        .length,
+      ann.annotations.filter(
+        (a) => !a.removed && a.kind === "utility_line" && (a.points?.length ?? 0) >= 2,
+      ).length,
     [ann.annotations],
   );
   // Tour Mode (TourRoute.swift): while armed, unit taps toggle stops instead
@@ -188,7 +195,12 @@ export default function PropertyMapScreen() {
       groupsEnabled
         ? groups
             .filter((g) => g.visible)
-            .map((g) => ({ key: g.id, label: g.name, color: g.colorHex, count: groupPaint.counts.get(g.id) ?? 0 }))
+            .map((g) => ({
+              key: g.id,
+              label: g.name,
+              color: g.colorHex,
+              count: groupPaint.counts.get(g.id) ?? 0,
+            }))
         : [],
     [groupsEnabled, groups, groupPaint],
   );
@@ -225,7 +237,9 @@ export default function PropertyMapScreen() {
   const jumpSeq = useMapJump((s) => s.seq);
   const consumeJump = useMapJump((s) => s.consume);
   const requestJump = useMapJump((s) => s.request);
-  const [focusTarget, setFocusTarget] = useState<{ x: number; y: number; seq: number } | undefined>();
+  const [focusTarget, setFocusTarget] = useState<
+    { x: number; y: number; seq: number } | undefined
+  >();
   // Consume only while FOCUSED: the tab stays mounted in the background, so
   // without the gate a backgrounded map ate the jump the moment it was
   // requested and the selection/tooltip was gone by the time the screen
@@ -376,12 +390,16 @@ export default function PropertyMapScreen() {
         alignItems: "center",
         justifyContent: "center",
         borderTopWidth: first ? 0 : 1,
-        borderTopColor: "rgba(9,27,84,0.09)",
+        borderTopColor: darkScheme ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.09)",
         backgroundColor: active ? `${palette.fill}38` : "transparent",
         opacity: disabled ? 0.4 : 1,
       }}
     >
-      <Ionicons name={icon} size={18} color={active ? palette.text : "#3E4763"} />
+      <Ionicons
+        name={icon}
+        size={18}
+        color={active ? palette.text : darkScheme ? "rgba(255,255,255,0.72)" : "#3E4763"}
+      />
       {badge ? (
         <View
           pointerEvents="none"
@@ -410,7 +428,9 @@ export default function PropertyMapScreen() {
           floats over it. */}
       <View
         style={StyleSheet.absoluteFill}
-        onLayout={(e) => setCanvas({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+        onLayout={(e) =>
+          setCanvas({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })
+        }
       >
         <SkiaMapCanvas
           width={canvas.w}
@@ -468,12 +488,20 @@ export default function PropertyMapScreen() {
           chrome and the tab bar, so both read cleanly at any zoom. */}
       <LinearGradient
         pointerEvents="none"
-        colors={darkScheme ? ["rgba(0,0,0,0.62)", "rgba(0,0,0,0)"] : ["rgba(9,27,84,0.30)", "rgba(9,27,84,0)"]}
+        colors={
+          darkScheme
+            ? ["rgba(0,0,0,0.62)", "rgba(0,0,0,0)"]
+            : ["rgba(9,27,84,0.30)", "rgba(9,27,84,0)"]
+        }
         style={{ position: "absolute", top: 0, left: 0, right: 0, height: insets.top + 118 }}
       />
       <LinearGradient
         pointerEvents="none"
-        colors={darkScheme ? ["rgba(0,0,0,0)", "rgba(0,0,0,0.66)"] : ["rgba(9,27,84,0)", "rgba(9,27,84,0.34)"]}
+        colors={
+          darkScheme
+            ? ["rgba(0,0,0,0)", "rgba(0,0,0,0.66)"]
+            : ["rgba(9,27,84,0)", "rgba(9,27,84,0.34)"]
+        }
         style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: insets.bottom + 132 }}
       />
 
@@ -481,7 +509,13 @@ export default function PropertyMapScreen() {
           the tab bar), then a single vertical glass control stack. */}
       <View
         pointerEvents="box-none"
-        style={{ position: "absolute", top: insets.top + HEADER_TOP_PAD, left: hPad, right: hPad, gap: 10 }}
+        style={{
+          position: "absolute",
+          top: insets.top + HEADER_TOP_PAD,
+          left: hPad,
+          right: hPad,
+          gap: 10,
+        }}
       >
         <View pointerEvents="box-none" className="flex-row" style={{ justifyContent: "flex-end" }}>
           <AccountMenu />
@@ -541,10 +575,17 @@ export default function PropertyMapScreen() {
           <View pointerEvents="none" style={{ alignItems: "center" }}>
             <View
               className="bg-navy"
-              style={{ borderRadius: 999, paddingHorizontal: 16, paddingVertical: 8, opacity: 0.92 }}
+              style={{
+                borderRadius: 999,
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                opacity: 0.92,
+              }}
             >
               <Text style={{ color: "#FFFFFF", fontSize: 13, fontWeight: "600" }}>
-                {placeMode === "annotate" ? "Tap the map to drop a pin" : "Tap units to add tour stops"}
+                {placeMode === "annotate"
+                  ? "Tap the map to drop a pin"
+                  : "Tap units to add tour stops"}
               </Text>
             </View>
           </View>
@@ -559,7 +600,12 @@ export default function PropertyMapScreen() {
             <Pressable onPress={() => setUtilityHubOpen(true)} accessibilityRole="button">
               <Text
                 className="text-navy dark:text-white"
-                style={{ paddingHorizontal: 13, paddingVertical: 7, fontSize: 11, fontWeight: "800" }}
+                style={{
+                  paddingHorizontal: 13,
+                  paddingVertical: 7,
+                  fontSize: 11,
+                  fontWeight: "800",
+                }}
               >
                 {t("utility.titleWithCount", { count: runCount })}
               </Text>
@@ -614,13 +660,21 @@ export default function PropertyMapScreen() {
 
       {/* Legend — quiet glass card, bottom-left, only while the tint is on. */}
       {hasData && groupsEnabled && legend.length > 0 && !hasQuery && placeMode === "none" ? (
-        <View pointerEvents="none" style={{ position: "absolute", left: hPad, bottom: insets.bottom + 118 }}>
+        <View
+          pointerEvents="none"
+          style={{ position: "absolute", left: hPad, bottom: insets.bottom + 118 }}
+        >
           <GlassSurface radius={14}>
             <View style={{ paddingHorizontal: 12, paddingVertical: 9, gap: 6 }}>
               {legend.map((l) => (
                 <View key={l.key} className="flex-row items-center" style={{ gap: 6 }}>
-                  <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: l.color }} />
-                  <Text className="text-slate dark:text-white/70" style={{ fontSize: 11, fontWeight: "600" }}>
+                  <View
+                    style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: l.color }}
+                  />
+                  <Text
+                    className="text-slate dark:text-white/70"
+                    style={{ fontSize: 11, fontWeight: "600" }}
+                  >
                     {l.label}
                   </Text>
                   <Text
@@ -675,11 +729,18 @@ export default function PropertyMapScreen() {
       />
 
       {utilityAction ? (
-        <UtilityAnnotationDialog annotation={utilityAction} onClose={() => setUtilityActionId(undefined)} />
+        <UtilityAnnotationDialog
+          annotation={utilityAction}
+          onClose={() => setUtilityActionId(undefined)}
+        />
       ) : null}
 
       {tagEditUnit ? (
-        <TagEditorDialog unitNumber={tagEditUnit} config={config} onClose={() => setTagEditUnit(undefined)} />
+        <TagEditorDialog
+          unitNumber={tagEditUnit}
+          config={config}
+          onClose={() => setTagEditUnit(undefined)}
+        />
       ) : null}
 
       {/* Leaf modal like FilterSheet — reads the tour store itself; locate
@@ -715,6 +776,8 @@ function UnitTooltipCard({
   tags: UnitTag[];
   onEditTags: () => void;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
+  const factBorder = dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.10)";
   const withAlpha = (hex: string, a: number) => {
     const n = parseInt(hex.replace("#", ""), 16);
     return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
@@ -729,7 +792,11 @@ function UnitTooltipCard({
     CLASSIFICATION_TINT[classification.toLowerCase() as keyof typeof CLASSIFICATION_TINT];
   const group = data ? occupancyGroup(data) : undefined;
   const statusLabel = group ?? (data ? "Unknown" : "No data");
-  const occupant = data ? (data.tenant_names.length ? data.tenant_names.join(", ") : "Unoccupied") : "—";
+  const occupant = data
+    ? data.tenant_names.length
+      ? data.tenant_names.join(", ")
+      : "Unoccupied"
+    : "—";
   const subline = [unit.number, locality].filter(Boolean).join(" · ");
 
   return (
@@ -746,27 +813,59 @@ function UnitTooltipCard({
       {/* Leading accent stripe, tinted by occupancy. */}
       <View
         pointerEvents="none"
-        style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, backgroundColor: tint, zIndex: 2 }}
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 4,
+          backgroundColor: tint,
+          zIndex: 2,
+        }}
       />
 
       {/* Header: icon disc + address + occupancy status line. */}
-      <View className="flex-row items-start" style={{ gap: 10, paddingVertical: 12, paddingLeft: 15, paddingRight: 13 }}>
+      <View
+        className="flex-row items-start"
+        style={{ gap: 10, paddingVertical: 12, paddingLeft: 15, paddingRight: 13 }}
+      >
         <View
           className="items-center justify-center"
-          style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: withAlpha(tint, 0.16) }}
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 11,
+            backgroundColor: withAlpha(tint, 0.16),
+          }}
         >
           <Ionicons name="business" size={16} color={tint} />
         </View>
         <View style={{ flex: 1, gap: 1 }}>
-          <Text className="text-navy dark:text-white" style={{ fontSize: 13, fontWeight: "800", letterSpacing: -0.2 }} numberOfLines={1}>
+          <Text
+            className="text-navy dark:text-white"
+            style={{ fontSize: 13, fontWeight: "800", letterSpacing: -0.2 }}
+            numberOfLines={1}
+          >
             {data?.street?.trim() || unit.number}
           </Text>
-          <Text className="text-slate dark:text-white/55" style={{ fontSize: 11, fontWeight: "600" }} numberOfLines={1}>
+          <Text
+            className="text-slate dark:text-white/55"
+            style={{ fontSize: 11, fontWeight: "600" }}
+            numberOfLines={1}
+          >
             {subline}
           </Text>
           <View className="flex-row items-center" style={{ gap: 5, marginTop: 3 }}>
             <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: tint }} />
-            <Text style={{ fontSize: 10.5, fontWeight: "800", color: tint, textTransform: "uppercase", letterSpacing: 0.3 }}>
+            <Text
+              style={{
+                fontSize: 10.5,
+                fontWeight: "800",
+                color: tint,
+                textTransform: "uppercase",
+                letterSpacing: 0.3,
+              }}
+            >
               {statusLabel}
             </Text>
           </View>
@@ -780,7 +879,7 @@ function UnitTooltipCard({
           borderRadius: 12,
           overflow: "hidden",
           borderWidth: 1,
-          borderColor: "rgba(9,27,84,0.10)",
+          borderColor: factBorder,
         }}
       >
         <View className="flex-row">
@@ -788,16 +887,29 @@ function UnitTooltipCard({
             k="Classification"
             v={classification}
             vColor={classTint}
-            style={{ flex: 1, borderRightWidth: 1, borderColor: "rgba(9,27,84,0.10)" }}
+            style={{ flex: 1, borderRightWidth: 1, borderColor: factBorder }}
           />
           <TooltipFact k="Layout" v={layout} style={{ flex: 1 }} />
         </View>
-        <TooltipFact k="Occupant" v={occupant} style={{ borderTopWidth: 1, borderColor: "rgba(9,27,84,0.10)" }} />
+        <TooltipFact
+          k="Occupant"
+          v={occupant}
+          style={{ borderTopWidth: 1, borderColor: factBorder }}
+        />
       </View>
 
       {/* Shared tags — read here, edit in the tag sheet (synced to every device). */}
       <View style={{ paddingHorizontal: 15, paddingTop: 12, paddingBottom: 14 }}>
-        <Text className="text-slate dark:text-white/50" style={{ fontSize: 9, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 7 }}>
+        <Text
+          className="text-slate dark:text-white/50"
+          style={{
+            fontSize: 9,
+            fontWeight: "700",
+            letterSpacing: 0.5,
+            textTransform: "uppercase",
+            marginBottom: 7,
+          }}
+        >
           Tags · shared
         </Text>
         <View className="flex-row items-center" style={{ gap: 6, flexWrap: "wrap" }}>
@@ -817,10 +929,18 @@ function UnitTooltipCard({
                   borderColor: withAlpha(t.colorHex, 0.4),
                 }}
               >
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: t.colorHex }} />
-                <Text style={{ fontSize: 10.5, fontWeight: "600", color: t.colorHex }}>{t.label}</Text>
+                <View
+                  style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: t.colorHex }}
+                />
+                <Text style={{ fontSize: 10.5, fontWeight: "600", color: t.colorHex }}>
+                  {t.label}
+                </Text>
                 {badge ? (
-                  <Text style={{ fontSize: 9, fontWeight: "700", color: t.colorHex, opacity: 0.75 }}>· {badge}</Text>
+                  <Text
+                    style={{ fontSize: 9, fontWeight: "700", color: t.colorHex, opacity: 0.75 }}
+                  >
+                    · {badge}
+                  </Text>
                 ) : null}
               </View>
             );
@@ -829,10 +949,20 @@ function UnitTooltipCard({
             onPress={onEditTags}
             hitSlop={6}
             className="flex-row items-center"
-            style={{ gap: 3, paddingVertical: 3, paddingHorizontal: 9, borderRadius: 999, borderWidth: 1, borderStyle: "dashed", borderColor: withAlpha(tint, 0.45) }}
+            style={{
+              gap: 3,
+              paddingVertical: 3,
+              paddingHorizontal: 9,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderStyle: "dashed",
+              borderColor: withAlpha(tint, 0.45),
+            }}
           >
             <Ionicons name={tags.length ? "pricetags" : "add"} size={10} color={tint} />
-            <Text style={{ fontSize: 10.5, fontWeight: "700", color: tint }}>{tags.length ? "Edit" : "Add tag"}</Text>
+            <Text style={{ fontSize: 10.5, fontWeight: "700", color: tint }}>
+              {tags.length ? "Edit" : "Add tag"}
+            </Text>
           </Pressable>
         </View>
       </View>
@@ -852,17 +982,37 @@ function TooltipFact({
   vColor?: string;
   style?: object;
 }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
-    <View style={[{ paddingVertical: 7, paddingHorizontal: 11, backgroundColor: "rgba(246,244,235,0.45)" }, style]}>
-      <Text className="text-slate dark:text-white/50" style={{ fontSize: 9, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase" }}>
+    <View
+      style={[
+        {
+          paddingVertical: 7,
+          paddingHorizontal: 11,
+          backgroundColor: dark ? "rgba(255,255,255,0.05)" : "rgba(246,244,235,0.45)",
+        },
+        style,
+      ]}
+    >
+      <Text
+        className="text-slate dark:text-white/50"
+        style={{ fontSize: 9, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase" }}
+      >
         {k}
       </Text>
       {vColor ? (
-        <Text style={{ fontSize: 12, fontWeight: "700", color: vColor, marginTop: 1 }} numberOfLines={1}>
+        <Text
+          style={{ fontSize: 12, fontWeight: "700", color: vColor, marginTop: 1 }}
+          numberOfLines={1}
+        >
           {v}
         </Text>
       ) : (
-        <Text className="text-navy dark:text-white" style={{ fontSize: 12, fontWeight: "700", marginTop: 1 }} numberOfLines={1}>
+        <Text
+          className="text-navy dark:text-white"
+          style={{ fontSize: 12, fontWeight: "700", marginTop: 1 }}
+          numberOfLines={1}
+        >
           {v}
         </Text>
       )}
@@ -870,7 +1020,16 @@ function TooltipFact({
   );
 }
 
-function OverlayCard({ children, hPad, row }: { children: React.ReactNode; hPad: number; row?: boolean }) {
+function OverlayCard({
+  children,
+  hPad,
+  row,
+}: {
+  children: React.ReactNode;
+  hPad: number;
+  row?: boolean;
+}) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View style={{ position: "absolute", left: hPad, right: hPad, bottom: 96 }}>
       <View
@@ -878,7 +1037,7 @@ function OverlayCard({ children, hPad, row }: { children: React.ReactNode; hPad:
         style={{
           borderRadius: 18,
           borderWidth: 1,
-          borderColor: "rgba(9,27,84,0.10)",
+          borderColor: dark ? "rgba(255,255,255,0.10)" : "rgba(9,27,84,0.10)",
           padding: 16,
           gap: 12,
           flexDirection: row ? "row" : "column",
@@ -895,26 +1054,71 @@ function OverlayCard({ children, hPad, row }: { children: React.ReactNode; hPad:
   );
 }
 
-function Stepper({ label, value, onDown, onUp }: { label: string; value: string; onDown: () => void; onUp: () => void }) {
+function Stepper({
+  label,
+  value,
+  onDown,
+  onUp,
+}: {
+  label: string;
+  value: string;
+  onDown: () => void;
+  onUp: () => void;
+}) {
+  const dark = useColorScheme().colorScheme === "dark";
+  const stepFill = dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.06)";
+  const stepInk = dark ? "rgba(255,255,255,0.72)" : "#4C556F";
   return (
     <View className="flex-row items-center" style={{ gap: 6 }}>
-      <Text className="text-muted" style={{ fontSize: 12, width: 42 }}>{label}</Text>
-      <Pressable onPress={onDown} className="items-center justify-center" style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "rgba(9,27,84,0.06)" }}>
-        <Ionicons name="remove" size={16} color="#4C556F" />
+      <Text className="text-muted dark:text-white/50" style={{ fontSize: 12, width: 42 }}>
+        {label}
+      </Text>
+      <Pressable
+        onPress={onDown}
+        className="items-center justify-center"
+        style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: stepFill }}
+      >
+        <Ionicons name="remove" size={16} color={stepInk} />
       </Pressable>
-      <Text className="text-navy dark:text-white" style={{ fontSize: 13, fontWeight: "600", minWidth: 34, textAlign: "center" }}>{value}</Text>
-      <Pressable onPress={onUp} className="items-center justify-center" style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: "rgba(9,27,84,0.06)" }}>
-        <Ionicons name="add" size={16} color="#4C556F" />
+      <Text
+        className="text-navy dark:text-white"
+        style={{ fontSize: 13, fontWeight: "600", minWidth: 34, textAlign: "center" }}
+      >
+        {value}
+      </Text>
+      <Pressable
+        onPress={onUp}
+        className="items-center justify-center"
+        style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: stepFill }}
+      >
+        <Ionicons name="add" size={16} color={stepInk} />
       </Pressable>
     </View>
   );
 }
 
-function EditorFooter({ onDelete, onDone, inline }: { onDelete: () => void; onDone: () => void; inline?: boolean }) {
+function EditorFooter({
+  onDelete,
+  onDone,
+  inline,
+}: {
+  onDelete: () => void;
+  onDone: () => void;
+  inline?: boolean;
+}) {
   return (
-    <View className="flex-row items-center" style={{ gap: 16, justifyContent: inline ? "flex-end" : "flex-end" }}>
-      <Pressable onPress={onDelete}><Text style={{ color: "#D1382E", fontSize: 15, fontWeight: "700" }}>Delete</Text></Pressable>
-      <Pressable onPress={onDone}><Text className="text-olive-dark" style={{ fontSize: 15, fontWeight: "700" }}>Done</Text></Pressable>
+    <View
+      className="flex-row items-center"
+      style={{ gap: 16, justifyContent: inline ? "flex-end" : "flex-end" }}
+    >
+      <Pressable onPress={onDelete}>
+        <Text style={{ color: "#D1382E", fontSize: 15, fontWeight: "700" }}>Delete</Text>
+      </Pressable>
+      <Pressable onPress={onDone}>
+        <Text className="text-olive-dark" style={{ fontSize: 15, fontWeight: "700" }}>
+          Done
+        </Text>
+      </Pressable>
     </View>
   );
 }

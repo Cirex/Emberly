@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useColorScheme } from "nativewind";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -13,7 +14,16 @@ const NAVY = "#091B54";
 const MUTED = "#70788F";
 const HAIRLINE = "rgba(9,27,84,0.08)";
 
-const PALETTE = ["#E24B4A", "#EF9F27", "#97C459", "#1D9E75", "#378ADD", "#7F77DD", "#D4537E", "#888780"];
+const PALETTE = [
+  "#E24B4A",
+  "#EF9F27",
+  "#97C459",
+  "#1D9E75",
+  "#378ADD",
+  "#7F77DD",
+  "#D4537E",
+  "#888780",
+];
 
 /**
  * The Color groups sheet (approved mockup): list of groups — swatch, name,
@@ -35,6 +45,12 @@ export function GroupsSheet({
 }) {
   const palette = useAccentPalette();
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
+  const ink = dark ? "#FFFFFF" : NAVY;
+  const muted = dark ? "rgba(255,255,255,0.5)" : MUTED;
+  const slate = dark ? "rgba(255,255,255,0.72)" : "#4C556F";
+  const hairline = dark ? "rgba(255,255,255,0.10)" : HAIRLINE;
+  const quietFill = dark ? "rgba(255,255,255,0.06)" : "rgba(9,27,84,0.05)";
   const insets = useSafeAreaInsets();
   const store = useMapGroups();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -42,7 +58,11 @@ export function GroupsSheet({
   // Frozen per open — the live match count shouldn't drift mid-edit.
   const nowMs = useMemo(() => Date.now(), [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const setCondition = (group: MapFilterGroup, kind: GroupCondition["kind"], next: GroupCondition | null) => {
+  const setCondition = (
+    group: MapFilterGroup,
+    kind: GroupCondition["kind"],
+    next: GroupCondition | null,
+  ) => {
     const rest = group.conditions.filter((c) => c.kind !== kind);
     store.update(group.id, { conditions: next ? [...rest, next] : rest });
   };
@@ -60,21 +80,41 @@ export function GroupsSheet({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: "rgba(9,27,84,0.30)", justifyContent: "flex-end" }}>
-        <Pressable style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0 }} onPress={onClose} />
+        <Pressable
+          style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0 }}
+          onPress={onClose}
+        />
         <View
           style={{
             maxHeight: "82%",
-            backgroundColor: "rgba(250,247,240,0.99)",
+            backgroundColor: dark ? "#1C2129" : "rgba(250,247,240,0.99)",
             borderTopLeftRadius: 24,
             borderTopRightRadius: 24,
             paddingBottom: insets.bottom + 10,
           }}
         >
           <View style={{ alignItems: "center", paddingTop: 8 }}>
-            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: "rgba(9,27,84,0.15)" }} />
+            <View
+              style={{
+                width: 36,
+                height: 4,
+                borderRadius: 2,
+                backgroundColor: dark ? "rgba(255,255,255,0.18)" : "rgba(9,27,84,0.15)",
+              }}
+            />
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 18, paddingTop: 10, paddingBottom: 4 }}>
-            <Text style={{ flex: 1, fontSize: 17, fontWeight: "800", letterSpacing: -0.3, color: NAVY }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 18,
+              paddingTop: 10,
+              paddingBottom: 4,
+            }}
+          >
+            <Text
+              style={{ flex: 1, fontSize: 17, fontWeight: "800", letterSpacing: -0.3, color: ink }}
+            >
               {t("mapGroups.title")}
             </Text>
             {/* Master switch: paint the map by groups, or leave it plain. */}
@@ -90,25 +130,32 @@ export function GroupsSheet({
                 alignItems: "center",
                 justifyContent: "center",
                 marginRight: 6,
-                backgroundColor: store.enabled ? `${palette.fill}24` : "rgba(9,27,84,0.05)",
+                backgroundColor: store.enabled ? `${palette.fill}24` : quietFill,
               }}
             >
               <Ionicons
                 name={store.enabled ? "eye-outline" : "eye-off-outline"}
                 size={14}
-                color={store.enabled ? "#767B24" : "#70788F"}
+                color={store.enabled ? "#767B24" : muted}
               />
             </Pressable>
             <Pressable
               onPress={onClose}
               accessibilityRole="button"
               accessibilityLabel={t("mapGroups.close")}
-              style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(9,27,84,0.06)", alignItems: "center", justifyContent: "center" }}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.06)",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
             >
-              <Ionicons name="close" size={15} color="#4C556F" />
+              <Ionicons name="close" size={15} color={slate} />
             </Pressable>
           </View>
-          <Text style={{ paddingHorizontal: 18, paddingBottom: 8, fontSize: 11, color: MUTED }}>
+          <Text style={{ paddingHorizontal: 18, paddingBottom: 8, fontSize: 11, color: muted }}>
             {t("mapGroups.priorityHint")}
           </Text>
 
@@ -125,12 +172,23 @@ export function GroupsSheet({
                     paddingHorizontal: 18,
                     paddingVertical: 11,
                     borderTopWidth: 1,
-                    borderTopColor: HAIRLINE,
+                    borderTopColor: hairline,
                   }}
                 >
                   <View style={{ gap: 2 }}>
-                    <Pressable hitSlop={6} disabled={i === 0} onPress={() => store.move(g.id, -1)} accessibilityLabel={t("mapGroups.moveUp")}>
-                      <Ionicons name="chevron-up" size={13} color={i === 0 ? "rgba(9,27,84,0.15)" : MUTED} />
+                    <Pressable
+                      hitSlop={6}
+                      disabled={i === 0}
+                      onPress={() => store.move(g.id, -1)}
+                      accessibilityLabel={t("mapGroups.moveUp")}
+                    >
+                      <Ionicons
+                        name="chevron-up"
+                        size={13}
+                        color={
+                          i === 0 ? (dark ? "rgba(255,255,255,0.18)" : "rgba(9,27,84,0.15)") : muted
+                        }
+                      />
                     </Pressable>
                     <Pressable
                       hitSlop={6}
@@ -138,12 +196,34 @@ export function GroupsSheet({
                       onPress={() => store.move(g.id, 1)}
                       accessibilityLabel={t("mapGroups.moveDown")}
                     >
-                      <Ionicons name="chevron-down" size={13} color={i === store.groups.length - 1 ? "rgba(9,27,84,0.15)" : MUTED} />
+                      <Ionicons
+                        name="chevron-down"
+                        size={13}
+                        color={
+                          i === store.groups.length - 1
+                            ? dark
+                              ? "rgba(255,255,255,0.18)"
+                              : "rgba(9,27,84,0.15)"
+                            : muted
+                        }
+                      />
                     </Pressable>
                   </View>
-                  <View style={{ width: 22, height: 22, borderRadius: 7, backgroundColor: g.colorHex, borderWidth: 1, borderColor: "rgba(9,27,84,0.2)" }} />
+                  <View
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 7,
+                      backgroundColor: g.colorHex,
+                      borderWidth: 1,
+                      borderColor: dark ? "rgba(255,255,255,0.25)" : "rgba(9,27,84,0.2)",
+                    }}
+                  />
                   <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-                    <Text style={{ fontSize: 13.5, fontWeight: "700", color: NAVY }} numberOfLines={1}>
+                    <Text
+                      style={{ fontSize: 13.5, fontWeight: "700", color: ink }}
+                      numberOfLines={1}
+                    >
                       {g.name}
                     </Text>
                     {g.conditions.length > 0 ? (
@@ -156,10 +236,10 @@ export function GroupsSheet({
                               style={{
                                 fontSize: 9.5,
                                 fontWeight: "600",
-                                color: "#4C556F",
-                                backgroundColor: "rgba(9,27,84,0.05)",
+                                color: slate,
+                                backgroundColor: quietFill,
                                 borderWidth: 1,
-                                borderColor: "rgba(9,27,84,0.12)",
+                                borderColor: dark ? "rgba(255,255,255,0.14)" : "rgba(9,27,84,0.12)",
                                 borderRadius: 999,
                                 paddingHorizontal: 7,
                                 paddingVertical: 2,
@@ -173,7 +253,14 @@ export function GroupsSheet({
                       </View>
                     ) : null}
                   </View>
-                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#4C556F", fontVariant: ["tabular-nums"] }}>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "800",
+                      color: slate,
+                      fontVariant: ["tabular-nums"],
+                    }}
+                  >
                     {counts.get(g.id) ?? 0}
                   </Text>
                   <Pressable
@@ -188,10 +275,14 @@ export function GroupsSheet({
                       borderRadius: 14,
                       alignItems: "center",
                       justifyContent: "center",
-                      backgroundColor: g.visible ? `${palette.fill}24` : "rgba(9,27,84,0.05)",
+                      backgroundColor: g.visible ? `${palette.fill}24` : quietFill,
                     }}
                   >
-                    <Ionicons name={g.visible ? "eye-outline" : "eye-off-outline"} size={14} color={g.visible ? "#767B24" : MUTED} />
+                    <Ionicons
+                      name={g.visible ? "eye-outline" : "eye-off-outline"}
+                      size={14}
+                      color={g.visible ? "#767B24" : MUTED}
+                    />
                   </Pressable>
                 </Pressable>
 
@@ -200,10 +291,10 @@ export function GroupsSheet({
                     style={{
                       marginHorizontal: 12,
                       marginBottom: 12,
-                      backgroundColor: "#FFFFFF",
+                      backgroundColor: dark ? "rgba(255,255,255,0.06)" : "#FFFFFF",
                       borderRadius: 16,
                       borderWidth: 1,
-                      borderColor: "rgba(9,27,84,0.1)",
+                      borderColor: dark ? "rgba(255,255,255,0.12)" : "rgba(9,27,84,0.1)",
                       padding: 14,
                       gap: 10,
                     }}
@@ -212,17 +303,19 @@ export function GroupsSheet({
                       value={editing.name}
                       onChangeText={(name) => store.update(g.id, { name })}
                       placeholder={t("mapGroups.namePlaceholder")}
-                      placeholderTextColor="rgba(112,120,143,0.6)"
+                      placeholderTextColor={
+                        dark ? "rgba(255,255,255,0.35)" : "rgba(112,120,143,0.6)"
+                      }
                       style={{
                         borderWidth: 1,
-                        borderColor: "rgba(9,27,84,0.15)",
+                        borderColor: dark ? "rgba(255,255,255,0.18)" : "rgba(9,27,84,0.15)",
                         borderRadius: 10,
                         paddingHorizontal: 10,
                         paddingVertical: 8,
                         fontSize: 13,
                         fontWeight: "600",
-                        color: NAVY,
-                        backgroundColor: "#FBF9F1",
+                        color: ink,
+                        backgroundColor: dark ? "rgba(255,255,255,0.08)" : "#FBF9F1",
                       }}
                     />
                     <View style={{ flexDirection: "row", gap: 7 }}>
@@ -237,7 +330,7 @@ export function GroupsSheet({
                             borderRadius: 8,
                             backgroundColor: hex,
                             borderWidth: editing.colorHex === hex ? 2.5 : 0,
-                            borderColor: NAVY,
+                            borderColor: dark ? "#FFFFFF" : NAVY,
                           }}
                         />
                       ))}
@@ -250,7 +343,14 @@ export function GroupsSheet({
                       onSet={(kind, next) => setCondition(editing, kind, next)}
                     />
 
-                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginTop: 2,
+                      }}
+                    >
                       <Pressable
                         onPress={() => {
                           setEditingId(null);
@@ -258,10 +358,14 @@ export function GroupsSheet({
                         }}
                         accessibilityRole="button"
                       >
-                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#D1382E" }}>{t("mapGroups.delete")}</Text>
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#D1382E" }}>
+                          {t("mapGroups.delete")}
+                        </Text>
                       </Pressable>
                       <Pressable onPress={() => setEditingId(null)} accessibilityRole="button">
-                        <Text style={{ fontSize: 12, fontWeight: "800", color: "#767B24" }}>{t("mapGroups.done")}</Text>
+                        <Text style={{ fontSize: 12, fontWeight: "800", color: "#767B24" }}>
+                          {t("mapGroups.done")}
+                        </Text>
                       </Pressable>
                     </View>
                   </View>
@@ -283,7 +387,9 @@ export function GroupsSheet({
                 backgroundColor: `${palette.fill}0F`,
               }}
             >
-              <Text style={{ fontSize: 12.5, fontWeight: "700", color: "#767B24" }}>{t("mapGroups.newGroup")}</Text>
+              <Text style={{ fontSize: 12.5, fontWeight: "700", color: "#767B24" }}>
+                {t("mapGroups.newGroup")}
+              </Text>
             </Pressable>
           </ScrollView>
         </View>

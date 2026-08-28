@@ -1,3 +1,4 @@
+import { useColorScheme } from "nativewind";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View } from "react-native";
@@ -51,23 +52,34 @@ function DaysChip({ days }: { days: number }) {
 }
 
 function BandHeader({ label, pad }: { label: string; pad: number }) {
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View
       style={{
         paddingHorizontal: pad,
         paddingVertical: 8,
         borderTopWidth: 1,
-        borderTopColor: HAIRLINE,
-        backgroundColor: "rgba(9,27,84,0.03)",
+        borderTopColor: dark ? "rgba(255,255,255,0.10)" : HAIRLINE,
+        backgroundColor: dark ? "rgba(255,255,255,0.04)" : "rgba(9,27,84,0.03)",
       }}
     >
-      <Text style={{ fontSize: 10.5, fontWeight: "800", letterSpacing: 0.9, color: "#4C556F" }}>{label}</Text>
+      <Text
+        style={{
+          fontSize: 10.5,
+          fontWeight: "800",
+          letterSpacing: 0.9,
+          color: dark ? "rgba(255,255,255,0.72)" : "#4C556F",
+        }}
+      >
+        {label}
+      </Text>
     </View>
   );
 }
 
 function HistoryRow({ entry, nowMs, pad }: { entry: HistoryEntry; nowMs: number; pad: number }) {
   const { group, completedAt, daysInTurn } = entry;
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View
       style={{
@@ -77,7 +89,7 @@ function HistoryRow({ entry, nowMs, pad }: { entry: HistoryEntry; nowMs: number;
         paddingHorizontal: pad,
         paddingVertical: 10,
         borderTopWidth: 1,
-        borderTopColor: HAIRLINE,
+        borderTopColor: dark ? "rgba(255,255,255,0.10)" : HAIRLINE,
       }}
     >
       <Text className="text-navy dark:text-white" style={{ fontSize: 13.5, fontWeight: "800" }}>
@@ -95,7 +107,12 @@ function HistoryRow({ entry, nowMs, pad }: { entry: HistoryEntry; nowMs: number;
       {daysInTurn !== null ? <DaysChip days={daysInTurn} /> : null}
       <View style={{ flex: 1 }} />
       <Text
-        style={{ fontSize: 11, fontWeight: "700", fontVariant: ["tabular-nums"], color: MUTED }}
+        style={{
+          fontSize: 11,
+          fontWeight: "700",
+          fontVariant: ["tabular-nums"],
+          color: dark ? "rgba(255,255,255,0.5)" : MUTED,
+        }}
       >
         {abbreviatedDate(completedAt, nowMs)}
       </Text>
@@ -114,6 +131,7 @@ export function HistoryList({
   pad: number;
 }) {
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
 
   const months = useMemo(() => {
     const map = new Map<number, HistoryEntry[]>();
@@ -126,7 +144,8 @@ export function HistoryList({
       const entry: HistoryEntry = {
         group,
         completedAt,
-        daysInTurn: started !== null ? Math.max(calendarDaysBetween(started, completedAt), 0) : null,
+        daysInTurn:
+          started !== null ? Math.max(calendarDaysBetween(started, completedAt), 0) : null,
       };
       const month = startOfMonth(completedAt);
       const list = map.get(month);
@@ -152,7 +171,12 @@ export function HistoryList({
   const currentYear = new Date(nowMs).getFullYear();
 
   return (
-    <View style={{ borderBottomWidth: 1, borderBottomColor: HAIRLINE }}>
+    <View
+      style={{
+        borderBottomWidth: 1,
+        borderBottomColor: dark ? "rgba(255,255,255,0.10)" : HAIRLINE,
+      }}
+    >
       {months.map(([month, entries]) => {
         const date = new Date(month);
         const name = date.toLocaleDateString(activeLocale(), { month: "long" });
@@ -161,7 +185,10 @@ export function HistoryList({
           date.getFullYear() === currentYear ? capitalized : `${capitalized} ${date.getFullYear()}`;
         return (
           <View key={month}>
-            <BandHeader label={t("makeReady.history.band", { month: label, count: entries.length })} pad={pad} />
+            <BandHeader
+              label={t("makeReady.history.band", { month: label, count: entries.length })}
+              pad={pad}
+            />
             {entries.map((entry) => (
               <HistoryRow key={entry.group.unitNumber} entry={entry} nowMs={nowMs} pad={pad} />
             ))}

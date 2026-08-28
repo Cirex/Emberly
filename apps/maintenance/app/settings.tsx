@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useColorScheme } from "nativewind";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert, Platform, Pressable, ScrollView, Text, View } from "react-native";
@@ -100,12 +101,13 @@ function Segments<T extends string>({
   onChange: (v: T) => void;
 }) {
   const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View
       style={{
         flexDirection: "row",
         borderRadius: 12,
-        backgroundColor: "rgba(9,27,84,0.06)",
+        backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.06)",
         padding: 3,
         gap: 2,
       }}
@@ -127,7 +129,7 @@ function Segments<T extends string>({
             style={{
               fontSize: 13,
               fontWeight: "600",
-              color: value === o.id ? "#FFFFFF" : "#4C556F",
+              color: value === o.id ? "#FFFFFF" : dark ? "rgba(255,255,255,0.72)" : "#4C556F",
             }}
           >
             {o.label}
@@ -140,6 +142,7 @@ function Segments<T extends string>({
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   const palette = useAccentPalette();
+  const dark = useColorScheme().colorScheme === "dark";
   return (
     <Pressable
       onPress={() => onChange(!value)}
@@ -150,7 +153,11 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
         height: 30,
         borderRadius: 16,
         padding: 3,
-        backgroundColor: value ? `${palette.fill}D9` : "rgba(9,27,84,0.14)",
+        backgroundColor: value
+          ? `${palette.fill}D9`
+          : dark
+            ? "rgba(255,255,255,0.18)"
+            : "rgba(9,27,84,0.14)",
         alignItems: value ? "flex-end" : "flex-start",
         justifyContent: "center",
       }}
@@ -171,6 +178,8 @@ export default function Settings() {
   const router = useRouter();
   const { t } = useTranslation();
   const settings = useSettings();
+  const dark = useColorScheme().colorScheme === "dark";
+  const hairline = dark ? "rgba(255,255,255,0.10)" : HAIRLINE;
 
   // Switching to Spanish is the moment work-order prose is supposed to start
   // translating. When it can't, the sync path fails quietly by design and the
@@ -307,7 +316,7 @@ export default function Settings() {
               width: 46,
               height: 46,
               borderRadius: 23,
-              backgroundColor: NAVY,
+              backgroundColor: dark ? "rgba(255,255,255,0.14)" : NAVY,
               alignItems: "center",
               justifyContent: "center",
             }}
@@ -380,7 +389,7 @@ export default function Settings() {
         <Row label={t("settings.fieldMode")} sub={t("settings.fieldModeSub")}>
           <Toggle value={settings.fieldMode} onChange={settings.setFieldMode} />
         </Row>
-        <View style={{ paddingVertical: 11, borderTopWidth: 1, borderTopColor: HAIRLINE }}>
+        <View style={{ paddingVertical: 11, borderTopWidth: 1, borderTopColor: hairline }}>
           <Text className="text-navy dark:text-white" style={{ fontSize: 13.5, fontWeight: "600" }}>
             {t("settings.accent")}
           </Text>
@@ -461,7 +470,11 @@ export default function Settings() {
                   </Text>
                 </View>
               ) : null}
-              <Ionicons name="chevron-forward" size={16} color={MUTED} />
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={dark ? "rgba(255,255,255,0.5)" : MUTED}
+              />
             </View>
           </Row>
         </Pressable>

@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useColorScheme } from "nativewind";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
@@ -32,6 +33,8 @@ export function MakeReadyModePill({
 }) {
   const palette = useAccentPalette();
   const { t } = useTranslation();
+  const dark = useColorScheme().colorScheme === "dark";
+  const ink = dark ? "#FFFFFF" : NAVY;
   const insets = useSafeAreaInsets();
   const [menuOpen, setMenuOpen] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
@@ -62,9 +65,9 @@ export function MakeReadyModePill({
           paddingLeft: 9,
           paddingRight: 13,
           borderRadius: 999,
-          backgroundColor: "rgba(255,255,255,0.60)",
+          backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.60)",
           borderWidth: 1,
-          borderColor: "rgba(255,255,255,0.78)",
+          borderColor: dark ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.78)",
           shadowColor: NAVY,
           shadowOpacity: 0.12,
           shadowRadius: 9,
@@ -83,7 +86,7 @@ export function MakeReadyModePill({
         >
           <Ionicons name={current.icon as never} size={14} color={palette.glass} />
         </View>
-        <Text style={{ fontSize: 16, fontWeight: "800", letterSpacing: -0.3, color: NAVY }}>
+        <Text style={{ fontSize: 16, fontWeight: "800", letterSpacing: -0.3, color: ink }}>
           {t(current.labelKey)}
         </Text>
         <View
@@ -97,15 +100,27 @@ export function MakeReadyModePill({
             justifyContent: "center",
           }}
         >
-          <Text style={{ fontSize: 11, fontWeight: "800", color: palette.glass, fontVariant: ["tabular-nums"] }}>
+          <Text
+            style={{
+              fontSize: 11,
+              fontWeight: "800",
+              color: palette.glass,
+              fontVariant: ["tabular-nums"],
+            }}
+          >
             {count.toLocaleString()}
           </Text>
         </View>
-        <Ionicons name="chevron-down" size={12} color={MUTED} />
+        <Ionicons name="chevron-down" size={12} color={dark ? "rgba(255,255,255,0.5)" : MUTED} />
       </Pressable>
 
       {/* The title menu — glass sheet anchored under the pill. */}
-      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
+      <Modal
+        visible={menuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuOpen(false)}
+      >
         <Pressable
           style={StyleSheet.absoluteFill}
           onPress={() => setMenuOpen(false)}
@@ -120,8 +135,8 @@ export function MakeReadyModePill({
             borderRadius: 18,
             overflow: "hidden",
             borderWidth: 1,
-            borderColor: "rgba(9,27,84,0.10)",
-            backgroundColor: "rgba(252,250,244,0.97)",
+            borderColor: dark ? "rgba(255,255,255,0.12)" : "rgba(9,27,84,0.10)",
+            backgroundColor: dark ? "#1B1D20" : "rgba(252,250,244,0.97)",
             shadowColor: NAVY,
             shadowOpacity: 0.28,
             shadowRadius: 30,
@@ -147,16 +162,20 @@ export function MakeReadyModePill({
                   paddingHorizontal: 14,
                   minHeight: 44,
                   borderTopWidth: i === 0 ? 0 : 1,
-                  borderTopColor: "rgba(9,27,84,0.06)",
+                  borderTopColor: dark ? "rgba(255,255,255,0.08)" : "rgba(9,27,84,0.06)",
                 }}
               >
-                <Ionicons name={m.icon as never} size={15} color={selected ? palette.glass : "#4C556F"} />
+                <Ionicons
+                  name={m.icon as never}
+                  size={15}
+                  color={selected ? palette.glass : dark ? "rgba(255,255,255,0.72)" : "#4C556F"}
+                />
                 <Text
                   style={{
                     flex: 1,
                     fontSize: 13.5,
                     fontWeight: "700",
-                    color: selected ? palette.glass : NAVY,
+                    color: selected ? palette.glass : ink,
                     letterSpacing: -0.1,
                   }}
                 >

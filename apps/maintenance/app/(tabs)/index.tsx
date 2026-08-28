@@ -51,7 +51,6 @@ const FLOWER = require("@/assets/logo-flower.png");
 /** Module scope so the list's keyExtractor identity never changes. */
 const keyOfWorkOrder = (wo: ParsedWorkOrder) => wo.id;
 
-
 /**
  * My Day — the signed-in technician's path view, in the approved Option 2
  * (edge-to-edge) treatment: a two-line large-title greeting, a bare inline
@@ -75,7 +74,8 @@ export default function MyDayScreen() {
   const token = useConfig((s) => s.token);
   // The simulator's dev-token session signs in as "Dev Preview", which is no
   // technician — demo the path as a real tech there. Real sign-ins unaffected.
-  const staffName = (admin?.displayName === "Dev Preview" ? "Quintez Harden" : admin?.displayName?.trim()) ?? "";
+  const staffName =
+    (admin?.displayName === "Dev Preview" ? "Quintez Harden" : admin?.displayName?.trim()) ?? "";
   const firstName = staffName.split(/\s+/)[0] || "there";
 
   const pending = usePendingCloses((s) => s.pending);
@@ -103,7 +103,12 @@ export default function MyDayScreen() {
   // Reconcile the path against the live mirror on every data/pending change.
   useEffect(() => {
     if (!isSignedIn({ token })) return;
-    day.reconcile({ openWorkOrders: openAll, staffName, pendingClosedIds: pendingIds, nowMs: Date.now() });
+    day.reconcile({
+      openWorkOrders: openAll,
+      staffName,
+      pendingClosedIds: pendingIds,
+      nowMs: Date.now(),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openAll, staffName, pendingIds, token]);
 
@@ -113,7 +118,10 @@ export default function MyDayScreen() {
   );
   const urgentCount = useMemo(() => mine.filter((wo) => urgentTrade(wo) !== null).length, [mine]);
 
-  const pathUnits = useMemo(() => new Set(day.stops.filter((s) => !s.isDone).map((s) => s.unitNumber)), [day.stops]);
+  const pathUnits = useMemo(
+    () => new Set(day.stops.filter((s) => !s.isDone).map((s) => s.unitNumber)),
+    [day.stops],
+  );
   const queue = useMemo(() => {
     const rows = mine.filter((wo) => !pathUnits.has(wo.unitNumber.trim()));
     rows.sort((a, b) => (b.reportedAt ?? 0) - (a.reportedAt ?? 0));
@@ -122,6 +130,14 @@ export default function MyDayScreen() {
 
   const pendingStops = useMemo(() => day.stops.filter((s) => !s.isDone), [day.stops]);
   const doneStops = useMemo(() => day.stops.filter((s) => s.isDone), [day.stops]);
+  // A stop reads "saved to ResMan" once every one of its closes is VERIFIED
+  // (acked) or already absorbed by the mirror (entry gone) — "syncing" is
+  // reserved for writes that genuinely have not landed yet.
+  const stopDelivered = useCallback(
+    (stop: { workOrderIds: string[] }) =>
+      stop.workOrderIds.every((id) => pending[id]?.acked !== false),
+    [pending],
+  );
   // "Completed Today" counts the work orders closed today across the done
   // stops (the recap that holds until rollover), not a fraction of the path.
   const completedToday = useMemo(
@@ -157,23 +173,31 @@ export default function MyDayScreen() {
     });
   };
 
-  const addToPath = useCallback((wo: ParsedWorkOrder) => {
-    const unit = wo.unitNumber.trim();
-    const ids = mine.filter((m) => m.unitNumber.trim() === unit).map((m) => m.id);
-    day.addUnit(unit, ids.length > 0 ? ids : [wo.id]);
-    const position = day.stops.filter((s) => !s.isDone).length + 1;
-    showToast(t("myDay.toastAdded", { position }), () => {
-      const added = useMyDay.getState().stops.find((s) => s.unitNumber === unit && s.addedBy === "manual");
-      if (added) day.removeStop(added.id);
-    });
-  }, [mine, day, showToast, t]);
+  const addToPath = useCallback(
+    (wo: ParsedWorkOrder) => {
+      const unit = wo.unitNumber.trim();
+      const ids = mine.filter((m) => m.unitNumber.trim() === unit).map((m) => m.id);
+      day.addUnit(unit, ids.length > 0 ? ids : [wo.id]);
+      const position = day.stops.filter((s) => !s.isDone).length + 1;
+      showToast(t("myDay.toastAdded", { position }), () => {
+        const added = useMyDay
+          .getState()
+          .stops.find((s) => s.unitNumber === unit && s.addedBy === "manual");
+        if (added) day.removeStop(added.id);
+      });
+    },
+    [mine, day, showToast, t],
+  );
 
   const openInMap = () => router.push({ pathname: "/(tabs)/property-map", params: { path: "1" } });
 
   // The row takes the work order and calls back with it, so ONE renderer serves
   // every row — a per-row arrow function would change identity each render and
   // defeat the memo on QueueRow.
-  const openWorkOrder = useCallback((wo: ParsedWorkOrder) => router.push(`/work-order/${wo.id}`), [router]);
+  const openWorkOrder = useCallback(
+    (wo: ParsedWorkOrder) => router.push(`/work-order/${wo.id}`),
+    [router],
+  );
   const renderQueueRow = useCallback(
     ({ item }: { item: ParsedWorkOrder }) => (
       <QueueRow wo={item} pad={pad} nowMs={nowMs} onOpen={openWorkOrder} onAdd={addToPath} />
@@ -183,7 +207,10 @@ export default function MyDayScreen() {
 
   // ── My Day ⇄ My Week pager
   const pagerRef = useRef<ScrollView>(null);
-  const showWeek = useCallback(() => pagerRef.current?.scrollTo({ x: width, animated: true }), [width]);
+  const showWeek = useCallback(
+    () => pagerRef.current?.scrollTo({ x: width, animated: true }),
+    [width],
+  );
   const showDay = useCallback(() => pagerRef.current?.scrollTo({ x: 0, animated: true }), []);
   // A width change (rotation, split view) would leave the pager parked mid-page.
   useEffect(() => {
@@ -195,7 +222,12 @@ export default function MyDayScreen() {
   const [rebuilding, setRebuilding] = useState(false);
   const rebuildPath = useCallback(() => {
     setRebuilding(true);
-    day.rebuild({ openWorkOrders: openAll, staffName, pendingClosedIds: pendingIds, nowMs: Date.now() });
+    day.rebuild({
+      openWorkOrders: openAll,
+      staffName,
+      pendingClosedIds: pendingIds,
+      nowMs: Date.now(),
+    });
     setTimeout(() => setRebuilding(false), 450);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openAll, staffName, pendingIds]);
@@ -243,22 +275,42 @@ export default function MyDayScreen() {
             {firstName}
           </Text>
           <Text className="text-slate dark:text-white/70" style={{ fontSize: 12.5, marginTop: 4 }}>
-            {new Date(nowMs).toLocaleDateString(activeLocale(), { weekday: "long", month: "short", day: "numeric" })} ·{" "}
-            {t("myDay.assigned", { count: mine.length })}
+            {new Date(nowMs).toLocaleDateString(activeLocale(), {
+              weekday: "long",
+              month: "short",
+              day: "numeric",
+            })}{" "}
+            · {t("myDay.assigned", { count: mine.length })}
           </Text>
         </View>
         <AccountMenu />
       </View>
 
       {/* Inline metric strip — bare numbers, hairline dividers, no boxes. */}
-      <View style={{ flexDirection: "row", paddingHorizontal: pad, marginTop: 16, marginBottom: 14 }}>
+      <View
+        style={{ flexDirection: "row", paddingHorizontal: pad, marginTop: 16, marginBottom: 14 }}
+      >
         <Metric value={String(mine.length)} label={t("myDay.metrics.assigned")} />
-        <Metric value={String(urgentCount)} label={t("myDay.metrics.urgent")} tint="#B05E14" divider />
-        <Metric value={String(completedToday)} label={t("myDay.metrics.completedToday")} tint={GREEN} divider />
+        <Metric
+          value={String(urgentCount)}
+          label={t("myDay.metrics.urgent")}
+          tint="#B05E14"
+          divider
+        />
+        <Metric
+          value={String(completedToday)}
+          label={t("myDay.metrics.completedToday")}
+          tint={GREEN}
+          divider
+        />
       </View>
 
       {/* Hero: the path map, edge to edge, chrome floating on top. */}
-      <Pressable onPress={openInMap} accessibilityRole="button" accessibilityLabel={t("myDay.openPathInMap")}>
+      <Pressable
+        onPress={openInMap}
+        accessibilityRole="button"
+        accessibilityLabel={t("myDay.openPathInMap")}
+      >
         <MiniPathMap
           height={200}
           radius={0}
@@ -268,7 +320,10 @@ export default function MyDayScreen() {
             isEmergency: s.addedBy === "emergency",
           }))}
         />
-        <View pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }}>
+        <View
+          pointerEvents="box-none"
+          style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }}
+        >
           <GlassPill style={{ position: "absolute", top: 12, left: pad - 6 }} dark={dark}>
             <Text
               className="text-navy dark:text-white"
@@ -277,13 +332,23 @@ export default function MyDayScreen() {
               {t("myDay.pathPill", { count: day.stops.length })}
             </Text>
           </GlassPill>
-          <View style={{ position: "absolute", right: pad - 6, bottom: 12, flexDirection: "row", gap: 8 }}>
+          <View
+            style={{
+              position: "absolute",
+              right: pad - 6,
+              bottom: 12,
+              flexDirection: "row",
+              gap: 8,
+            }}
+          >
             {/* Rebuild used to sit here as a button. It is now the pull-to-
                 refresh on the list below — the gesture a tech already reaches
                 for — which frees the spot for the way into My Week. */}
             <GlassPill dark={dark} onPress={showWeek}>
               <Ionicons name="stats-chart" size={12} color={palette.text} />
-              <Text style={{ fontSize: 12, fontWeight: "700", color: palette.text }}>{t("myWeek.open")}</Text>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: palette.text }}>
+                {t("myWeek.open")}
+              </Text>
               <Ionicons name="chevron-forward" size={11} color={palette.text} />
             </GlassPill>
             <Pressable
@@ -302,7 +367,9 @@ export default function MyDayScreen() {
               }}
             >
               <Ionicons name="map-outline" size={12} color="#FFFFFF" />
-              <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFFFFF" }}>{t("myDay.map")}</Text>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFFFFF" }}>
+                {t("myDay.map")}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -313,7 +380,13 @@ export default function MyDayScreen() {
         {day.stops.length === 0 ? (
           <Text
             className="text-muted dark:text-white/50"
-            style={{ fontSize: 12.5, textAlign: "center", padding: 18, borderTopWidth: 1, borderTopColor: HAIRLINE }}
+            style={{
+              fontSize: 12.5,
+              textAlign: "center",
+              padding: 18,
+              borderTopWidth: 1,
+              borderTopColor: HAIRLINE,
+            }}
           >
             {staffName ? t("myDay.emptySignedIn") : t("myDay.emptySignedOut")}
           </Text>
@@ -323,7 +396,11 @@ export default function MyDayScreen() {
               <StopRow
                 key={stop.id}
                 stop={stop}
-                number={stop.addedBy === "emergency" ? null : pendingStops.slice(0, i).filter((s) => s.addedBy !== "emergency").length + 1}
+                number={
+                  stop.addedBy === "emergency"
+                    ? null
+                    : pendingStops.slice(0, i).filter((s) => s.addedBy !== "emergency").length + 1
+                }
                 upNext={stop.id === upNextId}
                 pad={pad}
                 byId={byId}
@@ -364,9 +441,18 @@ export default function MyDayScreen() {
                     numberOfLines={1}
                     style={{ fontSize: 11, flex: 1 }}
                   >
-                    {doneStops.map((s) => s.unitNumber).join(", ")} · {t("myDay.syncingToResman")}
+                    {doneStops.map((s) => s.unitNumber).join(", ")} ·{" "}
+                    {t(
+                      doneStops.every(stopDelivered)
+                        ? "myDay.savedToResman"
+                        : "myDay.syncingToResman",
+                    )}
                   </Text>
-                  <Ionicons name={doneOpen ? "chevron-up" : "chevron-down"} size={12} color={MUTED} />
+                  <Ionicons
+                    name={doneOpen ? "chevron-up" : "chevron-down"}
+                    size={12}
+                    color={MUTED}
+                  />
                 </Pressable>
                 {doneOpen
                   ? doneStops.map((stop) => (
@@ -376,6 +462,7 @@ export default function MyDayScreen() {
                         pad={pad}
                         byId={byId}
                         nowMs={nowMs}
+                        delivered={stopDelivered(stop)}
                         onToggleDone={() => day.setDone(stop.id, false)}
                         onOpen={() => {
                           const primary = stop.workOrderIds[0];
@@ -392,7 +479,14 @@ export default function MyDayScreen() {
 
       <Text
         className="text-muted dark:text-white/50"
-        style={{ fontSize: 11, fontWeight: "800", letterSpacing: 1.1, marginTop: 16, marginBottom: 6, marginHorizontal: pad }}
+        style={{
+          fontSize: 11,
+          fontWeight: "800",
+          letterSpacing: 1.1,
+          marginTop: 16,
+          marginBottom: 6,
+          marginHorizontal: pad,
+        }}
       >
         {t("myDay.queueHeader", { count: queue.length })}
       </Text>
@@ -435,7 +529,10 @@ export default function MyDayScreen() {
               />
             }
             ListEmptyComponent={
-              <Text className="text-muted dark:text-white/50" style={{ fontSize: 12.5, textAlign: "center", padding: 16 }}>
+              <Text
+                className="text-muted dark:text-white/50"
+                style={{ fontSize: 12.5, textAlign: "center", padding: 16 }}
+              >
                 {t("myDay.queueEmpty")}
               </Text>
             }
@@ -456,7 +553,13 @@ export default function MyDayScreen() {
       {toast ? (
         <View
           pointerEvents="box-none"
-          style={{ position: "absolute", left: 0, right: 0, bottom: insets.bottom + 84, alignItems: "center" }}
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: insets.bottom + 84,
+            alignItems: "center",
+          }}
         >
           <View
             style={{
@@ -473,7 +576,9 @@ export default function MyDayScreen() {
               shadowOffset: { width: 0, height: 10 },
             }}
           >
-            <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "600" }}>{toast.label}</Text>
+            <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "600" }}>
+              {toast.label}
+            </Text>
             <Pressable
               onPress={() => {
                 toast.undo();
@@ -481,7 +586,9 @@ export default function MyDayScreen() {
               }}
               accessibilityRole="button"
             >
-              <Text style={{ color: "#D8DE7A", fontSize: 12.5, fontWeight: "800" }}>{t("myDay.undo")}</Text>
+              <Text style={{ color: "#D8DE7A", fontSize: 12.5, fontWeight: "800" }}>
+                {t("myDay.undo")}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -491,7 +598,17 @@ export default function MyDayScreen() {
 }
 
 /** One bare metric: big tinted number over a small label, hairline divider. */
-function Metric({ value, label, tint, divider }: { value: string; label: string; tint?: string; divider?: boolean }) {
+function Metric({
+  value,
+  label,
+  tint,
+  divider,
+}: {
+  value: string;
+  label: string;
+  tint?: string;
+  divider?: boolean;
+}) {
   return (
     <View
       style={{
@@ -501,10 +618,21 @@ function Metric({ value, label, tint, divider }: { value: string; label: string;
         paddingLeft: divider ? 16 : 0,
       }}
     >
-      <Text style={{ fontSize: 24, fontWeight: "800", letterSpacing: -0.5, fontVariant: ["tabular-nums"], color: tint ?? NAVY }}>
+      <Text
+        style={{
+          fontSize: 24,
+          fontWeight: "800",
+          letterSpacing: -0.5,
+          fontVariant: ["tabular-nums"],
+          color: tint ?? NAVY,
+        }}
+      >
         {value}
       </Text>
-      <Text className="text-slate dark:text-white/60" style={{ fontSize: 10, fontWeight: "600", marginTop: 1 }}>
+      <Text
+        className="text-slate dark:text-white/60"
+        style={{ fontSize: 10, fontWeight: "600", marginTop: 1 }}
+      >
         {label}
       </Text>
     </View>
@@ -524,8 +652,22 @@ function GlassPill({
   dark: boolean;
 }) {
   const body = (
-    <View style={[{ borderRadius: 999, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.6)" }, style]}>
-      <BlurView intensity={dark ? 30 : 22} tint={dark ? "dark" : "light"} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
+    <View
+      style={[
+        {
+          borderRadius: 999,
+          overflow: "hidden",
+          borderWidth: 1,
+          borderColor: "rgba(255,255,255,0.6)",
+        },
+        style,
+      ]}
+    >
+      <BlurView
+        intensity={dark ? 30 : 22}
+        tint={dark ? "dark" : "light"}
+        style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+      />
       <View
         style={{
           flexDirection: "row",
@@ -565,7 +707,13 @@ function CloseAction({ translation }: { translation: SharedValue<number> }) {
   return (
     <Reanimated.View
       style={[
-        { width: ACTION_W, backgroundColor: GREEN, alignItems: "center", justifyContent: "center", gap: 2 },
+        {
+          width: ACTION_W,
+          backgroundColor: GREEN,
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 2,
+        },
         style,
       ]}
     >
@@ -587,7 +735,13 @@ function AddAction({ translation }: { translation: SharedValue<number> }) {
   return (
     <Reanimated.View
       style={[
-        { width: ACTION_W, backgroundColor: palette.fill, alignItems: "center", justifyContent: "center", gap: 2 },
+        {
+          width: ACTION_W,
+          backgroundColor: palette.fill,
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 2,
+        },
         style,
       ]}
     >
@@ -619,7 +773,7 @@ function StopRow({
   onOpen: () => void;
   onClose: () => void;
 }) {
-    const palette = useAccentPalette();
+  const palette = useAccentPalette();
   const { t } = useTranslation();
   // The stop cards ARE My Day — the expanded list below them was the only
   // thing translated, so a full cache changed nothing a tech actually looks at.
@@ -651,13 +805,26 @@ function StopRow({
       </Pressable>
       <View style={{ flex: 1, minWidth: 0, paddingVertical: upNext ? 14 : 0 }}>
         {upNext ? (
-          <Text style={{ fontSize: 9.5, fontWeight: "800", letterSpacing: 1.1, color: UP_NEXT, marginBottom: 4 }}>
+          <Text
+            style={{
+              fontSize: 9.5,
+              fontWeight: "800",
+              letterSpacing: 1.1,
+              color: UP_NEXT,
+              marginBottom: 4,
+            }}
+          >
             {t("myDay.upNext")}
           </Text>
         ) : null}
-        <Text className="text-navy dark:text-white" style={{ fontSize: upNext ? 16 : 13.5, fontWeight: "800" }}>
+        <Text
+          className="text-navy dark:text-white"
+          style={{ fontSize: upNext ? 16 : 13.5, fontWeight: "800" }}
+        >
           {stop.unitNumber}
-          {stop.workOrderIds.length > 1 ? `  ·  ${t("myDay.tickets", { count: stop.workOrderIds.length })}` : ""}
+          {stop.workOrderIds.length > 1
+            ? `  ·  ${t("myDay.tickets", { count: stop.workOrderIds.length })}`
+            : ""}
         </Text>
         <Text
           className="text-navy dark:text-white/90"
@@ -682,24 +849,44 @@ function StopRow({
         ) : null}
       </View>
       <View style={{ alignItems: "flex-end", flexShrink: 0, paddingTop: upNext ? 14 : 0 }}>
-        <Text className="text-slate dark:text-white/70" style={{ fontSize: 11.5, fontWeight: "700", fontVariant: ["tabular-nums"] }}>
+        <Text
+          className="text-slate dark:text-white/70"
+          style={{ fontSize: 11.5, fontWeight: "700", fontVariant: ["tabular-nums"] }}
+        >
           {abbreviatedDate(primary?.reportedAt ?? null, nowMs)}
         </Text>
         <Text className="text-muted dark:text-white/50" style={{ fontSize: 9.5, marginTop: 1 }}>
           #{primary?.number ?? "—"}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={13} color="rgba(9,27,84,0.28)" style={{ marginTop: upNext ? 18 : 4 }} />
+      <Ionicons
+        name="chevron-forward"
+        size={13}
+        color="rgba(9,27,84,0.28)"
+        style={{ marginTop: upNext ? 18 : 4 }}
+      />
     </>
   );
 
   const row = upNext ? (
-    <Pressable onPress={onOpen} accessibilityRole="button" style={{ borderTopWidth: 1, borderTopColor: HAIRLINE }}>
+    <Pressable
+      onPress={onOpen}
+      accessibilityRole="button"
+      style={{ borderTopWidth: 1, borderTopColor: HAIRLINE }}
+    >
       <LinearGradient
         colors={["rgba(37,99,180,0.10)", "rgba(37,99,180,0.02)", "rgba(37,99,180,0)"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
-        style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, paddingLeft: pad - 3.5, paddingRight: pad, borderLeftWidth: 3.5, borderLeftColor: UP_NEXT }}
+        style={{
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: 10,
+          paddingLeft: pad - 3.5,
+          paddingRight: pad,
+          borderLeftWidth: 3.5,
+          borderLeftColor: UP_NEXT,
+        }}
       >
         {content}
       </LinearGradient>
@@ -748,6 +935,7 @@ function DoneRow({
   pad,
   byId,
   nowMs,
+  delivered,
   onToggleDone,
   onOpen,
 }: {
@@ -755,6 +943,8 @@ function DoneRow({
   pad: number;
   byId: Map<string, ParsedWorkOrder>;
   nowMs: number;
+  /** Every close for this stop is verified in ResMan (or already absorbed). */
+  delivered: boolean;
   onToggleDone: () => void;
   onOpen: () => void;
 }) {
@@ -796,19 +986,34 @@ function DoneRow({
         <Ionicons name="checkmark" size={13} color="#FFFFFF" />
       </Pressable>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text className="text-muted" style={{ fontSize: 13.5, fontWeight: "800", textDecorationLine: "line-through" }}>
+        <Text
+          className="text-muted"
+          style={{ fontSize: 13.5, fontWeight: "800", textDecorationLine: "line-through" }}
+        >
           {stop.unitNumber}
-          {stop.workOrderIds.length > 1 ? `  ·  ${t("myDay.tickets", { count: stop.workOrderIds.length })}` : ""}
+          {stop.workOrderIds.length > 1
+            ? `  ·  ${t("myDay.tickets", { count: stop.workOrderIds.length })}`
+            : ""}
         </Text>
-        <Text className="text-muted" numberOfLines={1} style={{ fontSize: 12.5, marginTop: 1, textDecorationLine: "line-through" }}>
+        <Text
+          className="text-muted"
+          numberOfLines={1}
+          style={{ fontSize: 12.5, marginTop: 1, textDecorationLine: "line-through" }}
+        >
           {tr(primary?.title ?? "").shown || t("myDay.workOrder")}
         </Text>
         <Text style={{ fontSize: 10, fontWeight: "700", color: GREEN, marginTop: 3 }}>
-          {t("myDay.closedLine")} <Text style={{ color: MUTED, fontWeight: "600" }}>· {t("myDay.syncingToResman")}</Text>
+          {t("myDay.closedLine")}{" "}
+          <Text style={{ color: MUTED, fontWeight: "600" }}>
+            · {t(delivered ? "myDay.savedToResman" : "myDay.syncingToResman")}
+          </Text>
         </Text>
       </View>
       <View style={{ alignItems: "flex-end", flexShrink: 0 }}>
-        <Text className="text-slate dark:text-white/70" style={{ fontSize: 11.5, fontWeight: "700", fontVariant: ["tabular-nums"] }}>
+        <Text
+          className="text-slate dark:text-white/70"
+          style={{ fontSize: 11.5, fontWeight: "700", fontVariant: ["tabular-nums"] }}
+        >
           {abbreviatedDate(primary?.reportedAt ?? null, nowMs)}
         </Text>
         <Text className="text-muted dark:text-white/50" style={{ fontSize: 9.5, marginTop: 1 }}>
@@ -819,7 +1024,17 @@ function DoneRow({
   );
 }
 
-function ChipTag({ label, color, bg, icon }: { label: string; color: string; bg?: string; icon?: string }) {
+function ChipTag({
+  label,
+  color,
+  bg,
+  icon,
+}: {
+  label: string;
+  color: string;
+  bg?: string;
+  icon?: string;
+}) {
   return (
     <View
       style={{
@@ -892,11 +1107,21 @@ const QueueRow = memo(function QueueRow({
           backgroundColor: "rgba(252,250,244,0.001)",
         }}
       >
-        <Text className="text-navy dark:text-white" style={{ fontSize: 14, fontWeight: "600", lineHeight: 19 }}>
+        <Text
+          className="text-navy dark:text-white"
+          style={{ fontSize: 14, fontWeight: "600", lineHeight: 19 }}
+        >
           {tr(wo.title).shown || t("myDay.untitledWorkOrder")}
         </Text>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 7 }}>
-          <View style={{ paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999, backgroundColor: `${statusColor}1A` }}>
+          <View
+            style={{
+              paddingHorizontal: 9,
+              paddingVertical: 3,
+              borderRadius: 999,
+              backgroundColor: `${statusColor}1A`,
+            }}
+          >
             <Text style={{ fontSize: 10.5, fontWeight: "700", color: statusColor }}>
               {statusLabel(t, wo.status)}
             </Text>
@@ -911,7 +1136,10 @@ const QueueRow = memo(function QueueRow({
               color={TRADE_TINT[urgentTrade(wo)!]}
             />
           ) : null}
-          <Text className="text-muted dark:text-white/50" style={{ fontSize: 11, marginLeft: "auto", fontVariant: ["tabular-nums"] }}>
+          <Text
+            className="text-muted dark:text-white/50"
+            style={{ fontSize: 11, marginLeft: "auto", fontVariant: ["tabular-nums"] }}
+          >
             {abbreviatedDate(wo.reportedAt, nowMs)} · #{wo.number}
           </Text>
         </View>

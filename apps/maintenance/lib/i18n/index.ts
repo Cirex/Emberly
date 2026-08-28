@@ -204,6 +204,7 @@ const en = {
         possibleCallback: "Possible Callback",
         duplicate: "Duplicate",
         closePending: "Close pending",
+        closeSaved: "Closed — saved",
       },
       sections: {
         progress: "Progress",
@@ -216,6 +217,7 @@ const en = {
       showOnMap: "Show on Map",
       markComplete: "Mark Complete",
       pendingSync: "Pending sync",
+      saved: "Saved",
       closePicker: "Close picker",
       journey: {
         reported: "Reported",
@@ -637,6 +639,7 @@ const en = {
     unassignedPinned: "Unassigned · pinned for everyone",
     doneToday: "Done today · {{count}}",
     syncingToResman: "syncing to ResMan",
+    savedToResman: "saved to ResMan",
     closedLine: "✓ Work order closed",
     markDone: "Mark done",
     markNotDone: "Mark not done",
@@ -841,6 +844,7 @@ const es: typeof en = {
         possibleCallback: "Posible reincidencia",
         duplicate: "Duplicada",
         closePending: "Cierre pendiente",
+        closeSaved: "Cerrada — guardada",
       },
       sections: {
         progress: "Progreso",
@@ -853,6 +857,7 @@ const es: typeof en = {
       showOnMap: "Ver en el mapa",
       markComplete: "Marcar completada",
       pendingSync: "Sincronización pendiente",
+      saved: "Guardado",
       closePicker: "Cerrar selector",
       journey: {
         reported: "Reportada",
@@ -1271,6 +1276,7 @@ const es: typeof en = {
     unassignedPinned: "Sin asignar · fijada para todos",
     doneToday: "Hechas hoy · {{count}}",
     syncingToResman: "sincronizando con ResMan",
+    savedToResman: "guardado en ResMan",
     closedLine: "✓ Orden de trabajo cerrada",
     markDone: "Marcar como hecha",
     markNotDone: "Marcar como no hecha",

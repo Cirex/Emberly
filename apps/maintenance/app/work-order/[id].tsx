@@ -139,21 +139,30 @@ export default function WorkOrderDetail() {
             justifyContent: "center",
           }}
         >
-          <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "600" }}>{t("workOrders.detail.back")}</Text>
+          <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "600" }}>
+            {t("workOrders.detail.back")}
+          </Text>
         </Pressable>
       </View>
     );
   }
 
   // The pending-edits overlay wins over the base row until the sync absorbs
-  // it (mirroring how pending closes render as closed).
-  const overlay = pendingEdits[wo.id]?.patch;
+  // it (mirroring how pending closes render as closed). Acked means the write
+  // is VERIFIED IN RESMAN — the entry only lingers so these overlays keep
+  // rendering until the mirror catches up — so the field markers must say
+  // "saved", never "pending", once delivery is confirmed.
+  const editEntry = pendingEdits[wo.id];
+  const overlay = editEntry?.patch;
+  const editDelivered = editEntry?.acked === true;
   const technicianShown = technicianDisplayName(overlay?.technician ?? wo.technician);
   // A pending edit shows the tech's own typed text as-is; only the synced
   // English source is translated. Title/description/notes flow through `tr`.
   const titleTr = tr(wo.title || "");
   const descTr =
-    overlay?.description !== undefined ? { shown: overlay.description, translated: false } : tr(wo.raw.notes);
+    overlay?.description !== undefined
+      ? { shown: overlay.description, translated: false }
+      : tr(wo.raw.notes);
   const notesTr =
     overlay?.completionNotes !== undefined
       ? { shown: overlay.completionNotes, translated: false }
@@ -183,12 +192,15 @@ export default function WorkOrderDetail() {
   const scheduledOverlay = parsedOverlayDate(overlay?.scheduledAt);
   const scheduledAtShown = scheduledOverlay === undefined ? wo.scheduledAt : scheduledOverlay;
   const completedAtShown = closeEntry?.completedAt ?? wo.completedAt;
-  // A close the technician stamped locally that ResMan has not confirmed yet —
-  // the only close this screen is entitled to take back.
-  const closeIsLocalOnly = closeEntry !== undefined && wo.completedAt === null;
+  // A close the technician stamped locally that has NOT been delivered yet —
+  // the only close this screen is entitled to take back. Once acked the close
+  // is verified in ResMan; retracting it locally would only desync the app.
+  const closeIsLocalOnly =
+    closeEntry !== undefined && closeEntry.acked !== true && wo.completedAt === null;
 
   const isOpen = wo.completedAt === null && !/^(completed|closed|canceled)$/i.test(wo.status);
   const pendingClose = closeEntry !== undefined;
+  const closeDelivered = closeEntry?.acked === true;
   const canClose = isOpen && !pendingClose;
 
   /**
@@ -369,16 +381,40 @@ export default function WorkOrderDetail() {
               <Chip key={t} label={t} color={tagTint(t)} icon={tagIconName(t)} />
             ))}
             {isCallback(wo) ? (
-              <Chip label={t("workOrders.detail.chips.possibleCallback")} color={CALLBACK_TINT} icon="arrow-u-left-top" emphasized />
+              <Chip
+                label={t("workOrders.detail.chips.possibleCallback")}
+                color={CALLBACK_TINT}
+                icon="arrow-u-left-top"
+                emphasized
+              />
             ) : null}
             {wo.isDuplicate ? (
-              <Chip label={t("workOrders.detail.chips.duplicate")} color={DUPLICATE_TINT} icon="content-duplicate" emphasized />
+              <Chip
+                label={t("workOrders.detail.chips.duplicate")}
+                color={DUPLICATE_TINT}
+                icon="content-duplicate"
+                emphasized
+              />
             ) : null}
             {pendingClose ? (
-              <Chip label={t("workOrders.detail.chips.closePending")} color={palette.text} icon="progress-check" emphasized />
+              <Chip
+                label={t(
+                  closeDelivered
+                    ? "workOrders.detail.chips.closeSaved"
+                    : "workOrders.detail.chips.closePending",
+                )}
+                color={closeDelivered ? "#33A666" : palette.text}
+                icon={closeDelivered ? "check-circle-outline" : "progress-check"}
+                emphasized
+              />
             ) : null}
             {anyTranslated ? (
-              <Chip label={t("translation.badge")} color={palette.text} icon="translate" emphasized />
+              <Chip
+                label={t("translation.badge")}
+                color={palette.text}
+                icon="translate"
+                emphasized
+              />
             ) : null}
           </View>
         </LinearGradient>
@@ -478,7 +514,9 @@ export default function WorkOrderDetail() {
                 >
                   ASSIGNED TECHNICIAN
                 </Text>
-                {overlay?.technician !== undefined ? <PendingSyncPill /> : null}
+                {overlay?.technician !== undefined ? (
+                  <PendingSyncPill delivered={editDelivered} />
+                ) : null}
               </View>
             </View>
             <Ionicons
@@ -494,14 +532,20 @@ export default function WorkOrderDetail() {
           label={t("workOrders.detail.sections.description")}
           hairline={hairline}
           trailing={
-            overlay?.description !== undefined ? <PendingSyncPill /> : <EditGlyph dark={dark} />
+            overlay?.description !== undefined ? (
+              <PendingSyncPill delivered={editDelivered} />
+            ) : (
+              <EditGlyph dark={dark} />
+            )
           }
         >
           <Pressable onPress={() => setEditing("description")} accessibilityRole="button">
             {descriptionShown.trim().length > 0 ? (
               <MarkdownLite text={descriptionShown} ink={ink} />
             ) : (
-              <Text style={{ fontSize: 12.5, color: MUTED }}>{t("workOrders.detail.noDescription")}</Text>
+              <Text style={{ fontSize: 12.5, color: MUTED }}>
+                {t("workOrders.detail.noDescription")}
+              </Text>
             )}
           </Pressable>
           {descTr.translated ? (
@@ -520,7 +564,11 @@ export default function WorkOrderDetail() {
           label={t("workOrders.detail.sections.technicianNotes")}
           hairline={hairline}
           trailing={
-            overlay?.completionNotes !== undefined ? <PendingSyncPill /> : <EditGlyph dark={dark} />
+            overlay?.completionNotes !== undefined ? (
+              <PendingSyncPill delivered={editDelivered} />
+            ) : (
+              <EditGlyph dark={dark} />
+            )
           }
         >
           <Pressable onPress={() => setEditing("completionNotes")} accessibilityRole="button">
@@ -593,7 +641,12 @@ export default function WorkOrderDetail() {
                       style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 1 }}
                     >
                       <View
-                        style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: CALLBACK_TINT }}
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: 3,
+                          backgroundColor: CALLBACK_TINT,
+                        }}
                       />
                       <Text style={{ fontSize: 10.5, fontWeight: "700", color: CALLBACK_TINT }}>
                         Possible callback → #{numberById.get(r.callbackMatchedId)}
@@ -725,11 +778,7 @@ export default function WorkOrderDetail() {
         allowClear={scheduledAtShown !== null}
         onPick={(ms) => {
           setPickingDate(null);
-          void queueEdit(
-            wo.id,
-            { scheduledAt: new Date(ms).toISOString() },
-            { baseUrl, token },
-          );
+          void queueEdit(wo.id, { scheduledAt: new Date(ms).toISOString() }, { baseUrl, token });
         }}
         onClear={() => {
           setPickingDate(null);
@@ -919,10 +968,13 @@ function Section({
   );
 }
 
-/** Small olive marker on fields the pending-edits overlay is holding. */
-function PendingSyncPill() {
+/** Small marker on fields the pending-edits overlay is holding: accent
+ *  "pending sync" while undelivered, green "saved" once the write is verified
+ *  in ResMan and only the mirror is catching up. */
+function PendingSyncPill({ delivered = false }: { delivered?: boolean }) {
   const { t } = useTranslation();
-  const palette = useAccentPalette();
+  const accent = useAccentPalette();
+  const palette = delivered ? { text: "#33A666" } : accent;
   return (
     <View
       style={{
@@ -937,8 +989,14 @@ function PendingSyncPill() {
         borderColor: `${palette.text}38`,
       }}
     >
-      <MaterialCommunityIcons name="progress-check" size={10} color={palette.text} />
-      <Text style={{ fontSize: 9, fontWeight: "700", color: palette.text }}>{t("workOrders.detail.pendingSync").toUpperCase()}</Text>
+      <MaterialCommunityIcons
+        name={delivered ? "check-circle-outline" : "progress-check"}
+        size={10}
+        color={palette.text}
+      />
+      <Text style={{ fontSize: 9, fontWeight: "700", color: palette.text }}>
+        {t(delivered ? "workOrders.detail.saved" : "workOrders.detail.pendingSync").toUpperCase()}
+      </Text>
     </View>
   );
 }
@@ -958,7 +1016,7 @@ function OriginalReveal({
   hairline: string;
   t: (key: string) => string;
 }) {
-    const palette = useAccentPalette();
+  const palette = useAccentPalette();
   return (
     <View style={{ marginTop: 9 }}>
       <Pressable
@@ -973,11 +1031,15 @@ function OriginalReveal({
         </Text>
       </Pressable>
       {revealed ? (
-        <View style={{ marginTop: 7, borderLeftWidth: 2, borderLeftColor: hairline, paddingLeft: 11 }}>
+        <View
+          style={{ marginTop: 7, borderLeftWidth: 2, borderLeftColor: hairline, paddingLeft: 11 }}
+        >
           <Text style={{ fontSize: 9, fontWeight: "800", letterSpacing: 0.8, color: MUTED }}>
             {t("translation.originalLabel").toUpperCase()}
           </Text>
-          <Text style={{ fontSize: 12, color: MUTED, marginTop: 3, lineHeight: 17 }}>{original}</Text>
+          <Text style={{ fontSize: 12, color: MUTED, marginTop: 3, lineHeight: 17 }}>
+            {original}
+          </Text>
         </View>
       ) : null}
     </View>
@@ -1268,13 +1330,7 @@ function Journey({
                   fontWeight: filled ? "700" : "600",
                   // An editable stop that is still empty reads as an invitation
                   // (accent) rather than as missing data (grey).
-                  color: filled
-                    ? dark
-                      ? "#FFFFFF"
-                      : NAVY
-                    : s.onPress
-                      ? palette.text
-                      : MUTED,
+                  color: filled ? (dark ? "#FFFFFF" : NAVY) : s.onPress ? palette.text : MUTED,
                   fontVariant: ["tabular-nums"],
                 }}
               >

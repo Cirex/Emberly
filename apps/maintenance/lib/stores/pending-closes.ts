@@ -37,6 +37,10 @@ export interface PendingClose {
   /** The last delivery failure, verbatim — surfaced in the outbox so a stuck
    *  entry says WHY instead of just counting attempts. Cleared on ack. */
   lastError?: string;
+  /** Epoch ms of the last successful delivery (ack). The redeliver clock runs
+   *  from HERE, never from queuedAt — an age-based clock made every entry
+   *  older than the window oscillate acked→unacked on each prune tick. */
+  ackedAt?: number;
 }
 
 /** A pending close older than this is dropped at hydrate/prune — a close the
@@ -99,6 +103,7 @@ function ackIfUnchanged(
         [workOrderId]: {
           ...cur,
           acked: true,
+          ackedAt: Date.now(),
           lastError: undefined,
           ...(attempts === undefined ? {} : { attempts }),
         },
@@ -229,7 +234,9 @@ export const usePendingCloses = create<PendingClosesState>()(
               changed = true;
               continue;
             }
-            if (entry.acked && nowMs - entry.queuedAt > REDELIVER_MS) {
+            // Clock from the last ack; a stub-era entry persisted without
+            // ackedAt reads as never-delivered and redelivers immediately.
+            if (entry.acked && nowMs - (entry.ackedAt ?? 0) > REDELIVER_MS) {
               // The mirror never confirmed this ack — redeliver (see
               // REDELIVER_MS). Verify-first delivery makes this a no-op when
               // the close actually landed.

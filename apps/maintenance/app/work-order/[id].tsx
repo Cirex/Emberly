@@ -198,7 +198,11 @@ export default function WorkOrderDetail() {
   const closeIsLocalOnly =
     closeEntry !== undefined && closeEntry.acked !== true && wo.completedAt === null;
 
-  const isOpen = wo.completedAt === null && !/^(completed|closed|canceled)$/i.test(wo.status);
+  // Status alone decides openness: ResMan KEEPS the old CompletedDate when a
+  // ticket is reopened (field-verified on a WO sitting at In Progress with a
+  // stale completion date), so gating on completedAt hid Mark Complete on
+  // genuinely open, reopened tickets.
+  const isOpen = !/^(completed|closed|canceled)$/i.test(wo.status);
   const pendingClose = closeEntry !== undefined;
   const closeDelivered = closeEntry?.acked === true;
   const canClose = isOpen && !pendingClose;

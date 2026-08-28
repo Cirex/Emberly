@@ -25,6 +25,9 @@ export interface PendingEdit {
   /** The last delivery failure, verbatim — surfaced in the outbox so a stuck
    *  entry says WHY instead of just counting attempts. Cleared on ack. */
   lastError?: string;
+  /** Epoch ms of the last successful delivery (ack) — the redeliver clock
+   *  runs from here, never from editedAt (see pending-closes). */
+  ackedAt?: number;
 }
 
 /** An edit older than this is dropped at prune — a write the flusher kept
@@ -83,7 +86,10 @@ function ackIfUnchanged(
     const cur = s.pending[workOrderId];
     if (!cur || fingerprint(cur.patch) !== sentPrint) return s;
     return {
-      pending: { ...s.pending, [workOrderId]: { ...cur, acked: true, lastError: undefined } },
+      pending: {
+        ...s.pending,
+        [workOrderId]: { ...cur, acked: true, ackedAt: Date.now(), lastError: undefined },
+      },
     };
   });
 }
@@ -99,11 +105,22 @@ function sameMoment(a: string | null | undefined, b: string | null | undefined):
   return Number.isNaN(ta) || Number.isNaN(tb) ? a === b : ta === tb;
 }
 
+/** ResMan round-trips free text with \r\n line endings and can pad edges;
+ *  compare CONTENT, not bytes, or a multi-line note never reads as absorbed
+ *  (field-verified: an acked edit oscillated forever on exactly this). */
+function sameText(a: string | null | undefined, b: string | null | undefined): boolean {
+  const norm = (v: string | null | undefined) => (v ?? "").replace(/\r\n/g, "\n").trim();
+  return norm(a) === norm(b);
+}
+
 /** True when the base row already carries every value the patch sets. */
 function absorbed(row: WorkOrder, patch: WorkOrderEditPatch): boolean {
   if (patch.technician !== undefined && row.technician !== patch.technician) return false;
-  if (patch.description !== undefined && row.notes !== patch.description) return false;
-  if (patch.completionNotes !== undefined && row.completion_notes !== patch.completionNotes) {
+  if (patch.description !== undefined && !sameText(row.notes, patch.description)) return false;
+  if (
+    patch.completionNotes !== undefined &&
+    !sameText(row.completion_notes, patch.completionNotes)
+  ) {
     return false;
   }
   // ResMan may echo the date back in a different format than we sent, so this
@@ -191,7 +208,7 @@ export const usePendingEdits = create<PendingEditsState>()(
               (row !== undefined && absorbed(row, entry.patch));
             if (retire) {
               changed = true;
-            } else if (entry.acked && nowMs - entry.editedAt > REDELIVER_MS) {
+            } else if (entry.acked && nowMs - (entry.ackedAt ?? 0) > REDELIVER_MS) {
               // Acked but never absorbed — redeliver (see REDELIVER_MS).
               next[entry.workOrderId] = { ...entry, acked: false };
               changed = true;

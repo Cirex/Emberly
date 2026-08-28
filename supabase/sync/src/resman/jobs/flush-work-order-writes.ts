@@ -27,7 +27,11 @@ import type { ServiceClient } from "../../db/client";
 import type { ResManClient } from "../client";
 import type { ResManCredentials } from "../config";
 import { ResManScrapingError } from "../errors";
-import { type ResManEmployee, fetchMaintenanceEmployees, resolveTechnician } from "../write/employees";
+import {
+  type ResManEmployee,
+  fetchMaintenanceEmployees,
+  resolveTechnician,
+} from "../write/employees";
 import {
   type WorkOrderWriteRequest,
   type WorkOrderWriteResult,
@@ -93,10 +97,15 @@ function toWriteRequest(
   if (row.kind === "edit") {
     const technician = patch.technician;
     if (typeof technician === "string") {
-      if (!employees) return { error: "employee list unavailable" };
-      const resolved = resolveTechnician(employees, technician);
-      if ("error" in resolved) return { error: resolved.error };
-      request.patch.technicianPersonId = resolved.personId;
+      if (/^\s*(unassigned)?\s*$/i.test(technician)) {
+        // "Unassigned" (or blank) clears the assignee — no roster needed.
+        request.patch.technicianPersonId = "";
+      } else {
+        if (!employees) return { error: "employee list unavailable" };
+        const resolved = resolveTechnician(employees, technician);
+        if ("error" in resolved) return { error: resolved.error };
+        request.patch.technicianPersonId = resolved.personId;
+      }
     }
     if (typeof patch.description === "string") request.patch.description = patch.description;
     if (typeof patch.completionNotes === "string") {
@@ -295,7 +304,9 @@ export async function flushWorkOrderWrites(
       });
       if (exhausted) result.failed += 1;
       else result.requeued += 1;
-      log(`[wo-flush] ${row.resman_work_order_id} ${row.kind}: ${exhausted ? "failed" : "requeued"} (${message})`);
+      log(
+        `[wo-flush] ${row.resman_work_order_id} ${row.kind}: ${exhausted ? "failed" : "requeued"} (${message})`,
+      );
       continue;
     }
 

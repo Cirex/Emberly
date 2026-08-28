@@ -363,6 +363,46 @@ test("guard: a page without the location display name refuses (never blank it)",
   assert.equal(posts(transport.calls).length, 0);
 });
 
+test("edit: 'Unassigned' clears the assignee without touching the roster", async () => {
+  const landed = fixture("16305").replace(
+    'data-selected-value="7a2f5c20-42af-4e4e-808e-45bd64ae89c2"',
+    'data-selected-value=""',
+  );
+  const transport = makeTransport({
+    pages: { [EDIT_URL_16305]: fixture("16305") },
+    pagesAfterPost: { [EDIT_URL_16305]: landed },
+  });
+  let rosterCalls = 0;
+  const result = await applyWorkOrderWrite({
+    client: makeClient(transport.fetchImpl),
+    request: {
+      workOrderId: WO_16305,
+      kind: "edit",
+      patch: { technicianName: "Unassigned" },
+      expectedUnitId: UNIT_16305,
+    },
+    now: NOW,
+  });
+  void rosterCalls;
+  assert.equal(result.ok, true);
+  const byName = Object.fromEntries(decodePairs(posts(transport.calls)[0].body));
+  assert.equal(byName.AssignedToPersonID, "");
+  // No EmployeeList request was needed to clear an assignee.
+  assert.ok(!transport.calls.some((call) => call.url.includes("EmployeeList")));
+});
+
+test("resolveTechnician: display-normalized roster names match; Unassigned clears", () => {
+  const employees = [
+    { name: "GROUNDS KEEPING", personId: "11111111-1111-1111-1111-111111111111" },
+    { name: "Ben Bloch", personId: "b78d380f-63e9-43c0-aab8-f75b906cb27e" },
+  ];
+  // The app round-trips the DISPLAY form of ResMan's raw name.
+  assert.deepEqual(resolveTechnician(employees, "Grounds Keepers"), {
+    personId: "11111111-1111-1111-1111-111111111111",
+  });
+  assert.deepEqual(resolveTechnician(employees, "Unassigned"), { personId: "" });
+});
+
 // MARK: - Guards (each one an attack)
 
 test("guard: a Cancelled work order is refused before any POST", async () => {

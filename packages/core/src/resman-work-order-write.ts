@@ -44,6 +44,7 @@
  */
 
 import { isResManLoginRedirectUrl, resManFormURLEncode } from "./resman-staff-auth";
+import { technicianDisplayName } from "./work-orders";
 
 // MARK: - Errors
 
@@ -498,33 +499,73 @@ export function formatResManDate(date: Date, timeZone = RESMAN_PROPERTY_TIME_ZON
  * trip the drift guard.
  */
 const ECHO_FIELDS = new Set([
-  "WorkOrderID", "TempDocObjectID", "UnitNoteID", "SaveAndNew", "SaveAndCopy",
-  "_RequiredFields", "SaveAndPrint", "RecurringItemViewModel.TemplateOnly",
-  "WorkOrderTemplateID", "PrintLanguageCode", "RedirectUrl", "AssociationObjectID",
-  "AssociationObjectType", "ProjectID", "DefaultEmptyGuid", "Number", "PropertyID",
-  "ReportedDateTime", "ReportedDateTime_Date", "ReportedDateTime.Time", "DueDate",
-  "ObjectID", "ObjectType", "Areas", "InventoryItemID", "ReceivedByPersonID",
-  "ReportedBy", "ReportedByPersonID", "Appointment", "Phone", "Pets",
-  "WorkOrderCategoryID", "ReportingNotes", "CancellationReasonPickListItemID",
-  "CancellationDate", "Priority", "VendorID", "EstimatedCost", "StartedDate",
+  "WorkOrderID",
+  "TempDocObjectID",
+  "UnitNoteID",
+  "SaveAndNew",
+  "SaveAndCopy",
+  "_RequiredFields",
+  "SaveAndPrint",
+  "RecurringItemViewModel.TemplateOnly",
+  "WorkOrderTemplateID",
+  "PrintLanguageCode",
+  "RedirectUrl",
+  "AssociationObjectID",
+  "AssociationObjectType",
+  "ProjectID",
+  "DefaultEmptyGuid",
+  "Number",
+  "PropertyID",
+  "ReportedDateTime",
+  "ReportedDateTime_Date",
+  "ReportedDateTime.Time",
+  "DueDate",
+  "ObjectID",
+  "ObjectType",
+  "Areas",
+  "InventoryItemID",
+  "ReceivedByPersonID",
+  "ReportedBy",
+  "ReportedByPersonID",
+  "Appointment",
+  "Phone",
+  "Pets",
+  "WorkOrderCategoryID",
+  "ReportingNotes",
+  "CancellationReasonPickListItemID",
+  "CancellationDate",
+  "Priority",
+  "VendorID",
+  "EstimatedCost",
+  "StartedDate",
   // Synthesized by the writer (see resolveWorkOrderLocationName): the display
   // text the ObjectID combobox posts. ResMan persists its denormalized
   // ObjectName from THIS field on every save — omit it and the work order's
   // unit/building name blanks in every list and report (verified live on
   // WOs 14627 and 16376, 2026-08-27).
   "Location",
-  "StartedDate_Date", "StartedDate.Time", "StartedByPersonID", "AddRetentionEffortNote",
+  "StartedDate_Date",
+  "StartedDate.Time",
+  "StartedByPersonID",
+  "AddRetentionEffortNote",
   // The .Time halves of the two date triples we do write ride along as
   // harvested — the composite field carries the authoritative value.
-  "ScheduledDate.Time", "CompletedDate.Time",
+  "ScheduledDate.Time",
+  "CompletedDate.Time",
 ]);
 
 /** Fields a write MAY change — the union across both kinds; per-request the
  *  set is narrowed further to exactly what that request's patch touches. */
 const MUTABLE_FIELDS = new Set([
-  "Description", "AssignedToPersonID", "CompletedNotes",
-  "ScheduledDate", "ScheduledDate_Date",
-  "Status", "CompletedDate", "CompletedDate_Date", "CompletedByPersonID",
+  "Description",
+  "AssignedToPersonID",
+  "CompletedNotes",
+  "ScheduledDate",
+  "ScheduledDate_Date",
+  "Status",
+  "CompletedDate",
+  "CompletedDate_Date",
+  "CompletedByPersonID",
 ]);
 
 /** ResMan's own limits on Description (data-val-length / data-val-regex). */
@@ -589,7 +630,8 @@ export interface WorkOrderWriteResult {
  */
 export function resolveWorkOrderLocationName(html: string, objectId: string): string | null {
   const pattern = new RegExp(
-    '\\{"ObjectID":"' + objectId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
+    '\\{"ObjectID":"' +
+      objectId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
       '","ObjectType":"[^"]*","Name":"((?:[^"\\\\]|\\\\.)*)"',
     "i",
   );
@@ -754,7 +796,10 @@ function mutate(controls: FormControl[], request: WorkOrderWriteRequest, now: Da
       set("Description", sanitizeDescription(patch.description));
     }
     if (patch.technicianPersonId !== undefined) {
-      if (!GUID_RE.test(patch.technicianPersonId)) {
+      // "" clears the assignee — ResMan's own combobox carries an empty first
+      // option, and an unassigned work order is a legal state. Anything else
+      // must be a real person GUID.
+      if (patch.technicianPersonId !== "" && !GUID_RE.test(patch.technicianPersonId)) {
         throw new WorkOrderWriteRefused("technician did not resolve to a person GUID");
       }
       set("AssignedToPersonID", patch.technicianPersonId);
@@ -902,7 +947,12 @@ export function parseEmployeeList(json: unknown): ResManEmployee[] {
     if (typeof item !== "object" || item === null) continue;
     const name = (item as Record<string, unknown>).Name;
     const personId = (item as Record<string, unknown>).PersonID;
-    if (typeof name === "string" && typeof personId === "string" && name.trim() && personId.trim()) {
+    if (
+      typeof name === "string" &&
+      typeof personId === "string" &&
+      name.trim() &&
+      personId.trim()
+    ) {
       employees.push({ name: name.trim(), personId: personId.trim() });
     }
   }
@@ -921,7 +971,18 @@ export function resolveTechnician(
 ): { personId: string } | { error: string } {
   const wanted = displayName.trim().toLowerCase();
   if (!wanted) return { error: "technician name is empty" };
-  const matches = employees.filter((employee) => employee.name.toLowerCase() === wanted);
+  // "Unassigned" is the app's display form of an EMPTY assignee, not a person
+  // to find in the roster — resolve it to the empty id, which the engine
+  // writes as a cleared AssignedToPersonID.
+  if (wanted === "unassigned") return { personId: "" };
+  // Match the roster's raw name OR its display-normalized form — the app
+  // round-trips technicianDisplayName ("GROUNDS KEEPING" shows as "Grounds
+  // Keepers"), and reassignments send the display form back.
+  const matches = employees.filter(
+    (employee) =>
+      employee.name.toLowerCase() === wanted ||
+      technicianDisplayName(employee.name).toLowerCase() === wanted,
+  );
   if (matches.length === 0) {
     return { error: `no maintenance employee named ${JSON.stringify(displayName.trim())}` };
   }
@@ -961,7 +1022,10 @@ async function fetchEditForm(
   if (response.status !== 200) {
     throw new ResManFormParseError(`HTTP ${response.status} for ${url}`);
   }
-  return { controls: parseWorkOrderEditForm(response.text, workOrderId).controls, html: response.text };
+  return {
+    controls: parseWorkOrderEditForm(response.text, workOrderId).controls,
+    html: response.text,
+  };
 }
 
 /** Resolve `technicianName` into `technicianPersonId` (mutating a COPY of the
@@ -973,6 +1037,11 @@ async function withResolvedTechnician(
   const { request } = params;
   if (request.patch.technicianName === undefined) return request;
   if (request.patch.technicianPersonId !== undefined) return request;
+  const wanted = request.patch.technicianName.trim().toLowerCase();
+  if (wanted === "" || wanted === "unassigned") {
+    // Clearing the assignee needs no roster round-trip.
+    return { ...request, patch: { ...request.patch, technicianPersonId: "" } };
+  }
   if (!params.resolveTechnicianName) {
     throw new WorkOrderWriteRefused("technicianName given but no resolver provided");
   }
@@ -1025,7 +1094,9 @@ export async function applyWorkOrderWriteWithHttp(
   // 2. Mutate + diff.
   const { allowed, targets } = mutate(controls, resolved, now());
   if (allowed.size === 0) {
-    log(`[wo-write] ${request.workOrderId} ${request.kind}: form already holds every target — no-op`);
+    log(
+      `[wo-write] ${request.workOrderId} ${request.kind}: form already holds every target — no-op`,
+    );
     return { ok: true, phase: "verified", noop: true, detail: "already applied" };
   }
   const after = serializeControls(controls);

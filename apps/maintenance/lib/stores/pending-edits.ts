@@ -1,3 +1,4 @@
+import { technicianDisplayName } from "@emberly/core";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { persistedStorage } from "@/lib/stores/persisted-storage";
@@ -115,7 +116,15 @@ function sameText(a: string | null | undefined, b: string | null | undefined): b
 
 /** True when the base row already carries every value the patch sets. */
 function absorbed(row: WorkOrder, patch: WorkOrderEditPatch): boolean {
-  if (patch.technician !== undefined && row.technician !== patch.technician) return false;
+  // Technician compares in DISPLAY space: the patch carries the display form
+  // ("Unassigned", "Grounds Keepers") while the mirror carries ResMan's raw
+  // value ("" / "GROUNDS KEEPING") — a byte compare never absorbs a clear.
+  if (
+    patch.technician !== undefined &&
+    technicianDisplayName(row.technician ?? "") !== technicianDisplayName(patch.technician)
+  ) {
+    return false;
+  }
   if (patch.description !== undefined && !sameText(row.notes, patch.description)) return false;
   if (
     patch.completionNotes !== undefined &&

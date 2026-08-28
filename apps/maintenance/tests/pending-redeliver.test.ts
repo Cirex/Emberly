@@ -96,6 +96,22 @@ describe("pending-edits absorption", () => {
     expect(usePendingEdits.getState().pending.wo1).toBeUndefined();
   });
 
+  test("an Unassigned patch absorbs against the mirror's empty technician", () => {
+    usePendingEdits.setState({
+      pending: {
+        wo1: {
+          workOrderId: "wo1",
+          patch: { technician: "Unassigned" },
+          editedAt: NOW - 10 * MIN,
+          acked: true,
+          ackedAt: NOW - MIN,
+        },
+      },
+    });
+    usePendingEdits.getState().prune([row({ technician: "" })], NOW);
+    expect(usePendingEdits.getState().pending.wo1).toBeUndefined();
+  });
+
   test("genuinely different notes do NOT absorb, and a fresh ack holds", () => {
     usePendingEdits.setState({
       pending: {

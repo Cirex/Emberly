@@ -78,6 +78,11 @@ export function buildOutbox(input: OutboxInput): OutboxItem[] {
   const items: OutboxItem[] = [];
 
   for (const c of input.closes) {
+    // Delivered (acked = verified in ResMan). The entry itself lives on only
+    // so the optimistic overlay keeps rendering until the mirror absorbs it —
+    // an internal detail, not outbox material: this list is writes still on
+    // their way, and a verified write is not.
+    if (c.acked) continue;
     items.push({
       id: `close:${c.workOrderId}`,
       kind: "close",
@@ -90,6 +95,7 @@ export function buildOutbox(input: OutboxInput): OutboxItem[] {
   }
 
   for (const e of input.edits) {
+    if (e.acked) continue; // delivered — same reasoning as closes above
     items.push({
       id: `edit:${e.workOrderId}`,
       kind: "edit",

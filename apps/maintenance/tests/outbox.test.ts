@@ -30,16 +30,30 @@ const edit = (over: Partial<PendingEdit> = {}): PendingEdit => ({
   ...over,
 });
 
-const photoQueue = (...ids: { id: string; workOrderId: string; attempts: number; queuedAt: number }[]): WorkOrderPhotoQueue =>
+const photoQueue = (
+  ...ids: { id: string; workOrderId: string; attempts: number; queuedAt: number }[]
+): WorkOrderPhotoQueue =>
   Object.fromEntries(
-    ids.map((p) => [p.id, { photoId: p.id, workOrderId: p.workOrderId, phase: "completion" as const, queuedAt: p.queuedAt, attempts: p.attempts }]),
+    ids.map((p) => [
+      p.id,
+      {
+        photoId: p.id,
+        workOrderId: p.workOrderId,
+        phase: "completion" as const,
+        queuedAt: p.queuedAt,
+        attempts: p.attempts,
+      },
+    ]),
   );
 
 describe("editFields", () => {
   test("returns the touched fields as stable keys, notes first", () => {
     expect(editFields({ completionNotes: "x" })).toEqual(["notes"]);
     expect(editFields({ technician: "Sam" })).toEqual(["assignment"]);
-    expect(editFields({ description: "d", completionNotes: "n" })).toEqual(["notes", "description"]);
+    expect(editFields({ description: "d", completionNotes: "n" })).toEqual([
+      "notes",
+      "description",
+    ]);
   });
 });
 
@@ -54,14 +68,20 @@ describe("buildOutbox state", () => {
     expect(item.state).toBe("retrying");
   });
 
-  test("an acked close is sent", () => {
-    const [item] = buildOutbox(input({ closes: [close({ acked: true })] }));
-    expect(item.state).toBe("sent");
+  test("an acked close leaves the outbox — delivered means gone", () => {
+    // acked = verified in ResMan; the entry lives on only so the optimistic
+    // overlay keeps rendering until the mirror absorbs it. The outbox is
+    // writes still on their way, and a verified write is not.
+    const items = buildOutbox(input({ closes: [close({ acked: true })] }));
+    expect(items).toHaveLength(0);
   });
 
   test("photos are sending while a flush is in flight", () => {
     const items = buildOutbox(
-      input({ photos: photoQueue({ id: "p1", workOrderId: "wo-9", attempts: 0, queuedAt: 5 }), photosSyncing: true }),
+      input({
+        photos: photoQueue({ id: "p1", workOrderId: "wo-9", attempts: 0, queuedAt: 5 }),
+        photosSyncing: true,
+      }),
     );
     expect(items[0].state).toBe("sending");
   });
@@ -94,7 +114,7 @@ describe("buildOutbox photo collapsing", () => {
 });
 
 describe("buildOutbox ordering", () => {
-  test("sending first, then retrying, then queued, then sent", () => {
+  test("retrying first, then queued; delivered rows are absent entirely", () => {
     const items = buildOutbox(
       input({
         closes: [
@@ -104,7 +124,7 @@ describe("buildOutbox ordering", () => {
         ],
       }),
     );
-    expect(items.map((i) => i.workOrderId)).toEqual(["retry", "queued", "sent"]);
+    expect(items.map((i) => i.workOrderId)).toEqual(["retry", "queued"]);
   });
 });
 

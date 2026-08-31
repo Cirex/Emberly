@@ -3,7 +3,7 @@
  * One front door for shipping any app in this repo.
  *
  * Usage:
- *   bun scripts/release.ts <app> [options]
+ *   bun scripts/release.mjs <app> [options]
  *
  *   <app>            web | maintenance | security | manager | resident
  *   --dry-run        run every check, then stop before shipping anything
@@ -15,10 +15,10 @@
  *   --yes, -y        don't prompt before the irreversible step
  *
  * Examples:
- *   bun scripts/release.ts security --dry-run   # what would ship, and from what
- *   bun scripts/release.ts security --submit    # build → TestFlight
- *   bun scripts/release.ts web --preview        # preview deploy
- *   bun scripts/release.ts web                  # production deploy (prompts)
+ *   bun scripts/release.mjs security --dry-run   # what would ship, and from what
+ *   bun scripts/release.mjs security --submit    # build → TestFlight
+ *   bun scripts/release.mjs web --preview        # preview deploy
+ *   bun scripts/release.mjs web                  # production deploy (prompts)
  *
  * This does not bump versions — that is `bun run version`, deliberately a
  * separate step so a release is always shipping a version somebody chose.
@@ -34,7 +34,7 @@ import path from "node:path";
 const APPS = ["web", "maintenance", "security", "manager", "resident"];
 
 function usage() {
-  console.error("usage: bun scripts/release.ts <app> [--dry-run] [--submit] [--profile <name>]");
+  console.error("usage: bun scripts/release.mjs <app> [--dry-run] [--submit] [--profile <name>]");
   console.error("                              [--preview] [--allow-dirty] [--skip-env] [--yes]");
   console.error(`  <app>  ${APPS.join(" | ")}`);
   process.exit(2);
@@ -119,7 +119,7 @@ async function main() {
       return 1;
     }
     console.log(`━━ ${opts.app} v${version} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    const easRelease = path.join(import.meta.dir, "eas-release.ts");
+    const easRelease = path.join(import.meta.dir, "eas-release.mjs");
     const run = await $`bun ${easRelease} ${appDir} ${opts.passthru}`.cwd(repoRoot).nothrow();
     return run.exitCode;
   }

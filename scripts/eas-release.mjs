@@ -4,7 +4,7 @@
  * checks that are easy to forget and expensive to miss.
  *
  * Usage:
- *   bun scripts/eas-release.ts <app-dir> [options]
+ *   bun scripts/eas-release.mjs <app-dir> [options]
  *
  *   --profile <name>   EAS build profile (default: production)
  *   --submit           run `eas submit` after a successful build
@@ -14,8 +14,8 @@
  *   --yes, -y          non-interactive; assume yes at prompts
  *
  * Examples:
- *   bun scripts/eas-release.ts apps/security --dry-run   # preflight only
- *   bun scripts/eas-release.ts apps/security --submit    # build → TestFlight
+ *   bun scripts/eas-release.mjs apps/security --dry-run   # preflight only
+ *   bun scripts/eas-release.mjs apps/security --submit    # build → TestFlight
  *
  * WHY THE DIRTY-TREE CHECK MATTERS: EAS builds from your COMMITTED git state,
  * not your working tree. Uncommitted changes are silently absent from the
@@ -31,7 +31,7 @@ import { $ } from "bun";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-const USAGE = "usage: bun scripts/eas-release.ts <app-dir> [--profile production] [--submit] [--dry-run]";
+const USAGE = "usage: bun scripts/eas-release.mjs <app-dir> [--profile production] [--submit] [--dry-run]";
 
 function parseArgs(argv) {
   const [app, ...rest] = argv;
@@ -140,7 +140,7 @@ async function main() {
 
   // 3. environment
   const envFile = path.join(appDir, ".env.production");
-  const syncScript = path.join(import.meta.dir, "eas-env-sync.ts");
+  const syncScript = path.join(import.meta.dir, "eas-env-sync.mjs");
   if (opts.skipEnv) {
     console.log("  · env          skipped (--skip-env)");
   } else if (!existsSync(envFile)) {

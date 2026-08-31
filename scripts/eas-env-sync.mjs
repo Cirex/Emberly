@@ -4,7 +4,7 @@
  * REMOVING variables that no longer exist in the file.
  *
  * Usage:
- *   bun scripts/eas-env-sync.ts <app-dir> [options]
+ *   bun scripts/eas-env-sync.mjs <app-dir> [options]
  *
  *   --environments "production preview"   which EAS environments (default both)
  *   --prune                               delete EAS vars absent from the file
@@ -12,9 +12,9 @@
  *   --yes, -y                             skip the confirmation prompt when pruning
  *
  * Examples:
- *   bun scripts/eas-env-sync.ts apps/security --dry-run   # diff only, the safe read
- *   bun scripts/eas-env-sync.ts apps/security             # push adds/updates
- *   bun scripts/eas-env-sync.ts apps/security --prune     # full mirror, with confirmation
+ *   bun scripts/eas-env-sync.mjs apps/security --dry-run   # diff only, the safe read
+ *   bun scripts/eas-env-sync.mjs apps/security             # push adds/updates
+ *   bun scripts/eas-env-sync.mjs apps/security --prune     # full mirror, with confirmation
  *
  * VALUES ARE NEVER PRINTED. The plan shows variable names and an action only,
  * so it is safe to paste into a ticket or read over a shared screen.
@@ -33,7 +33,7 @@ import path from "node:path";
 import { buildPlan, countBy, formatPlan, parseEnvFile } from "./lib/env-file.mjs";
 
 const USAGE =
-  'usage: bun scripts/eas-env-sync.ts <app-dir> [--environments "production preview"] [--prune] [--dry-run] [--yes]';
+  'usage: bun scripts/eas-env-sync.mjs <app-dir> [--environments "production preview"] [--prune] [--dry-run] [--yes]';
 
 function parseArgs(argv) {
   const [app, ...rest] = argv;

@@ -2,8 +2,8 @@
 /**
  * Capture App Store screenshots from the iOS Simulator at Apple's exact sizes.
  *
- *   bun scripts/capture-store-screenshots.ts maintenance /path/to/EmberlyMaintenance.app
- *   bun scripts/capture-store-screenshots.ts security    /path/to/EmberlySecurity.app
+ *   bun scripts/capture-store-screenshots.mjs maintenance /path/to/EmberlyMaintenance.app
+ *   bun scripts/capture-store-screenshots.mjs security    /path/to/EmberlySecurity.app
  *
  * Output lands in apps/<app>/store/screenshots/<device>/NN_<name>.png, using
  * fastlane deliver's naming so `deliver` can upload the directory as-is. EAS
@@ -76,7 +76,7 @@ async function pixelSize(file) {
 async function main() {
   const [appName, appPath] = process.argv.slice(2);
   if (!appName || !appPath) {
-    console.error("usage: bun scripts/capture-store-screenshots.ts <maintenance|security|manager> <path-to-simulator-.app>");
+    console.error("usage: bun scripts/capture-store-screenshots.mjs <maintenance|security|manager> <path-to-simulator-.app>");
     return 64;
   }
 

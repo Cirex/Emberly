@@ -8,6 +8,10 @@
  *
  *   --profile <name>   EAS build profile (default: production)
  *   --submit           run `eas submit` after a successful build
+ *   --local            build on THIS machine instead of EAS's queue (no build
+ *                      credits spent; needs Xcode + fastlane). The .ipa is
+ *                      written into the app dir, and --submit uploads that file
+ *                      rather than asking EAS for its latest hosted build.
  *   --skip-env         don't sync .env.production into EAS first
  *   --allow-dirty      build even with uncommitted changes (see below)
  *   --dry-run          run every check, then stop before building
@@ -16,6 +20,7 @@
  * Examples:
  *   bun scripts/eas-release.mjs apps/security --dry-run   # preflight only
  *   bun scripts/eas-release.mjs apps/security --submit    # build → TestFlight
+ *   bun scripts/eas-release.mjs apps/security --local --submit  # build here → TestFlight
  *
  * WHY THE DIRTY-TREE CHECK MATTERS: EAS builds from your COMMITTED git state,
  * not your working tree. Uncommitted changes are silently absent from the
@@ -31,7 +36,7 @@ import { $ } from "bun";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-const USAGE = "usage: bun scripts/eas-release.mjs <app-dir> [--profile production] [--submit] [--dry-run]";
+const USAGE = "usage: bun scripts/eas-release.mjs <app-dir> [--profile production] [--submit] [--local] [--dry-run]";
 
 function parseArgs(argv) {
   const [app, ...rest] = argv;
@@ -40,6 +45,7 @@ function parseArgs(argv) {
     app: app.replace(/\/+$/, ""),
     profile: "production",
     submit: false, skipEnv: false, allowDirty: false, dryRun: false, assumeYes: false,
+    local: false,
   };
   for (let i = 0; i < rest.length; i += 1) {
     switch (rest[i]) {
@@ -48,6 +54,7 @@ function parseArgs(argv) {
         if (!v) { console.error("✗ --profile needs a value"); process.exit(2); }
         opts.profile = v; i += 1; break;
       }
+      case "--local":   opts.local = true; break;
       case "--submit":      opts.submit = true; break;
       case "--skip-env":    opts.skipEnv = true; break;
       case "--allow-dirty": opts.allowDirty = true; break;
@@ -170,15 +177,26 @@ async function main() {
 
   console.log("━━ building ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   const [bin, ...pre] = eas;
+  // A local build writes the .ipa here instead of leaving it on EAS. The name
+  // carries the version so two builds of different versions never collide in
+  // the app dir, and --submit below uploads exactly this file.
+  const localOutput = `build-${version}.ipa`;
   const buildArgs = ["build", "--platform", "ios", "--profile", opts.profile,
+    ...(opts.local ? ["--local", "--output", localOutput] : []),
     ...(opts.assumeYes ? ["--non-interactive"] : [])];
+  if (opts.local) {
+    console.log("  · local       building on this machine (no EAS build credits spent)");
+  }
   const build = await $`${bin} ${pre} ${buildArgs}`.cwd(appDir).nothrow();
   if (build.exitCode !== 0) return build.exitCode;
 
   if (opts.submit) {
     console.log();
     console.log("━━ submitting ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    const submitArgs = ["submit", "--platform", "ios", "--profile", opts.profile, "--latest",
+    // --latest asks EAS for its most recent HOSTED build, which a local build
+    // is not — upload the artifact this run just produced instead.
+    const submitArgs = ["submit", "--platform", "ios", "--profile", opts.profile,
+      ...(opts.local ? ["--path", localOutput] : ["--latest"]),
       ...(opts.assumeYes ? ["--non-interactive"] : [])];
     const submit = await $`${bin} ${pre} ${submitArgs}`.cwd(appDir).nothrow();
     if (submit.exitCode !== 0) return submit.exitCode;

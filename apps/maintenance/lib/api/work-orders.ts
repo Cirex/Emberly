@@ -3,7 +3,11 @@ import { z } from "zod";
 // direct-writer and analytics modules reach expo/react-native natives and are
 // imported LAZILY inside the write path — this module's schemas are consumed
 // by pure derived-logic tests that must never touch the native stack.
-import { WorkOrderWriteRefused, type WorkOrderWriteRequest } from "@emberly/core";
+import {
+  WorkOrderWriteRefused,
+  type WorkOrderWriteRequest,
+  type WorkOrderWriteResult,
+} from "@emberly/core";
 import type { StaffConfig } from "@/lib/stores/config";
 
 /**
@@ -149,17 +153,21 @@ export interface WorkOrderEditPatch {
  * next sync pass, which is what retires the pending-edits overlay.
  *
  * A refused write (work order Cancelled/Closed, locked field, form drift) is
- * DETERMINISTIC — retrying forever cannot help — so it is acked as consumed
- * and reported to analytics instead of shadowing the row for the stale
- * window. An expired session or offline failure throws, keeping the entry
- * un-acked for the next tick.
+ * DETERMINISTIC — retrying the same bytes cannot help — and it is also a write
+ * that NEVER HAPPENED. It rethrows `WorkOrderWriteRefused` so the pending-edits
+ * store can mark the entry BLOCKED: terminal, so the flusher stops re-sending
+ * it, but never acked, because acked means "verified in ResMan". Swallowing the
+ * refusal as `ok` (what this used to do) retired the entry as Delivered and
+ * lost the technician's typed notes behind a green pill — flush() only ever
+ * retries un-acked entries. An expired session or offline failure throws too,
+ * keeping the entry un-acked and on the automatic retry clock.
  */
 export async function editWorkOrder(
   id: string,
   patch: WorkOrderEditPatch,
   _config: StaffConfig,
 ): Promise<CloseResponse> {
-  const result = await writeDirect({
+  const outcome = await writeDirect({
     workOrderId: id,
     kind: "edit",
     patch: {
@@ -170,8 +178,9 @@ export async function editWorkOrder(
     },
     expectedUnitId: null,
   });
-  if (!result) return { ok: true, queued: false, stub: false }; // refused — consumed
-  if (!result.ok) throw new Error(result.detail);
+  // Refused = nothing was written. Never report that as ok.
+  if (outcome.refused) throw new WorkOrderWriteRefused(outcome.reason);
+  if (!outcome.result.ok) throw new Error(outcome.result.detail);
   return { ok: true, queued: false, stub: false };
 }
 
@@ -187,8 +196,12 @@ export async function editWorkOrder(
  * not always now: a tech closing out Friday's job on Monday morning needs the
  * record to say Friday. Omitted means "now", the moment they tapped.
  *
- * Refusals ack as consumed (see editWorkOrder); expired sessions and offline
- * failures throw, keeping the entry queued for the next tick.
+ * A refusal is consumed HERE (the close entry stops retrying) rather than
+ * rethrown: several close-only guards — a bad `completedAt`, `refusing to
+ * write Status=…` — say nothing about whether the folded EDIT could land, so
+ * the edit is left un-acked to get its own verdict from its own flush. Expired
+ * sessions and offline failures throw, keeping the entry queued for the next
+ * tick.
  */
 export async function closeWorkOrder(
   id: string,
@@ -203,7 +216,7 @@ export async function closeWorkOrder(
   const { usePendingEdits } = await import("@/lib/stores/pending-edits");
   const pendingEdit = usePendingEdits.getState().pending[id];
   const folded = pendingEdit && !pendingEdit.acked ? pendingEdit.patch : undefined;
-  const result = await writeDirect({
+  const outcome = await writeDirect({
     workOrderId: id,
     kind: "close",
     patch: {
@@ -216,15 +229,32 @@ export async function closeWorkOrder(
     },
     expectedUnitId: null,
   });
-  if (result && !result.ok) throw new Error(result.detail);
-  // Close delivered (or refused-consumed); the folded edit went with it — but
-  // not necessarily every field of it. The engine's close writes its OWN note
-  // over any folded typed notes (`patch.note` wins in mutate()), so acking the
-  // entry with the draft that note superseded leaves a completionNotes ResMan
-  // never received: the mirror can never absorb it, and half an hour later the
-  // redeliver clock un-acks the entry and the next flush re-POSTs the stale
-  // draft OVER the close note. Ack against what the close actually wrote.
-  if (folded) {
+  if (!outcome.refused && !outcome.result.ok) throw new Error(outcome.result.detail);
+  // Ack the folded edit ONLY when this request genuinely carried it into
+  // ResMan — a verified write that actually POSTed. Two outcomes look like
+  // success here but wrote nothing:
+  //   - refused: a guard said no before any POST, so the fold never happened;
+  //   - no-op (`noop`): the engine planned zero changes. That is ambiguous —
+  //     either every target was already in ResMan (delivered), or the office
+  //     had already Closed the ticket, in which case the close returns BEFORE
+  //     applying the folded fields at all (nothing written). The result cannot
+  //     tell the two apart, so it counts as NOT delivered: the safe reading
+  //     costs one cheap extra write, the unsafe one loses the tech's typed
+  //     notes forever, since flush() only ever retries un-acked entries.
+  // Either way the edit stays un-acked and gets its OWN verdict from its own
+  // flush, which terminates three ways: the write lands and acks; it no-ops
+  // and acks; or ResMan refuses it, and the entry goes BLOCKED — still not
+  // acked, still in the outbox, now carrying the reason (see PendingEdit).
+  //
+  // And when we DO ack, ack against what the close actually WROTE, not what
+  // was asked: the engine's close writes its own note over any folded typed
+  // notes (`patch.note` wins in mutate()), so acking with the superseded draft
+  // would leave a completionNotes ResMan never received — unabsorbable, and
+  // half an hour later the redeliver clock would re-POST the stale draft OVER
+  // the close note. The re-base is only sound because it sits behind the
+  // delivered check above: a verified non-no-op POST is exactly the case where
+  // `note` is what ResMan now holds.
+  if (folded && !outcome.refused && outcome.result.ok && !outcome.result.noop) {
     const written =
       note && folded.completionNotes !== undefined ? { ...folded, completionNotes: note } : folded;
     usePendingEdits.getState().ackDelivered(id, folded, written);
@@ -233,19 +263,28 @@ export async function closeWorkOrder(
 }
 
 /**
- * Run one direct write, folding deterministic refusals into `null` so both
- * wrappers treat them as consumed (analytics carry the reason — no free text,
- * AGENTS.md keeps notes out of logs).
+ * The two shapes a direct write can settle in. A refusal is NOT an engine
+ * verdict — no POST was sent — so it is kept separate rather than flattened
+ * into a falsy result the caller can mistake for success.
  */
-async function writeDirect(request: WorkOrderWriteRequest) {
+type WriteOutcome =
+  { refused: false; result: WorkOrderWriteResult } | { refused: true; reason: string };
+
+/**
+ * Run one direct write, reporting a deterministic refusal as data instead of
+ * an exception so each wrapper can decide what it means for ITS queue entry
+ * (analytics carry the reason — no free text, AGENTS.md keeps notes out of
+ * logs).
+ */
+async function writeDirect(request: WorkOrderWriteRequest): Promise<WriteOutcome> {
   const { writeWorkOrderDirect } = await import("@/lib/resman/work-order-write");
   try {
-    return await writeWorkOrderDirect(request);
+    return { refused: false, result: await writeWorkOrderDirect(request) };
   } catch (error) {
     if (error instanceof WorkOrderWriteRefused) {
       const { capture } = await import("@/lib/analytics");
       capture("work_order_write_refused", { kind: request.kind, reason: error.message });
-      return null;
+      return { refused: true, reason: error.message };
     }
     throw error;
   }

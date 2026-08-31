@@ -1,4 +1,9 @@
-import { normalizeResManFreeText, sanitizeDescription, technicianDisplayName } from "@emberly/core";
+import {
+  WorkOrderWriteRefused,
+  normalizeResManFreeText,
+  sanitizeDescription,
+  technicianDisplayName,
+} from "@emberly/core";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { persistedStorage } from "@/lib/stores/persisted-storage";
@@ -29,6 +34,24 @@ export interface PendingEdit {
   /** Epoch ms of the last successful delivery (ack) — the redeliver clock
    *  runs from here, never from editedAt (see pending-closes). */
   ackedAt?: number;
+  /**
+   * Why ResMan REFUSED this edit — a guard verdict (Description locked on this
+   * work order, the office already Closed it, form drift), not a transport
+   * failure. Re-sending the same bytes cannot change the answer, so the
+   * automatic flush skips a blocked entry.
+   *
+   * It is deliberately NOT an ack. `acked` means one thing only — these exact
+   * values are verified present in ResMan — and a refusal wrote nothing. The
+   * two used to be conflated ("deterministic, so consume it"), which retired
+   * the entry as Delivered and lost the technician's typed notes silently.
+   * Blocked instead keeps the entry, stops the pointless retries, and gives
+   * the outbox a reason to show, so the tech knows the office must do it.
+   *
+   * Cleared whenever the entry gets a fresh answer: a new edit, a successful
+   * redelivery, or a transport failure on a manual retry (which puts it back
+   * on the automatic clock).
+   */
+  blockedReason?: string;
 }
 
 /** An edit older than this is dropped at prune — a write the flusher kept
@@ -46,8 +69,15 @@ interface PendingEditsState {
   /** Optimistically merge a patch and tell the server. Resolves ok even when
    *  the server is unreachable — the entry stays un-acked for a later retry. */
   queueEdit: (workOrderId: string, patch: WorkOrderEditPatch, config: StaffConfig) => Promise<void>;
-  /** Retry any un-acked entries (called from the sync tick). */
-  flush: (config: StaffConfig) => Promise<void>;
+  /**
+   * Retry un-acked entries (called from the sync tick). Entries ResMan
+   * REFUSED are skipped — the same bytes get the same verdict — unless
+   * `includeBlocked` is set, which is what the outbox's manual "Sync now"
+   * does: the guard reads ResMan-side state (status, a locked field) that
+   * the office can change, so a tech who just phoned it in gets one more try
+   * on demand rather than a dead end.
+   */
+  flush: (config: StaffConfig, opts?: { includeBlocked?: boolean }) => Promise<void>;
   /** Mark an entry delivered by SOMEONE ELSE's request — the coalesced close
    *  folds a pending edit into its own ResMan write, then acks it here. Only
    *  lands if the entry still holds exactly the patch that was folded in.
@@ -109,7 +139,37 @@ function ackIfUnchanged(
           acked: true,
           ackedAt: Date.now(),
           lastError: undefined,
+          // A delivered entry is no longer blocked — clearing this is what lets
+          // a previously-refused edit leave the outbox once it finally lands.
+          blockedReason: undefined,
         },
+      },
+    };
+  });
+}
+
+/**
+ * Record a REFUSAL: the write is terminal but undelivered.
+ *
+ * Same fingerprint discipline as `ackIfUnchanged` — if the technician typed
+ * more while the request was in flight, the entry now holds a DIFFERENT patch
+ * that has never been offered to ResMan, and blocking it on a verdict about
+ * the older bytes would strand an edit that might well land.
+ */
+function blockIfUnchanged(
+  set: (fn: (s: PendingEditsState) => Partial<PendingEditsState>) => void,
+  workOrderId: string,
+  sent: WorkOrderEditPatch,
+  reason: string,
+): void {
+  const sentPrint = fingerprint(sent);
+  set((s) => {
+    const cur = s.pending[workOrderId];
+    if (!cur || cur.acked || fingerprint(cur.patch) !== sentPrint) return s;
+    return {
+      pending: {
+        ...s.pending,
+        [workOrderId]: { ...cur, blockedReason: errorText(reason), lastError: undefined },
       },
     };
   });
@@ -184,7 +244,15 @@ function recordError(
   set((s) => {
     const cur = s.pending[workOrderId];
     if (!cur || cur.acked) return s;
-    return { pending: { ...s.pending, [workOrderId]: { ...cur, lastError: errorText(error) } } };
+    // A transport failure is not a verdict: clear any earlier block so the
+    // entry goes back on the automatic retry clock instead of staying stuck
+    // behind a refusal ResMan no longer gives.
+    return {
+      pending: {
+        ...s.pending,
+        [workOrderId]: { ...cur, lastError: errorText(error), blockedReason: undefined },
+      },
+    };
   });
 }
 
@@ -208,12 +276,18 @@ export const usePendingEdits = create<PendingEditsState>()(
           await editWorkOrder(workOrderId, merged, config);
           ackIfUnchanged(set, workOrderId, merged);
         } catch (error) {
-          // Keep it un-acked; flush() retries on the next sync tick.
-          recordError(set, workOrderId, error);
+          // A refusal is ResMan's verdict on these bytes — terminal, but NOT
+          // delivered. Anything else is transport: keep it un-acked and let
+          // flush() retry on the next sync tick.
+          if (error instanceof WorkOrderWriteRefused) {
+            blockIfUnchanged(set, workOrderId, merged, error.message);
+          } else {
+            recordError(set, workOrderId, error);
+          }
         }
       },
 
-      flush: async (config) => {
+      flush: async (config, opts) => {
         // Re-entrancy guard. flush() is driven by the 60s sync tick AND by
         // AppState going active, and a slow request outlives the interval — so
         // two flushes overlapped routinely, each re-sending the same un-acked
@@ -222,13 +296,22 @@ export const usePendingEdits = create<PendingEditsState>()(
         if (flushing) return;
         flushing = true;
         try {
-          const unacked = Object.values(get().pending).filter((p) => !p.acked);
+          const retryBlocked = opts?.includeBlocked ?? false;
+          const unacked = Object.values(get().pending).filter(
+            (p) => !p.acked && (retryBlocked || p.blockedReason === undefined),
+          );
           for (const entry of unacked) {
             try {
               await editWorkOrder(entry.workOrderId, entry.patch, config);
               ackIfUnchanged(set, entry.workOrderId, entry.patch);
             } catch (error) {
-              recordError(set, entry.workOrderId, error); // next tick retries
+              if (error instanceof WorkOrderWriteRefused) {
+                // Blocked, not delivered — see PendingEdit.blockedReason. The
+                // entry stays in the outbox with the reason on it.
+                blockIfUnchanged(set, entry.workOrderId, entry.patch, error.message);
+              } else {
+                recordError(set, entry.workOrderId, error); // next tick retries
+              }
             }
           }
         } finally {

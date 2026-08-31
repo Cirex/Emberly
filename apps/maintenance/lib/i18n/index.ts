@@ -93,6 +93,7 @@ const en = {
     workOrderFallback: "Work order",
     attempts: "{{count}} attempts",
     state: {
+      blocked: "ResMan refused",
       sending: "Sending",
       retrying: "Will retry",
       queued: "Waiting for signal",
@@ -741,6 +742,7 @@ const es: typeof en = {
     workOrderFallback: "Orden de trabajo",
     attempts: "{{count}} intentos",
     state: {
+      blocked: "ResMan lo rechazó",
       sending: "Enviando",
       retrying: "Reintentará",
       queued: "Esperando señal",

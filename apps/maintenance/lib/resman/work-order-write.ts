@@ -10,6 +10,7 @@ import {
   resolveTechnician,
 } from "@emberly/core";
 import { BROWSER_UA, useResManSession } from "@/lib/resman/session";
+import { withKeyedLock } from "@/lib/resman/write-lock";
 
 /**
  * Direct on-device work-order writes — the maintenance app's adapter over the
@@ -72,10 +73,25 @@ function pageHttp(fetchImpl: FetchLike): ResManPageHttp {
  *   - `WorkOrderWriteRefused` when a guard said no (deterministic);
  *   - transport errors when offline.
  * Anything returned is the engine's verified verdict.
+ *
+ * Serialized per work order: the whole harvest → mutate → POST → verify cycle
+ * holds that ticket's lock, so a second write (the close flush and the edit
+ * flush ride the same tick un-awaited) waits and re-harvests the first one's
+ * result instead of POSTing a form it captured before that write landed.
+ * Different work orders still run concurrently.
  */
-export async function writeWorkOrderDirect(
+export function writeWorkOrderDirect(
   request: WorkOrderWriteRequest,
   fetchImpl: FetchLike = fetch,
+): Promise<WorkOrderWriteResult> {
+  // The engine matches WorkOrderID case-insensitively, so two callers
+  // spelling the same id differently must still share one lock.
+  return withKeyedLock(request.workOrderId.toLowerCase(), () => writeLocked(request, fetchImpl));
+}
+
+async function writeLocked(
+  request: WorkOrderWriteRequest,
+  fetchImpl: FetchLike,
 ): Promise<WorkOrderWriteResult> {
   const session = useResManSession.getState();
   if (session.status !== "active") {
@@ -104,6 +120,12 @@ export async function writeWorkOrderDirect(
         wantedName === undefined
           ? undefined
           : async (propertyId) => {
+              // An `{ error }` return becomes a WorkOrderWriteRefused, which
+              // callers treat as ResMan's VERDICT: terminal, no more retries.
+              // A roster that is merely unreachable (offline, 5xx, a bounced
+              // session) is nothing of the sort, so it THROWS instead and the
+              // pending entry stays on the ordinary retry clock. Only a roster
+              // we read and could not act on is a real refusal.
               let response: Response;
               try {
                 response = await fetchImpl(`${BASE}${employeeListPath(propertyId)}`, {
@@ -115,10 +137,10 @@ export async function writeWorkOrderDirect(
                   },
                 });
               } catch {
-                return { error: "employee list unreachable" };
+                throw new Error("employee list unreachable — will retry");
               }
               if (response.status !== 200)
-                return { error: `employee list HTTP ${response.status}` };
+                throw new Error(`employee list HTTP ${response.status} — will retry`);
               try {
                 return resolveTechnician(
                   parseEmployeeList(JSON.parse(await response.text())),

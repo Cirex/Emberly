@@ -22,7 +22,7 @@
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = EmberlyManager/Info.plist; sourceTree = "<group>"; };
 		159D69CF0DCC26882CC07A88 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-EmberlyManager/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		42F82E6C63D0331109024BC6 /* Pods-EmberlyManager.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-EmberlyManager.release.xcconfig"; path = "Target Support Files/Pods-EmberlyManager/Pods-EmberlyManager.release.xcconfig"; sourceTree = "<group>"; };
-		7EEF3F7C3D1875542E3385D7 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = EmberlyManager/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		7EEF3F7C3D1875542E3385D7 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = EmberlyManager/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = EmberlyManager/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		BDCE8A39DA6AA8C7E9A2C757 /* Pods-EmberlyManager.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-EmberlyManager.debug.xcconfig"; path = "Target Support Files/Pods-EmberlyManager/Pods-EmberlyManager.debug.xcconfig"; sourceTree = "<group>"; };
@@ -81,7 +81,6 @@
 				BDCE8A39DA6AA8C7E9A2C757 /* Pods-EmberlyManager.debug.xcconfig */,
 				42F82E6C63D0331109024BC6 /* Pods-EmberlyManager.release.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};

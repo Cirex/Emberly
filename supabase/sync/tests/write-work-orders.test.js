@@ -80,7 +80,10 @@ function landClose(html, { note, completedBy }) {
   let out = html
     .replace('<option selected="selected">Not Started</option>', "<option>Not Started</option>")
     .replace("<option>Completed</option>", '<option selected="selected">Completed</option>')
-    .replace('id="CompletedDate" name="CompletedDate" type="hidden" value=""', 'id="CompletedDate" name="CompletedDate" type="hidden" value="8/26/2026 7:43:00 PM"')
+    .replace(
+      'id="CompletedDate" name="CompletedDate" type="hidden" value=""',
+      'id="CompletedDate" name="CompletedDate" type="hidden" value="8/26/2026 7:43:00 PM"',
+    )
     .replace(/(id="CompletedDate_Date"[^>]*value=")(")/, "$108/26/2026$2");
   if (completedBy) {
     out = out.replace(
@@ -147,7 +150,11 @@ test("close: POSTs the full form with Status=Completed and verifies on a re-read
   // name off every list (verified live on WOs 14627/16376, 2026-08-27).
   assert.equal(byName.Location, "3723 CC-6");
   const names = pairs.map(([name]) => name);
-  assert.equal(names[names.indexOf("ObjectID") + 1], "Location", "Location sits right after ObjectID");
+  assert.equal(
+    names[names.indexOf("ObjectID") + 1],
+    "Location",
+    "Location sits right after ObjectID",
+  );
   // Echo fields are byte-faithful.
   assert.equal(byName.SaveAndNew, "False");
   assert.equal(byName.AddRetentionEffortNote, "false");
@@ -223,7 +230,10 @@ test("edit: reassign + notes changes exactly those pairs and nothing else", asyn
 
 test("edit: clearing the booking empties the ScheduledDate pair and its twin", async () => {
   let landed = fixture("16305")
-    .replace('name="ScheduledDate" type="hidden" value="9/2/2026 9:30:00 AM"', 'name="ScheduledDate" type="hidden" value=""')
+    .replace(
+      'name="ScheduledDate" type="hidden" value="9/2/2026 9:30:00 AM"',
+      'name="ScheduledDate" type="hidden" value=""',
+    )
     .replace(/(id="ScheduledDate_Date"[^>]*value=")09\/02\/2026(")/, "$1$2");
   const transport = makeTransport({
     pages: { [EDIT_URL_16305]: fixture("16305") },
@@ -287,6 +297,58 @@ test("edit: description is sanitized to ResMan's own limits (no <>, 248 max)", a
   assert.equal(byName.Description.length, 248);
 });
 
+// MARK: - Free-text round-trip
+
+/** Put `note` in the CompletedNotes textarea of a fixture page. */
+const withNote = (html, note) =>
+  html.replace(/(name="CompletedNotes"[^>]*>)([^<]*)(<\/textarea>)/, `$1${note}$3`);
+
+test("verify: a note ResMan re-renders with CRLF endings counts as landed", async () => {
+  // ResMan stores textarea content with \r\n and pads the edges. A byte
+  // compare called this landed note "did not land", so the write returned
+  // ok:false, the pending entry was never acked, and the app's 15-second sync
+  // tick replayed the whole GET+POST+GET cycle against production forever.
+  const transport = makeTransport({
+    pages: { [EDIT_URL_16305]: fixture("16305") },
+    pagesAfterPost: { [EDIT_URL_16305]: withNote(fixture("16305"), "line one\r\nline two\r\n") },
+  });
+  const result = await applyWorkOrderWrite({
+    client: makeClient(transport.fetchImpl),
+    request: {
+      workOrderId: WO_16305,
+      kind: "edit",
+      patch: { completionNotes: "line one\nline two" },
+      expectedUnitId: UNIT_16305,
+    },
+    now: NOW,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.phase, "verified");
+  assert.equal(posts(transport.calls).length, 1, "one POST — no retry loop");
+});
+
+test("verify: a genuinely different note still fails, with its contents redacted", async () => {
+  const transport = makeTransport({
+    pages: { [EDIT_URL_16305]: fixture("16305") },
+    pagesAfterPost: { [EDIT_URL_16305]: withNote(fixture("16305"), "Resident 4B said otherwise") },
+  });
+  const result = await applyWorkOrderWrite({
+    client: makeClient(transport.fetchImpl),
+    request: {
+      workOrderId: WO_16305,
+      kind: "edit",
+      patch: { completionNotes: "line one\nline two" },
+      expectedUnitId: UNIT_16305,
+    },
+    now: NOW,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.phase, "verified");
+  assert.match(result.detail, /did not land/);
+  assert.match(result.detail, /CompletedNotes: expected 17 chars, got 26/);
+  assert.ok(!/Resident/.test(result.detail), "note contents stay out of the error");
+});
+
 test("close: folded edit fields land in the SAME update (one POST, not two)", async () => {
   // The app coalesces a pending notes/reassignment edit into the close so
   // ResMan gets one form replay. Reassignment applies BEFORE the CompletedBy
@@ -294,7 +356,10 @@ test("close: folded edit fields land in the SAME update (one POST, not two)", as
   const technician = "55e3d0ac-69e5-434b-b6fe-23fce4131ffb";
   let landed = landClose(fixture("16305"), { note: "", completedBy: technician });
   landed = landed
-    .replace('data-selected-value="7a2f5c20-42af-4e4e-808e-45bd64ae89c2"', `data-selected-value="${technician}"`)
+    .replace(
+      'data-selected-value="7a2f5c20-42af-4e4e-808e-45bd64ae89c2"',
+      `data-selected-value="${technician}"`,
+    )
     .replace(/(name="CompletedNotes"[^>]*>)([^<]*)(<\/textarea>)/, "$1Relit pilot$3");
   const transport = makeTransport({
     pages: { [EDIT_URL_16305]: fixture("16305") },
@@ -339,7 +404,11 @@ test("close: an explicit close note beats folded typed notes", async () => {
     request: {
       workOrderId: WO_16305,
       kind: "close",
-      patch: { note: "Final word", completionNotes: "older draft", completedAt: "2026-08-27T00:43:00Z" },
+      patch: {
+        note: "Final word",
+        completionNotes: "older draft",
+        completedAt: "2026-08-27T00:43:00Z",
+      },
       expectedUnitId: UNIT_16305,
     },
     now: NOW,
@@ -350,7 +419,10 @@ test("close: an explicit close note beats folded typed notes", async () => {
 });
 
 test("guard: a page without the location display name refuses (never blank it)", async () => {
-  const stripped = fixture("16305").replace(/var workOrderableObjects = \[[^\]]*\];/, "var workOrderableObjects = [];");
+  const stripped = fixture("16305").replace(
+    /var workOrderableObjects = \[[^\]]*\];/,
+    "var workOrderableObjects = [];",
+  );
   const transport = makeTransport({ pages: { [EDIT_URL_16305]: stripped } });
   await assert.rejects(
     applyWorkOrderWrite({
@@ -482,7 +554,8 @@ test("guard: ObjectID that contradicts the mirror's unit refuses", async () => {
       },
       now: NOW,
     }),
-    (error) => error instanceof WorkOrderWriteRefused && /does not match the mirror/.test(error.message),
+    (error) =>
+      error instanceof WorkOrderWriteRefused && /does not match the mirror/.test(error.message),
   );
 });
 
@@ -587,6 +660,66 @@ test("verify-only: reports applied when the form already holds every target", as
   assert.equal(posts(transport.calls).length, 0, "verify never POSTs");
 });
 
+test("verify-only: a note ResMan re-rendered with CRLF reads as LANDED, not as a re-POST", async () => {
+  // The reconcile for a POST whose confirming GET timed out. It has no
+  // verifyTargets call — it answers "did our write land?" from mutate() alone
+  // — so when mutate byte-compared free text it disowned its own landed note:
+  // ok:false, and the flush job, whose contract is "NEVER blind-retry a POST
+  // that may have landed", flipped the row back to `queued` and re-POSTed it.
+  const page = withNote(fixture("16305"), "line one\r\nline two\r\n");
+  const transport = makeTransport({ pages: { [EDIT_URL_16305]: page } });
+  const result = await verifyWorkOrderWrite({
+    client: makeClient(transport.fetchImpl),
+    request: {
+      workOrderId: WO_16305,
+      kind: "edit",
+      patch: { completionNotes: "line one\nline two" },
+      expectedUnitId: UNIT_16305,
+    },
+    now: NOW,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.noop, true, "landed — nothing left to change");
+  assert.equal(posts(transport.calls).length, 0, "verify never POSTs");
+
+  // …and it still says NOT landed for a note that genuinely differs, so the
+  // leniency is about line endings, not about calling everything applied.
+  const other = await verifyWorkOrderWrite({
+    client: makeClient(makeTransport({ pages: { [EDIT_URL_16305]: page } }).fetchImpl),
+    request: {
+      workOrderId: WO_16305,
+      kind: "edit",
+      patch: { completionNotes: "line one\nline three" },
+      expectedUnitId: UNIT_16305,
+    },
+    now: NOW,
+  });
+  assert.equal(other.ok, false);
+  assert.match(other.detail, /not present/);
+});
+
+test("apply: a replay of a note the form already holds (CRLF) POSTs nothing", async () => {
+  // Same equality, the other side of the engine: an edit re-sent after a
+  // CRLF round-trip is a no-op, not another full form replay into production.
+  const transport = makeTransport({
+    pages: { [EDIT_URL_16305]: withNote(fixture("16305"), "line one\r\nline two\r\n") },
+  });
+  const result = await applyWorkOrderWrite({
+    client: makeClient(transport.fetchImpl),
+    request: {
+      workOrderId: WO_16305,
+      kind: "edit",
+      patch: { completionNotes: "line one\nline two" },
+      expectedUnitId: UNIT_16305,
+    },
+    now: NOW,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.noop, true);
+  assert.equal(result.detail, "already applied");
+  assert.equal(posts(transport.calls).length, 0, "no redundant write against ResMan");
+});
+
 test("verify-only: reports not-landed when the form still holds the old values", async () => {
   const transport = makeTransport({ pages: { [EDIT_URL_16305]: fixture("16305") } });
   const result = await verifyWorkOrderWrite({
@@ -610,6 +743,9 @@ test("resolveTechnician: exact case-insensitive unique match", () => {
   });
   assert.match(resolveTechnician(employees, "Al Zelaya").error, /no maintenance employee/);
   assert.match(resolveTechnician(employees, "").error, /empty/);
-  const dupes = [...employees, { name: "ben bloch", personId: "ffffffff-0000-0000-0000-000000000000" }];
+  const dupes = [
+    ...employees,
+    { name: "ben bloch", personId: "ffffffff-0000-0000-0000-000000000000" },
+  ];
   assert.match(resolveTechnician(dupes, "Ben Bloch").error, /ambiguous/);
 });

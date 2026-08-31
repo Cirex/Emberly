@@ -1,4 +1,4 @@
-import { technicianDisplayName } from "@emberly/core";
+import { normalizeResManFreeText, sanitizeDescription, technicianDisplayName } from "@emberly/core";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { persistedStorage } from "@/lib/stores/persisted-storage";
@@ -50,8 +50,18 @@ interface PendingEditsState {
   flush: (config: StaffConfig) => Promise<void>;
   /** Mark an entry delivered by SOMEONE ELSE's request — the coalesced close
    *  folds a pending edit into its own ResMan write, then acks it here. Only
-   *  lands if the entry still holds exactly the patch that was folded in. */
-  ackDelivered: (workOrderId: string, sent: WorkOrderEditPatch) => void;
+   *  lands if the entry still holds exactly the patch that was folded in.
+   *
+   *  `written` is what that request ACTUALLY wrote, when the folding request
+   *  superseded a field (a close's own note beats folded typed notes). The
+   *  entry is re-based onto it, because an entry acked with a value ResMan
+   *  never received can never be absorbed — and the redeliver clock would
+   *  re-send the superseded value back over the one that landed. */
+  ackDelivered: (
+    workOrderId: string,
+    sent: WorkOrderEditPatch,
+    written?: WorkOrderEditPatch,
+  ) => void;
   /** Drop entries the mirror has caught up with (base row matches every
    *  edited field) or stale ones. */
   prune: (rows: readonly WorkOrder[], nowMs: number) => void;
@@ -81,6 +91,7 @@ function ackIfUnchanged(
   set: (fn: (s: PendingEditsState) => Partial<PendingEditsState>) => void,
   workOrderId: string,
   sent: WorkOrderEditPatch,
+  written?: WorkOrderEditPatch,
 ): void {
   const sentPrint = fingerprint(sent);
   set((s) => {
@@ -89,7 +100,16 @@ function ackIfUnchanged(
     return {
       pending: {
         ...s.pending,
-        [workOrderId]: { ...cur, acked: true, ackedAt: Date.now(), lastError: undefined },
+        [workOrderId]: {
+          ...cur,
+          // Re-base onto what the write actually put in ResMan, so absorption
+          // compares the mirror against a value it can really hold and a
+          // redeliver can only ever re-send what already landed.
+          patch: written ?? cur.patch,
+          acked: true,
+          ackedAt: Date.now(),
+          lastError: undefined,
+        },
       },
     };
   });
@@ -108,10 +128,11 @@ function sameMoment(a: string | null | undefined, b: string | null | undefined):
 
 /** ResMan round-trips free text with \r\n line endings and can pad edges;
  *  compare CONTENT, not bytes, or a multi-line note never reads as absorbed
- *  (field-verified: an acked edit oscillated forever on exactly this). */
+ *  (field-verified: an acked edit oscillated forever on exactly this). The
+ *  normalizer comes from the write engine so this check and the engine's own
+ *  verify can never drift into disagreeing about what we wrote. */
 function sameText(a: string | null | undefined, b: string | null | undefined): boolean {
-  const norm = (v: string | null | undefined) => (v ?? "").replace(/\r\n/g, "\n").trim();
-  return norm(a) === norm(b);
+  return normalizeResManFreeText(a) === normalizeResManFreeText(b);
 }
 
 /** True when the base row already carries every value the patch sets. */
@@ -125,7 +146,17 @@ function absorbed(row: WorkOrder, patch: WorkOrderEditPatch): boolean {
   ) {
     return false;
   }
-  if (patch.description !== undefined && !sameText(row.notes, patch.description)) return false;
+  // The mirror can only ever hold what the engine actually WROTE, and the
+  // engine sanitizes the description ('<'/'>' stripped, 248 max). Comparing
+  // the raw typed text instead means a long or bracketed edit never absorbs:
+  // the "Saved" pill sticks for the full stale window and the redeliver clock
+  // re-POSTs the identical edit every half hour.
+  if (
+    patch.description !== undefined &&
+    !sameText(row.notes, sanitizeDescription(patch.description))
+  ) {
+    return false;
+  }
   if (
     patch.completionNotes !== undefined &&
     !sameText(row.completion_notes, patch.completionNotes)
@@ -229,8 +260,8 @@ export const usePendingEdits = create<PendingEditsState>()(
         });
       },
 
-      ackDelivered: (workOrderId, sent) => {
-        ackIfUnchanged(set, workOrderId, sent);
+      ackDelivered: (workOrderId, sent, written) => {
+        ackIfUnchanged(set, workOrderId, sent, written);
       },
 
       remove: (workOrderId) => {

@@ -752,6 +752,47 @@ function preflight(controls: FormControl[], request: WorkOrderWriteRequest): voi
   }
 }
 
+// MARK: - Field equality
+
+/** Free-text fields whose CONTENT stays out of logs and error strings (notes
+ *  can carry unit/resident details), and whose round-trip is compared
+ *  semantically (see `normalizeResManFreeText`). */
+const FREE_TEXT_FIELDS = new Set(["Description", "CompletedNotes", "ReportingNotes"]);
+
+/**
+ * The ONE definition of "same free text" — shared with the app's absorption
+ * check so every side agrees on what we wrote.
+ *
+ * ResMan re-renders textarea content with CRLF endings and can pad the edges,
+ * so a byte compare calls a landed note "did not land": the write reports
+ * ok:false, the entry is never acked, and the 15-second sync tick replays a
+ * full GET+POST+GET write cycle against production forever.
+ */
+export function normalizeResManFreeText(value: string | null | undefined): string {
+  return (value ?? "").replace(/\r\n?/g, "\n").trim();
+}
+
+/**
+ * Does the form's wire value for `name` already say what `expected` says?
+ *
+ * The one predicate BOTH sides of the engine ask: `mutate`'s set() (to decide
+ * "already there — not a change") and `verifyTargets` (to decide "the save
+ * landed"). They must agree, because `verifyWorkOrderWriteWithHttp` — the
+ * verify-only reconcile for a POST that could not be confirmed — has no
+ * verifyTargets call at all: it answers "did our write land?" purely from
+ * set() finding nothing left to change. Let the two drift and that reconcile
+ * says "not landed" about a note sitting right there on the page, and the
+ * queue flusher, forbidden from blind-retrying a POST that may have landed,
+ * blind-retries it anyway. Free text compares through the normalizer; every
+ * other field is a byte compare, because a GUID or a date pair that differs
+ * by a space IS a difference.
+ */
+function sameResManValue(name: string, actual: string, expected: string): boolean {
+  return FREE_TEXT_FIELDS.has(name)
+    ? normalizeResManFreeText(actual) === normalizeResManFreeText(expected)
+    : actual === expected;
+}
+
 // MARK: - Mutation
 
 interface MutationPlan {
@@ -761,7 +802,11 @@ interface MutationPlan {
   targets: Map<string, string>;
 }
 
-function sanitizeDescription(raw: string): string {
+/** What a Description patch ACTUALLY becomes on the wire. Exported so the
+ *  app's absorption check compares the mirror against the value this engine
+ *  wrote, not the raw one the technician typed — when sanitizing changes it,
+ *  the two can never be equal and the overlay never retires. */
+export function sanitizeDescription(raw: string): string {
   // ResMan rejects '<' and '>' (data-val-regex) and caps at 248.
   return raw.replace(/[<>]/g, "").slice(0, RESMAN_DESCRIPTION_MAX);
 }
@@ -775,7 +820,11 @@ function mutate(controls: FormControl[], request: WorkOrderWriteRequest, now: Da
 
   const set = (name: string, value: string): void => {
     const control = requireControl(controls, name);
-    if ((controlWireValue(control) ?? "") === value) return; // already there — not a change
+    // "Already there" means the same thing here as it does in verifyTargets —
+    // see sameResManValue. A byte compare here re-POSTs a note ResMan merely
+    // re-rendered with CRLF, and makes the verify-only reconcile disown its
+    // own landed write.
+    if (sameResManValue(name, controlWireValue(control) ?? "", value)) return;
     setControlValue(control, value);
     allowed.add(name);
     targets.set(name, value);
@@ -897,17 +946,15 @@ function assertOnlyAllowedChanged(
 
 // MARK: - Verify
 
-/** Free-text fields whose CONTENT stays out of logs and error strings (notes
- *  can carry unit/resident details). */
-const FREE_TEXT_FIELDS = new Set(["Description", "CompletedNotes", "ReportingNotes"]);
-
 /** Compare a fresh harvest against the mutation's targets. */
 function verifyTargets(controls: FormControl[], targets: Map<string, string>): string[] {
   const mismatches: string[] = [];
   for (const [name, expected] of targets) {
     const control = findControl(controls, name);
     const actual = control ? (controlWireValue(control) ?? "") : null;
-    if (actual === expected) continue;
+    // A missing control can never match: the normalizer would turn it into ""
+    // and let an empty target pass as landed.
+    if (actual !== null && sameResManValue(name, actual, expected)) continue;
     if (FREE_TEXT_FIELDS.has(name)) {
       mismatches.push(
         `${name}: expected ${expected.length} chars, got ` +

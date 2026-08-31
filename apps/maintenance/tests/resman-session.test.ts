@@ -193,7 +193,12 @@ describe("silent renewal", () => {
 
   test("verify: an expired session renews via the SERVER session endpoint", async () => {
     secure.set(CREDS_KEY, JSON.stringify({ username: "tech", password: "pw" }));
-    useResManSession.setState({ status: "active", username: "tech", canRenew: true, hydrated: true });
+    useResManSession.setState({
+      status: "active",
+      username: "tech",
+      canRenew: true,
+      hydrated: true,
+    });
     cookieSets.length = 0;
     let probes = 0;
     const fetchImpl = (async (url: string, init?: RequestInit) => {
@@ -205,7 +210,13 @@ describe("silent renewal", () => {
           json: async () => ({
             ok: true,
             cookies: [
-              { name: "s", value: "v", domain: "multisouth.myresman.com", path: "/", expires: null },
+              {
+                name: "s",
+                value: "v",
+                domain: "multisouth.myresman.com",
+                path: "/",
+                expires: null,
+              },
             ],
           }),
           text: async () => "",
@@ -225,7 +236,12 @@ describe("silent renewal", () => {
 
   test("verify: server unreachable falls back to the on-device dance", async () => {
     secure.set(CREDS_KEY, JSON.stringify({ username: "tech", password: "pw" }));
-    useResManSession.setState({ status: "active", username: "tech", canRenew: true, hydrated: true });
+    useResManSession.setState({
+      status: "active",
+      username: "tech",
+      canRenew: true,
+      hydrated: true,
+    });
     const { calls, fetchImpl } = renewalTransport(); // server endpoint throws → unreachable
     const alive = await useResManSession.getState().verify(fetchImpl);
     expect(alive).toBe(true);
@@ -247,7 +263,12 @@ describe("silent renewal", () => {
       const method = init?.method ?? "GET";
       if (method === "POST" && url.includes("/api/admin/auth/resman-session")) {
         posts += 1;
-        return { url, status: 401, json: async () => ({}), text: async () => "" } as unknown as Response;
+        return {
+          url,
+          status: 401,
+          json: async () => ({}),
+          text: async () => "",
+        } as unknown as Response;
       }
       if (method === "GET") return response(LOGIN_URL, LOGIN_HTML);
       posts += 1;
@@ -297,5 +318,99 @@ describe("silent renewal", () => {
     }
     expect(secure.has(CREDS_KEY)).toBe(false);
     expect(useResManSession.getState().canRenew).toBe(false);
+  });
+});
+
+describe("identity: a renewal can only ever produce the signed-in tech's session", () => {
+  const CREDS_KEY = "emberly_resman_credentials";
+  const HOME = "https://multisouth.myresman.com/";
+
+  /** Scripted transport: probe bounces to login, then a full successful dance. */
+  function loginTransport(onCredPost?: () => void) {
+    return (async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (method === "GET" && url === HOME) return response(LOGIN_URL, LOGIN_HTML);
+      if (method === "GET") return response(url, "<html>ok</html>"); // sign-out
+      if (url === LOGIN_URL) {
+        onCredPost?.();
+        return response(LOGIN_URL, FORM_POST_HTML);
+      }
+      return response(HOME, "<html>home</html>");
+    }) as unknown as typeof fetch;
+  }
+
+  test("a failed establish for tech B does NOT sign the device back in as tech A", async () => {
+    // The field bug, reproduced faithfully: ResMan is REACHABLE (so the probe
+    // bounces to login and reads "expired", which is what reaches renew), but
+    // tech B's own login leg fails. The old failure path then called verify()
+    // -> renew(), which read tech A's lingering Keychain credentials and
+    // signed the device back in as A while the app was signed in as B.
+    secure.set(CREDS_KEY, JSON.stringify({ username: "tech-a", password: "pw" }));
+    useResManSession.setState({
+      status: "active",
+      username: "tech-a",
+      canRenew: true,
+      hydrated: true,
+    });
+
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      // The server-side session endpoint is down, so both paths fall through
+      // to the on-device dance.
+      if (url.includes("/api/admin/auth/resman-session")) throw new Error("server down");
+      if (method === "GET") return response(LOGIN_URL, LOGIN_HTML); // root + sign-out bounce to login
+      if (url === LOGIN_URL) {
+        const body = String(init?.body ?? "");
+        // Tech B's credential POST fails; tech A's would SUCCEED — which is
+        // exactly what made the old code adopt A.
+        if (body.includes("tech-b")) throw new Error("login leg failed");
+        return response(LOGIN_URL, FORM_POST_HTML);
+      }
+      return response("https://multisouth.myresman.com/", "<html>home</html>");
+    }) as unknown as typeof fetch;
+    try {
+      await useResManSession.getState().establish("tech-b", "pw-b");
+      // Let any fire-and-forget probe settle before asserting.
+      await new Promise((r) => setTimeout(r, 20));
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    const st = useResManSession.getState();
+    // The device must NOT end up owned by the previous technician.
+    expect(st.username).not.toBe("tech-a");
+    expect(st.status).not.toBe("active");
+  });
+
+  test("a renewal whose owner changed mid-flight is discarded, not published", async () => {
+    secure.set(CREDS_KEY, JSON.stringify({ username: "tech-a", password: "pw" }));
+    useResManSession.setState({
+      status: "expired",
+      username: "tech-a",
+      canRenew: true,
+      hydrated: true,
+    });
+    // Tech B takes over the app while A's login is in flight.
+    const swap = () => useResManSession.setState({ username: "tech-b" });
+    const renewed = await useResManSession.getState().renew(loginTransport(swap));
+    expect(renewed).toBe(false);
+    const st = useResManSession.getState();
+    expect(st.username).toBe("tech-b");
+    expect(st.status).not.toBe("active"); // A's session was never adopted
+  });
+
+  test("the ordinary same-technician silent renewal still works", async () => {
+    // The guard must not break the case the Keychain exists for.
+    secure.set(CREDS_KEY, JSON.stringify({ username: "tech-a", password: "pw" }));
+    useResManSession.setState({
+      status: "expired",
+      username: "tech-a",
+      canRenew: true,
+      hydrated: true,
+    });
+    const renewed = await useResManSession.getState().renew(loginTransport());
+    expect(renewed).toBe(true);
+    expect(useResManSession.getState().status).toBe("active");
+    expect(useResManSession.getState().username).toBe("tech-a");
   });
 });

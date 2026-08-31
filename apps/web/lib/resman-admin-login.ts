@@ -147,6 +147,35 @@ export interface ResmanSessionCookie {
   expires: string | null;
 }
 
+/**
+ * Keyed by cookie NAME alone, deliberately.
+ *
+ * The staff login spans two hosts, so name-only keying looks like a bug: a
+ * same-named cookie from the second host would silently overwrite the first.
+ * It was reported as one, and twice rewritten to key by name+domain+path —
+ * both attempts introduced worse regressions than the defect they chased (a
+ * clearing Set-Cookie that no longer clears; two cookies of one name emitted
+ * in a Cookie header with no RFC 6265 s5.4 ordering), because correct scoping
+ * means implementing domain-match, path-match and shadowing properly.
+ *
+ * So the premise was measured against the live portal (2026-08-28), by running
+ * the real login and recording every Set-Cookie by host:
+ *
+ *   multisouth.myresman.com       .AspNet.Cookies, ASP.NET_SessionId, AccountID,
+ *                                 CompanyName, LoginTrackingID, ManagementPersonID,
+ *                                 OpenIdConnect.nonce.*, RoleInstance, Subdomain,
+ *                                 __RequestVerificationToken
+ *   multisouth.auth.myresman.com  .AspNetCore.Antiforgery.*, ARRAffinity(SameSite),
+ *                                 AccountId, idsrv (x2), idsrv.external, idsrv.session
+ *
+ * NO name is set by both hosts — note AccountID and AccountId differ only in
+ * case, and each host sets exactly one of them. The only true collision is
+ * same-host: idsrv is set at both path=/ and path=/auth, where last-writer-wins
+ * has always been the behaviour and the login has always worked.
+ *
+ * Re-open this only with evidence that ResMan's cookie names have changed;
+ * re-run that measurement before rewriting anything.
+ */
 class CookieJar {
   private readonly cookies = new Map<string, JarCookie>();
 

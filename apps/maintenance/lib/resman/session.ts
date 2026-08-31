@@ -517,12 +517,14 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
         await wipeCredentials();
         set({ canRenew: false });
       }
-      set({ status: "absent", lastEstablishReason: result.reason });
+      set({ status: "absent", username: "", lastEstablishReason: result.reason });
       capture("resman_session_establish_failed", { reason: result.reason });
-      // A failed establish is not proof there is no session — the field case
-      // above ends with a LIVE session and a failed login. Let the probe
-      // decide what the settings row should say.
-      void get().verify();
+      // Deliberately NOT verify() here. A failed establish leaves no claimed
+      // owner, and verify() renews from the Keychain — which after a failed
+      // Switch User still holds the PREVIOUS technician's credentials, so the
+      // probe would quietly sign the device back in as them (field-verified).
+      // The settings row reads the failure reason instead, which is the honest
+      // answer, and the next tick's keepAlive re-probes once an owner exists.
     }
     return result;
   },
@@ -545,6 +547,10 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
   renew: async (fetchImpl = fetch) => {
     if (renewInFlight) return renewInFlight;
     renewInFlight = (async () => {
+      // WHOSE session may this renewal produce? The app's signed-in technician
+      // and nobody else. Sampling that here would be a TOCTOU read — the login
+      // legs below take up to 60s — so the owner is re-checked at the moment
+      // of the state transition, which is the only place it is atomic.
       const credentials = await readCredentials();
       if (!credentials) {
         set({ canRenew: false });
@@ -569,7 +575,27 @@ export const useResManSession = create<ResManSessionState>((set, get) => ({
         result = await performDeviceLogin(credentials.username, credentials.password, fetchImpl);
       }
       if (result.ok) {
-        set({ status: "active", username: credentials.username, canRenew: true });
+        let adopted = false;
+        set((state) => {
+          // The identity may have changed while the login was in flight (a
+          // Switch User landed, or a sign-out). Publishing here would hand the
+          // device a session belonging to the PREVIOUS technician while the app
+          // is signed in as someone else — ResMan's audit history would then
+          // credit the wrong person, which is the one thing this architecture
+          // exists to prevent. "" means no owner is claimed yet, so the
+          // renewal may take it.
+          if (state.username !== "" && state.username !== credentials.username) return state;
+          adopted = true;
+          return { status: "active", username: credentials.username, canRenew: true };
+        });
+        if (!adopted) {
+          // Someone else owns the app now. The cookies this login just planted
+          // are not theirs, so drop them rather than leave a foreign session
+          // sitting in the jar for the next write to use.
+          await remoteSignOut(fetchImpl);
+          capture("resman_session_renew_discarded", {});
+          return false;
+        }
         capture("resman_session_renewed", {});
         return true;
       }

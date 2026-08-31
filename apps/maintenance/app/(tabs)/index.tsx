@@ -36,6 +36,7 @@ import { activeLocale } from "@/lib/i18n";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
 import { useMyDay, type MyDayStop } from "@/lib/stores/my-day";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
+import { ANDROID_GLASS_HAIRLINE, OPAQUE_GLASS, androidGlassFill } from "@/theme/android-glass";
 import { HAIRLINE, MUTED, NAVY, screenHPad } from "@/theme/tokens";
 import { statusLabel } from "@/lib/derived/resman-labels";
 import { useNowMs } from "@/lib/hooks/use-now";
@@ -662,16 +663,20 @@ function GlassPill({
           borderRadius: 999,
           overflow: "hidden",
           borderWidth: 1,
-          borderColor: "rgba(255,255,255,0.6)",
+          // A white stroke is invisible against the opaque white fill Android
+          // gets below, so light mode takes the navy hairline there.
+          borderColor: OPAQUE_GLASS && !dark ? ANDROID_GLASS_HAIRLINE : "rgba(255,255,255,0.6)",
         },
         style,
       ]}
     >
-      <BlurView
-        intensity={dark ? 30 : 22}
-        tint={dark ? "dark" : "light"}
-        style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
-      />
+      {OPAQUE_GLASS ? null : (
+        <BlurView
+          intensity={dark ? 30 : 22}
+          tint={dark ? "dark" : "light"}
+          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+        />
+      )}
       <View
         style={{
           flexDirection: "row",
@@ -679,7 +684,13 @@ function GlassPill({
           gap: 6,
           paddingHorizontal: 12,
           paddingVertical: 8,
-          backgroundColor: dark ? "rgba(20,26,46,0.45)" : "rgba(255,255,255,0.55)",
+          // These float on the hero map; at 45–55% with no blur behind them the
+          // map's own lines read straight through the label.
+          backgroundColor: OPAQUE_GLASS
+            ? androidGlassFill("chrome", dark)
+            : dark
+              ? "rgba(20,26,46,0.45)"
+              : "rgba(255,255,255,0.55)",
         }}
       >
         {children}

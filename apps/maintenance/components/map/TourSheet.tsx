@@ -1,5 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
 import { useColorScheme } from "nativewind";
 import { useState } from "react";
 import {
@@ -13,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GlassLayer } from "@/components/ui/GlassLayer";
 import { useTour, type CompletedTour, type TourStop } from "@/lib/stores/tour";
 import { HAIRLINE_STRONG, MUTED, NAVY } from "@/theme/tokens";
 import { useAccentPalette } from "@/lib/hooks/use-accent";
@@ -351,10 +351,13 @@ export function TourSheet({
             borderColor: dark ? "rgba(255,255,255,0.12)" : HAIRLINE_STRONG,
           }}
         >
-          {/* Liquid glass sheet: blur over the dimmed map, warm-paper wash on top. */}
-          <BlurView
+          {/* Liquid glass sheet: blur over the dimmed map, warm-paper wash on
+              top — an opaque panel on Android, which has no blur to wash. The
+              map underneath is the busiest thing in the app to read through. */}
+          <GlassLayer
+            role="panel"
+            dark={dark}
             intensity={44}
-            tint={dark ? "dark" : "light"}
             style={{
               backgroundColor: dark ? "rgba(20,24,31,0.78)" : "rgba(252,250,244,0.72)",
             }}
@@ -486,7 +489,7 @@ export function TourSheet({
                 </View>
               )}
             </ScrollView>
-          </BlurView>
+          </GlassLayer>
         </View>
       </View>
     </Modal>

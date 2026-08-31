@@ -2,10 +2,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { BlurView } from "expo-blur";
 import { Modal, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BarChart, LineChart, PairedBarChart, ScatterChart } from "@/components/charts/charts";
+import { GlassLayer } from "@/components/ui/GlassLayer";
+import { ANDROID_GLASS_HAIRLINE, OPAQUE_GLASS } from "@/theme/android-glass";
 import { TechBadge } from "@/components/work-orders/rows";
 import type { DerivedSnapshot } from "@/lib/derived/snapshot";
 import { activeLocale } from "@/lib/i18n";
@@ -1066,20 +1067,32 @@ export function AnalyticsOverlayHost({ snapshot }: { snapshot: DerivedSnapshot }
           }}
         >
           <View style={{ borderRadius: 26, overflow: "hidden" }}>
-            <BlurView intensity={44} tint={dark ? "dark" : "light"}>
+            <GlassLayer role="panel" dark={dark} intensity={44}>
               <View
                 style={{
                   borderRadius: 26,
-                  backgroundColor: dark ? "rgba(20,24,31,0.78)" : "rgba(252,250,244,0.72)",
+                  // The wash lives on this inner view, not on the blur, so on
+                  // Android it steps aside entirely rather than tinting the
+                  // opaque panel underneath — otherwise this one card would
+                  // land on a slightly different colour to every other sheet.
+                  backgroundColor: OPAQUE_GLASS
+                    ? "transparent"
+                    : dark
+                      ? "rgba(20,24,31,0.78)"
+                      : "rgba(252,250,244,0.72)",
                   borderWidth: 1,
-                  borderColor: dark ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.35)",
+                  borderColor: dark
+                    ? "rgba(255,255,255,0.12)"
+                    : OPAQUE_GLASS
+                      ? ANDROID_GLASS_HAIRLINE
+                      : "rgba(255,255,255,0.35)",
                 }}
               >
                 <ScrollView contentContainerStyle={{ padding: 18 }}>
                   {overlay ? panel(overlay) : null}
                 </ScrollView>
               </View>
-            </BlurView>
+            </GlassLayer>
           </View>
         </View>
       </View>

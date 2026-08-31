@@ -25,6 +25,12 @@ import { useFieldMode } from "@/lib/stores/settings";
 import { useMapSearch } from "@/lib/stores/map-search";
 import { useWorkOrdersView } from "@/lib/stores/work-orders-view";
 import { markTabPress } from "@/lib/perf/render-trace";
+import {
+  ANDROID_GLASS_ELEVATION,
+  ANDROID_GLASS_HAIRLINE,
+  OPAQUE_GLASS,
+  androidGlassFill,
+} from "@/theme/android-glass";
 
 const ICONS: Record<string, ComponentIcon> = {
   index: "compass",
@@ -102,7 +108,6 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
       : accentHexValue;
   const idleIcon = dark ? "rgba(255,255,255,0.62)" : "rgba(9,27,84,0.58)";
   const idleLabel = dark ? "rgba(255,255,255,0.72)" : "rgba(9,27,84,0.66)";
-  const lozengeFill = dark ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.82)";
 
   // Search lives in the bar on every screen that has a searchable surface: the
   // Work Orders workspace, the Make Ready board (both drive the derived
@@ -116,17 +121,34 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
   // width-animated parents).
   const field = useFieldMode();
   const glassDark = dark && !field;
-  const glassFill = glassDark
-    ? "rgba(255,255,255,0.05)"
-    : field
-      ? "rgba(255,255,255,0.85)"
-      : "rgba(255,255,255,0.40)";
+  // Android draws no blur, so the capsules are opaque cards there — this bar
+  // floats over the live property map, which read straight through a 40%-white
+  // fill. Field mode already resolved to its own opaque fill on both
+  // platforms, so it stays out of the Android branch.
+  const androidGlass = OPAQUE_GLASS && !field;
+  const glassFill = androidGlass
+    ? androidGlassFill("chrome", glassDark)
+    : glassDark
+      ? "rgba(255,255,255,0.05)"
+      : field
+        ? "rgba(255,255,255,0.85)"
+        : "rgba(255,255,255,0.40)";
   const glassBorder = glassDark
     ? "rgba(255,255,255,0.10)"
     : field
       ? "rgba(9,27,84,0.28)"
-      : "rgba(255,255,255,0.30)";
+      : androidGlass
+        ? ANDROID_GLASS_HAIRLINE
+        : "rgba(255,255,255,0.30)";
   const glassBlur = field ? 12 : glassDark ? 30 : 40;
+  // The selected lozenge is white-on-glass: over an OPAQUE white capsule it
+  // would disappear entirely, taking the only indication of which tab is
+  // selected with it. On Android it becomes the chrome's active tone instead.
+  const lozengeFill = androidGlass
+    ? androidGlassFill("chrome", glassDark, true)
+    : dark
+      ? "rgba(255,255,255,0.14)"
+      : "rgba(255,255,255,0.82)";
 
   /**
    * The glass, in GlassSurface's layer order: BlurView directly over the app
@@ -143,16 +165,23 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
    *
    * A function, not a shared element, so each surface gets its own instances —
    * two BlurViews backing two independently width-animated capsules.
+   *
+   * Nothing to layer on Android: BlurView draws no blur there, so both
+   * capsules take the opaque `glassFill` on the clipping View below instead,
+   * exactly as field mode does.
    */
   const glassLayers = () =>
-    field ? null : (
+    field || OPAQUE_GLASS ? null : (
       <>
         <BlurView
           intensity={glassBlur}
           tint={glassDark ? "dark" : "light"}
           style={StyleSheet.absoluteFill}
         />
-        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: glassFill }]} />
+        <View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { backgroundColor: glassFill }]}
+        />
       </>
     );
 
@@ -288,7 +317,9 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
   const measure = (index: number) => (e: LayoutChangeEvent) => {
     const { x, width: w } = e.nativeEvent.layout;
     setSlots((prev) =>
-      prev[index]?.x === x && prev[index]?.width === w ? prev : { ...prev, [index]: { x, width: w } },
+      prev[index]?.x === x && prev[index]?.width === w
+        ? prev
+        : { ...prev, [index]: { x, width: w } },
     );
   };
 
@@ -296,7 +327,13 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
     <Animated.View
       pointerEvents="box-none"
       style={[
-        { position: "absolute", left: 0, right: 0, bottom: insets.bottom + 8, alignItems: "center" },
+        {
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: insets.bottom + 8,
+          alignItems: "center",
+        },
         lift,
       ]}
     >
@@ -314,7 +351,9 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
         }}
       >
         {/* ---- Tabs capsule ⇄ condensed circle (one glass surface) --------- */}
-        <Animated.View style={[{ height: BAR, borderRadius: 999, flexGrow: 1, ...SHADOW }, capsuleStyle]}>
+        <Animated.View
+          style={[{ height: BAR, borderRadius: 999, flexGrow: 1, ...SHADOW }, capsuleStyle]}
+        >
           <View
             style={{
               width: "100%",
@@ -323,10 +362,14 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
               overflow: "hidden",
               borderWidth: field ? 1.4 : 1,
               borderColor: glassBorder,
-              // Field mode has no blur to layer over, so it keeps the solid fill
-              // here. Everything else gets its tint from glassLayers(), above
-              // the blur rather than beneath it.
-              backgroundColor: field ? glassFill : "transparent",
+              // Field mode and Android have no blur to layer over, so they keep
+              // the solid fill here. Everything else gets its tint from
+              // glassLayers(), above the blur rather than beneath it.
+              backgroundColor: field || OPAQUE_GLASS ? glassFill : "transparent",
+              // SHADOW above is iOS-only (Android ignores shadow*). Elevation
+              // goes on THIS view rather than the animated parent because it is
+              // the one with a background for Android to cast a shadow from.
+              ...(androidGlass ? { elevation: ANDROID_GLASS_ELEVATION } : null),
             }}
           >
             {glassLayers()}
@@ -367,7 +410,11 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
                   // be reported as "Nms after tapping Map" rather than in
                   // isolation. Compiled out of release builds.
                   markTabPress(route.name);
-                  const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
+                  const event = navigation.emit({
+                    type: "tabPress",
+                    target: route.key,
+                    canPreventDefault: true,
+                  });
                   if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
                 };
 
@@ -440,10 +487,14 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
               overflow: "hidden",
               borderWidth: field ? 1.4 : 1,
               borderColor: glassBorder,
-              // Field mode has no blur to layer over, so it keeps the solid fill
-              // here. Everything else gets its tint from glassLayers(), above
-              // the blur rather than beneath it.
-              backgroundColor: field ? glassFill : "transparent",
+              // Field mode and Android have no blur to layer over, so they keep
+              // the solid fill here. Everything else gets its tint from
+              // glassLayers(), above the blur rather than beneath it.
+              backgroundColor: field || OPAQUE_GLASS ? glassFill : "transparent",
+              // SHADOW above is iOS-only (Android ignores shadow*). Elevation
+              // goes on THIS view rather than the animated parent because it is
+              // the one with a background for Android to cast a shadow from.
+              ...(androidGlass ? { elevation: ANDROID_GLASS_ELEVATION } : null),
             }}
           >
             {glassLayers()}

@@ -10,6 +10,7 @@ import { Chip } from "@/components/work-orders/Chip";
 import type { ScoreCard } from "@/lib/derived/score-cards";
 import { useFieldMode } from "@/lib/stores/settings";
 import type { WorkOrdersBoardMode } from "@/lib/stores/work-orders-view";
+import { ANDROID_GLASS_HAIRLINE, OPAQUE_GLASS, androidGlassFill } from "@/theme/android-glass";
 import { HAIRLINE, HEADER_TOP_PAD, MUTED, NAVY, screenHPad } from "@/theme/tokens";
 import { useAccentPalette } from "@/lib/hooks/use-accent";
 
@@ -70,6 +71,10 @@ export const GlassHeader = memo(function GlassHeader({
   // hardcoded light before — warm-paper fill, `tint="light"` blur, white pill —
   // which is why the header read as a lit slab floating on a near-black app.
   const dark = useColorScheme().colorScheme === "dark" && !field;
+  // Android has no blur, so this header goes opaque: at 42% the work-order
+  // rows scrolling under it showed through its own title. Field mode already
+  // sits at 96% for the same reason and keeps its own value.
+  const androidGlass = OPAQUE_GLASS && !field;
   const accent = palette.glassFor(dark);
   const ink = dark ? "#FFFFFF" : NAVY;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -97,20 +102,30 @@ export const GlassHeader = memo(function GlassHeader({
         right: 0,
         zIndex: 20,
         borderBottomWidth: 1,
-        borderBottomColor: dark ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.55)",
-        backgroundColor: dark
-          ? "rgba(18,22,29,0.52)"
-          : field
-            ? "rgba(250,247,240,0.96)"
-            : "rgba(250,247,240,0.42)",
+        borderBottomColor: dark
+          ? "rgba(255,255,255,0.07)"
+          : androidGlass
+            ? ANDROID_GLASS_HAIRLINE
+            : "rgba(255,255,255,0.55)",
+        backgroundColor: androidGlass
+          ? androidGlassFill("panel", dark)
+          : dark
+            ? "rgba(18,22,29,0.52)"
+            : field
+              ? "rgba(250,247,240,0.96)"
+              : "rgba(250,247,240,0.42)",
         shadowColor: dark ? "#000000" : NAVY,
         shadowOpacity: dark ? 0.34 : 0.08,
         shadowRadius: 15,
         shadowOffset: { width: 0, height: 8 },
       }}
     >
-      {!field ? (
-        <BlurView intensity={dark ? 34 : 42} tint={dark ? "dark" : "light"} style={StyleSheet.absoluteFill} />
+      {!field && !OPAQUE_GLASS ? (
+        <BlurView
+          intensity={dark ? 34 : 42}
+          tint={dark ? "dark" : "light"}
+          style={StyleSheet.absoluteFill}
+        />
       ) : null}
       <View style={{ paddingTop: insets.top + HEADER_TOP_PAD }}>
         {/* Row 1: mode dropdown pill · funnel · account */}
@@ -170,7 +185,14 @@ export const GlassHeader = memo(function GlassHeader({
                 justifyContent: "center",
               }}
             >
-              <Text style={{ fontSize: 11, fontWeight: "800", color: accent, fontVariant: ["tabular-nums"] }}>
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: "800",
+                  color: accent,
+                  fontVariant: ["tabular-nums"],
+                }}
+              >
                 {count.toLocaleString()}
               </Text>
             </View>
@@ -178,7 +200,11 @@ export const GlassHeader = memo(function GlassHeader({
           </Pressable>
           <View style={{ flex: 1 }} />
           {mode === "closed" && onOpenInsights ? (
-            <Chip icon="stats-chart-outline" onPress={onOpenInsights} accessibilityLabel={t("workOrders.insightsA11y")} />
+            <Chip
+              icon="stats-chart-outline"
+              onPress={onOpenInsights}
+              accessibilityLabel={t("workOrders.insightsA11y")}
+            />
           ) : null}
           {showFilters ? (
             <Chip
@@ -269,7 +295,12 @@ export const GlassHeader = memo(function GlassHeader({
       </View>
 
       {/* The title menu — glass sheet anchored under the pill. */}
-      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
+      <Modal
+        visible={menuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuOpen(false)}
+      >
         <Pressable
           style={StyleSheet.absoluteFill}
           onPress={() => setMenuOpen(false)}
@@ -314,7 +345,11 @@ export const GlassHeader = memo(function GlassHeader({
                   borderTopColor: dark ? "rgba(255,255,255,0.07)" : "rgba(9,27,84,0.06)",
                 }}
               >
-                <Ionicons name={m.icon as never} size={15} color={selected ? accent : dark ? "rgba(255,255,255,0.58)" : "#4C556F"} />
+                <Ionicons
+                  name={m.icon as never}
+                  size={15}
+                  color={selected ? accent : dark ? "rgba(255,255,255,0.58)" : "#4C556F"}
+                />
                 <Text
                   style={{
                     flex: 1,

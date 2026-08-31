@@ -78,11 +78,54 @@ export async function GET(request: Request): Promise<NextResponse> {
   try {
     const supabase = createUntypedAdminClient();
 
-    const units = await selectAll(supabase, "resman_units", "resman_unit_id, number, current_lease_id");
+    const nowIso = new Date().toISOString();
+
+    // Every table below is read whole and joined in memory, so none of these
+    // reads depends on another — awaited one after another they cost a serial
+    // round trip each, on a route the guard app hits on every sync.
+    const [
+      units,
+      residentRows,
+      personLeaseRows,
+      vehicleRows,
+      unitBanRows,
+      banRows,
+      passRows,
+      entryRows,
+    ] = await Promise.all([
+      selectAll(supabase, "resman_units", "resman_unit_id, number, current_lease_id"),
+      selectAll(supabase, "residents", "id, name, access_allowed, unit_id"),
+      selectAll(supabase, "resman_residents", "resman_lease_id, resman_person_lease_id"),
+      selectAll(
+        supabase,
+        "resman_lease_vehicles",
+        "resman_person_lease_id, resman_vehicle_id, make, model, year, color, license_plate, license_plate_state, parking_spot",
+      ),
+      selectAll(supabase, "guest_pass_unit_bans", BAN_SELECT),
+      selectAll(supabase, "guest_pass_bans", "resident_id"),
+      // Active guest passes, grouped below by the resident who issued them.
+      selectAll(
+        supabase,
+        "guest_passes",
+        "id, resident_id, guest_name, expires_at, created_at",
+        (q) =>
+          q
+            .eq("status", "active")
+            .gt("expires_at", nowIso)
+            .order("expires_at", { ascending: true }),
+      ),
+      // Last entry per unit, from one ordered scan (see ENTRY_SCAN_LIMIT).
+      selectAll(
+        supabase,
+        "entry_logs",
+        "id, entry_type, tenant_name, entered_at, unit_address",
+        (q) => q.order("entered_at", { ascending: false }),
+        ENTRY_SCAN_LIMIT,
+      ),
+    ]);
 
     // ── Residents (our own registry), grouped by the unit number they enrolled
     // against. Same conservative exact match as the per-unit route.
-    const residentRows = await selectAll(supabase, "residents", "id, name, access_allowed, unit_id");
     const residentsByUnit = new Map<string, Resident[]>();
     for (const r of residentRows) {
       const unitNumber = ((r.unit_id as string) ?? "").trim();
@@ -95,21 +138,11 @@ export async function GET(request: Request): Promise<NextResponse> {
     }
 
     // ── Vehicles: unit → current lease → person-leases → vehicles.
-    const personLeaseRows = await selectAll(
-      supabase,
-      "resman_residents",
-      "resman_lease_id, resman_person_lease_id",
-    );
     const personLeasesByLease = new Map<string, string[]>();
     for (const row of personLeaseRows) {
       push(personLeasesByLease, row.resman_lease_id as string, row.resman_person_lease_id as string);
     }
 
-    const vehicleRows = await selectAll(
-      supabase,
-      "resman_lease_vehicles",
-      "resman_person_lease_id, resman_vehicle_id, make, model, year, color, license_plate, license_plate_state, parking_spot",
-    );
     const vehiclesByPersonLease = new Map<string, Vehicle[]>();
     for (const v of vehicleRows) {
       const vehicle: Vehicle = {
@@ -129,34 +162,19 @@ export async function GET(request: Request): Promise<NextResponse> {
 
     // ── Guest access: unit-level suspensions and per-resident bans. The
     // suspensions are rule-evaluated (a move_out ban lifts with its lease), so
-    // this pane agrees with the gate rather than reporting a lapsed ban.
-    const unitBanRows = await selectAll(supabase, "guest_pass_unit_bans", BAN_SELECT);
+    // this pane agrees with the gate rather than reporting a lapsed ban. That
+    // evaluation reads the rows above, so it is the one read that must wait.
     const unitBanned = new Set((await activeUnitBans(supabase, unitBanRows)).keys());
 
-    const banRows = await selectAll(supabase, "guest_pass_bans", "resident_id");
     const bannedResidents = new Set(banRows.map((b) => b.resident_id as string));
 
     // ── Active guest passes, grouped by the resident who issued them.
-    const nowIso = new Date().toISOString();
-    const passRows = await selectAll(
-      supabase,
-      "guest_passes",
-      "id, resident_id, guest_name, expires_at, created_at",
-      (q) => q.eq("status", "active").gt("expires_at", nowIso).order("expires_at", { ascending: true }),
-    );
     const passesByResident = new Map<string, Row[]>();
     for (const p of passRows) {
       push(passesByResident, p.resident_id as string, p);
     }
 
     // ── Last entry per unit, from one ordered scan (see ENTRY_SCAN_LIMIT).
-    const entryRows = await selectAll(
-      supabase,
-      "entry_logs",
-      "id, entry_type, tenant_name, entered_at, unit_address",
-      (q) => q.order("entered_at", { ascending: false }),
-      ENTRY_SCAN_LIMIT,
-    );
     const lastEntryByUnit = new Map<string, LastEntry>();
     for (const e of entryRows) {
       const unitNumber = ((e.unit_address as string) ?? "").trim();

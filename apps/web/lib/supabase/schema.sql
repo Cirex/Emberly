@@ -113,6 +113,10 @@ create index entry_logs_entered_at_idx on entry_logs (entered_at desc);
 create index entry_logs_property_name_idx on entry_logs (property_name);
 create index entry_logs_entry_type_idx on entry_logs (entry_type);
 create index entry_logs_scanner_entered_at_idx on entry_logs (scanner_id, entered_at desc);
+-- `unit_address` is an exposed API filter and backs the per-unit "last entry"
+-- lookup; composite so that lookup is one range read rather than a walk down
+-- entry_logs_entered_at_idx until the unit turns up.
+create index entry_logs_unit_address_entered_at_idx on entry_logs (unit_address, entered_at desc);
 
 -- ------------------------------------------------------------
 -- Entry log photos

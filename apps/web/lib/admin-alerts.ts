@@ -97,14 +97,24 @@ async function syncDerivedAlerts(supabase: UntypedSupabase) {
   );
 
   const inserts: typeof rows = [];
+  const updates: ((typeof rows)[number] & { id: string })[] = [];
   for (const row of rows) {
     const existingId = openAlertIdByKey.get(openAlertKey(row));
-    if (existingId) {
-      const { error } = await supabase.from("admin_alerts").update(row).eq("id", existingId);
-      if (error) throw error;
-    } else {
-      inserts.push(row);
-    }
+    if (existingId) updates.push({ ...row, id: existingId });
+    else inserts.push(row);
+  }
+
+  // One round trip instead of one per existing alert — this runs on every admin
+  // page load, and the derived set grows with the resident roster.
+  //
+  // Conflicting on the PRIMARY KEY, not on the partial unique index the comment
+  // below is about: every row here carries the id of an alert that is already
+  // open with these exact (alert_type, subject_type, subject_id) values, so the
+  // update branch rewrites a row's own key with the same values and cannot
+  // collide with a different row.
+  if (updates.length > 0) {
+    const { error } = await supabase.from("admin_alerts").upsert(updates, { onConflict: "id" });
+    if (error) throw error;
   }
 
   if (inserts.length === 0) return;

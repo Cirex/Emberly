@@ -19,7 +19,12 @@ import type { UntypedSupabase } from "./supabase/types";
 
 export type AdminLoginResult =
   | { ok: true; admin: AdminAuthContext; personId: string | null }
-  | { ok: false; reason: "invalid_credentials" | "unavailable" | "not_configured" };
+  | {
+      ok: false;
+      reason: "invalid_credentials" | "unavailable" | "not_configured";
+      /** Which system actually failed — see `adminDatabaseFailure`. */
+      detail?: string;
+    };
 
 interface AdminUserRow {
   id: string;
@@ -78,6 +83,29 @@ export async function authenticateResmanAdminSession(
   return { ...resolved, resmanCookies: login.cookies };
 }
 
+/**
+ * A local-database failure in the post-login upsert, reported so it cannot be
+ * mistaken for a ResMan one. The reason stays `unavailable` because that is
+ * what the login routes map to a 502 (anything else reads as "invalid
+ * credentials" to them), but `detail` names the failing admin_users operation —
+ * without it every one of these surfaced as "ResMan login is temporarily
+ * unavailable" and sent operators to debug the wrong system.
+ *
+ * Logs the operation and the Postgres error code only: a PostgREST message can
+ * quote the row it choked on, and this path handles a password.
+ */
+function adminDatabaseFailure(
+  operation: "lookup" | "update" | "insert",
+  resmanUsername: string,
+  error?: { code?: string | null } | null,
+): AdminLoginResult {
+  console.error(`[admin-users] admin_users ${operation} failed`, {
+    username: resmanUsername,
+    code: error?.code ?? null,
+  });
+  return { ok: false, reason: "unavailable", detail: `admin_users ${operation} failed` };
+}
+
 /** The shared post-login half: admin_users upsert + identity backfill. */
 async function resolveAdminForIdentity(
   username: string,
@@ -103,7 +131,7 @@ async function resolveAdminForIdentity(
     .select("id, role, display_name, resman_person_id")
     .eq("resman_username", resmanUsername)
     .maybeSingle();
-  if (existing.error) return { ok: false, reason: "unavailable" };
+  if (existing.error) return adminDatabaseFailure("lookup", resmanUsername, existing.error);
 
   const found = existing.data as AdminUserRow | null;
   if (found) {
@@ -112,7 +140,11 @@ async function resolveAdminForIdentity(
     const update: Record<string, unknown> = { last_login_at: now, updated_at: now, active: true };
     if (personName && personName !== found.display_name) update.display_name = personName;
     if (personId && personId !== found.resman_person_id) update.resman_person_id = personId;
-    await supabase.from("admin_users").update(update).eq("id", found.id);
+    // This write carries resman_person_id — the machine-minted GUID every
+    // work-order attribution is keyed on. Unchecked, a failed update dropped it
+    // and still handed the caller a personId nothing had stored.
+    const updated = await supabase.from("admin_users").update(update).eq("id", found.id);
+    if (updated.error) return adminDatabaseFailure("update", resmanUsername, updated.error);
 
     const displayName = personName ?? found.display_name ?? resmanUsername;
     return {
@@ -137,7 +169,9 @@ async function resolveAdminForIdentity(
     })
     .select("id, role, display_name, resman_person_id")
     .single();
-  if (inserted.error || !inserted.data) return { ok: false, reason: "unavailable" };
+  if (inserted.error || !inserted.data) {
+    return adminDatabaseFailure("insert", resmanUsername, inserted.error);
+  }
 
   const row = inserted.data as AdminUserRow;
   return {

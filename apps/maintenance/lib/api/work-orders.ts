@@ -217,8 +217,22 @@ export async function closeWorkOrder(
     expectedUnitId: null,
   });
   if (result && !result.ok) throw new Error(result.detail);
-  // Close delivered (or refused-consumed); the folded edit went with it.
-  if (folded) usePendingEdits.getState().ackDelivered(id, folded);
+  // Ack the folded edit ONLY when this request genuinely carried it into
+  // ResMan — a verified write that actually POSTed. Two outcomes look like
+  // success here but wrote nothing:
+  //   - refused (`null`): a guard said no before any POST, so the fold never
+  //     happened;
+  //   - no-op (`noop`): the engine planned zero changes. That is ambiguous —
+  //     either every target was already in ResMan (delivered), or the office
+  //     had already Closed the ticket, in which case the close returns BEFORE
+  //     applying the folded fields at all (nothing written). The result cannot
+  //     tell the two apart, so it counts as NOT delivered: the safe reading
+  //     costs one cheap extra write, the unsafe one loses the tech's typed
+  //     notes forever, since flush() only ever retries un-acked entries.
+  // Either way the edit stays un-acked and its own flush retries it
+  // independently, which converges: that write lands, or no-ops and acks, or
+  // hits the same deterministic refusal and is consumed as one.
+  if (folded && result?.ok && !result.noop) usePendingEdits.getState().ackDelivered(id, folded);
   return { ok: true, queued: false, stub: false };
 }
 

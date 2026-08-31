@@ -761,7 +761,11 @@ interface MutationPlan {
   targets: Map<string, string>;
 }
 
-function sanitizeDescription(raw: string): string {
+/** What a Description patch ACTUALLY becomes on the wire. Exported so the
+ *  app's absorption check compares the mirror against the value this engine
+ *  wrote, not the raw one the technician typed — when sanitizing changes it,
+ *  the two can never be equal and the overlay never retires. */
+export function sanitizeDescription(raw: string): string {
   // ResMan rejects '<' and '>' (data-val-regex) and caps at 248.
   return raw.replace(/[<>]/g, "").slice(0, RESMAN_DESCRIPTION_MAX);
 }
@@ -898,8 +902,22 @@ function assertOnlyAllowedChanged(
 // MARK: - Verify
 
 /** Free-text fields whose CONTENT stays out of logs and error strings (notes
- *  can carry unit/resident details). */
+ *  can carry unit/resident details), and whose round-trip is compared
+ *  semantically (see `normalizeResManFreeText`). */
 const FREE_TEXT_FIELDS = new Set(["Description", "CompletedNotes", "ReportingNotes"]);
+
+/**
+ * The ONE definition of "same free text" — shared with the app's absorption
+ * check so both sides agree on what we wrote.
+ *
+ * ResMan re-renders textarea content with CRLF endings and can pad the edges,
+ * so a byte compare calls a landed note "did not land": the write reports
+ * ok:false, the entry is never acked, and the 15-second sync tick replays a
+ * full GET+POST+GET write cycle against production forever.
+ */
+export function normalizeResManFreeText(value: string | null | undefined): string {
+  return (value ?? "").replace(/\r\n?/g, "\n").trim();
+}
 
 /** Compare a fresh harvest against the mutation's targets. */
 function verifyTargets(controls: FormControl[], targets: Map<string, string>): string[] {
@@ -907,8 +925,16 @@ function verifyTargets(controls: FormControl[], targets: Map<string, string>): s
   for (const [name, expected] of targets) {
     const control = findControl(controls, name);
     const actual = control ? (controlWireValue(control) ?? "") : null;
-    if (actual === expected) continue;
-    if (FREE_TEXT_FIELDS.has(name)) {
+    const free = FREE_TEXT_FIELDS.has(name);
+    if (
+      actual !== null &&
+      (free
+        ? normalizeResManFreeText(actual) === normalizeResManFreeText(expected)
+        : actual === expected)
+    ) {
+      continue;
+    }
+    if (free) {
       mismatches.push(
         `${name}: expected ${expected.length} chars, got ` +
           (actual === null ? "(missing)" : `${actual.length}`),

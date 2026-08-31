@@ -112,6 +112,44 @@ describe("pending-edits absorption", () => {
     expect(usePendingEdits.getState().pending.wo1).toBeUndefined();
   });
 
+  test("a description past ResMan's cap absorbs against the value we actually wrote", () => {
+    // The engine sanitizes before writing ('<'/'>' stripped, 248 max), so the
+    // mirror can only ever hold the sanitized text. Comparing the raw typed
+    // string left the overlay unretirable: "Saved" for the full stale window
+    // and a fresh re-POST of the identical edit every half hour.
+    const typed = "a/c <compressor> " + "x".repeat(300);
+    const written = ("a/c compressor " + "x".repeat(300)).slice(0, 248);
+    usePendingEdits.setState({
+      pending: {
+        wo1: {
+          workOrderId: "wo1",
+          patch: { description: typed },
+          editedAt: NOW - 10 * MIN,
+          acked: true,
+          ackedAt: NOW - MIN,
+        },
+      },
+    });
+    usePendingEdits.getState().prune([row({ notes: written })], NOW);
+    expect(usePendingEdits.getState().pending.wo1).toBeUndefined();
+  });
+
+  test("a description the mirror does not carry does NOT absorb", () => {
+    usePendingEdits.setState({
+      pending: {
+        wo1: {
+          workOrderId: "wo1",
+          patch: { description: "replace the <compressor>" },
+          editedAt: NOW - 10 * MIN,
+          acked: true,
+          ackedAt: NOW - MIN,
+        },
+      },
+    });
+    usePendingEdits.getState().prune([row({ notes: "replace the thermostat" })], NOW);
+    expect(usePendingEdits.getState().pending.wo1).toBeDefined();
+  });
+
   test("genuinely different notes do NOT absorb, and a fresh ack holds", () => {
     usePendingEdits.setState({
       pending: {

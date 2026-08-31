@@ -1,4 +1,4 @@
-import { technicianDisplayName } from "@emberly/core";
+import { normalizeResManFreeText, sanitizeDescription, technicianDisplayName } from "@emberly/core";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { persistedStorage } from "@/lib/stores/persisted-storage";
@@ -108,10 +108,11 @@ function sameMoment(a: string | null | undefined, b: string | null | undefined):
 
 /** ResMan round-trips free text with \r\n line endings and can pad edges;
  *  compare CONTENT, not bytes, or a multi-line note never reads as absorbed
- *  (field-verified: an acked edit oscillated forever on exactly this). */
+ *  (field-verified: an acked edit oscillated forever on exactly this). The
+ *  normalizer comes from the write engine so this check and the engine's own
+ *  verify can never drift into disagreeing about what we wrote. */
 function sameText(a: string | null | undefined, b: string | null | undefined): boolean {
-  const norm = (v: string | null | undefined) => (v ?? "").replace(/\r\n/g, "\n").trim();
-  return norm(a) === norm(b);
+  return normalizeResManFreeText(a) === normalizeResManFreeText(b);
 }
 
 /** True when the base row already carries every value the patch sets. */
@@ -125,7 +126,17 @@ function absorbed(row: WorkOrder, patch: WorkOrderEditPatch): boolean {
   ) {
     return false;
   }
-  if (patch.description !== undefined && !sameText(row.notes, patch.description)) return false;
+  // The mirror can only ever hold what the engine actually WROTE, and the
+  // engine sanitizes the description ('<'/'>' stripped, 248 max). Comparing
+  // the raw typed text instead means a long or bracketed edit never absorbs:
+  // the "Saved" pill sticks for the full stale window and the redeliver clock
+  // re-POSTs the identical edit every half hour.
+  if (
+    patch.description !== undefined &&
+    !sameText(row.notes, sanitizeDescription(patch.description))
+  ) {
+    return false;
+  }
   if (
     patch.completionNotes !== undefined &&
     !sameText(row.completion_notes, patch.completionNotes)

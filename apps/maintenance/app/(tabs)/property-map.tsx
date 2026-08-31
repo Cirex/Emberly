@@ -73,8 +73,30 @@ export default function PropertyMapScreen() {
       loadAll: s.loadAll,
     })),
   );
-  const ann = useAnnotations();
-  const tagStore = useTags();
+  // Same reason as the units store above: these stores are written on every 15s
+  // sync tick, and a whole-store subscription re-rendered this screen (and its
+  // Skia canvas) for fields it never reads.
+  const ann = useAnnotations(
+    useShallow((s) => ({
+      annotations: s.annotations,
+      hydrated: s.hydrated,
+      hydrate: s.hydrate,
+      add: s.add,
+      addUtilityPin: s.addUtilityPin,
+      addUtilityLine: s.addUtilityLine,
+    })),
+  );
+  const tagStore = useTags(
+    useShallow((s) => ({
+      // `byUnit` is not read directly — tagsFor() reads it. Without it in the
+      // subscription the store's method would return fresh tags that this
+      // screen never re-renders to show.
+      byUnit: s.byUnit,
+      hydrated: s.hydrated,
+      hydrate: s.hydrate,
+      tagsFor: s.tagsFor,
+    })),
+  );
   // The unit search field now lives in the floating tab bar (like the other
   // tabs); it drives this shared store, which this screen reads.
   const query = useMapSearch((s) => s.query);
@@ -115,7 +137,16 @@ export default function PropertyMapScreen() {
   );
   // Tour Mode (TourRoute.swift): while armed, unit taps toggle stops instead
   // of opening the tooltip. Device-local store, hydrated by zustand persist.
-  const tour = useTour();
+  // `history` stays out: the sheet below reads the tour store itself, and a
+  // completed tour must not re-render the map.
+  const tour = useTour(
+    useShallow((s) => ({
+      stops: s.stops,
+      tourMode: s.tourMode,
+      toggleStop: s.toggleStop,
+      setTourMode: s.setTourMode,
+    })),
+  );
   // "Open in Map" from My Day: show the daily path's badges instead of the
   // manual tour's — unless the user is actively in manual Tour Mode, which
   // stays an independent feature and wins while it's on.
@@ -132,7 +163,11 @@ export default function PropertyMapScreen() {
   const hasData = units.allUnits.length > 0;
   const night = isNight();
 
-  const photos = useAnnotationPhotos();
+  // Only the hydration handshake — the photo maps themselves are read by the
+  // editor dialog, which subscribes on its own.
+  const photos = useAnnotationPhotos(
+    useShallow((s) => ({ hydrated: s.hydrated, hydrate: s.hydrate })),
+  );
   useEffect(() => {
     if (!ann.hydrated) void ann.hydrate();
     if (!photos.hydrated) void photos.hydrate();

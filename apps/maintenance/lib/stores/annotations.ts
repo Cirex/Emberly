@@ -69,6 +69,48 @@ function persist(annotations: MapAnnotation[]): void {
   void AsyncStorage.setItem(KEY, JSON.stringify(annotations));
 }
 
+/** Vertices of a drawn run, compared coordinate by coordinate. */
+function pointsEqual(a: UtilityPoint[] | undefined, b: UtilityPoint[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i].x !== b[i].x || a[i].y !== b[i].y) return false;
+  }
+  return true;
+}
+
+/**
+ * Keys are walked rather than listed so a field added to MapAnnotation is
+ * compared automatically — a compare that silently ignores a new field leaves
+ * the map showing a stale pin, which is far worse than an extra render.
+ * `points` is the one non-scalar.
+ */
+function annotationEqual(a: MapAnnotation, b: MapAnnotation): boolean {
+  if (a === b) return true;
+  const keys = Object.keys(a) as (keyof MapAnnotation)[];
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const key of keys) {
+    if (key === "points") {
+      if (!pointsEqual(a.points, b.points)) return false;
+    } else if (!Object.is(a[key], b[key])) return false;
+  }
+  return true;
+}
+
+/**
+ * Whether a merged pull differs from what the store already holds.
+ *
+ * Order-sensitive: the merge below rebuilds the list in server order with the
+ * queued locals appended, so a run of quiet ticks produces the same order.
+ */
+function annotationsEqual(a: readonly MapAnnotation[], b: readonly MapAnnotation[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (!annotationEqual(a[i], b[i])) return false;
+  }
+  return true;
+}
+
 let syncing = false;
 
 export const useAnnotations = create<AnnotationsState>((set, get) => ({
@@ -199,7 +241,8 @@ export const useAnnotations = create<AnnotationsState>((set, get) => ({
           if (a.removed) {
             const res = await deleteAnnotation(a.id, a.version, config);
             if (res.ok) apply((l) => l.filter((x) => x.id !== a.id));
-            else if (res.conflict) apply((l) => l.map((x) => (x.id === a.id ? { ...x, removed: undefined } : x)));
+            else if (res.conflict)
+              apply((l) => l.map((x) => (x.id === a.id ? { ...x, removed: undefined } : x)));
           } else if (a.dirty && isLocal(a.id)) {
             const created = await createAnnotation(toFields(a), config);
             // The pin's photos, any open editor, and a hidden-run flag are
@@ -218,7 +261,9 @@ export const useAnnotations = create<AnnotationsState>((set, get) => ({
                 l.map((x) => {
                   if (x.id !== a.id) return x;
                   const unchanged = JSON.stringify(toFields(x)) === JSON.stringify(toFields(a));
-                  return unchanged ? fromRemote(res.annotation) : { ...x, version: res.annotation.version };
+                  return unchanged
+                    ? fromRemote(res.annotation)
+                    : { ...x, version: res.annotation.version };
                 }),
               );
             } else if (res.conflict) {
@@ -237,8 +282,15 @@ export const useAnnotations = create<AnnotationsState>((set, get) => ({
       const queuedLocal = stillQueued.filter((a) => isLocal(a.id));
       const queuedById = new Map(stillQueued.filter((a) => !isLocal(a.id)).map((a) => [a.id, a]));
       const merged = remote.map((r) => queuedById.get(r.id) ?? fromRemote(r)).concat(queuedLocal);
-      set({ annotations: merged });
-      persist(merged);
+      // Only write when the pull actually brought something. This runs every
+      // 15s on the screen a tech keeps open while walking the property, and an
+      // unconditional write re-serialized the whole annotation layer to
+      // AsyncStorage, re-rendered the Property Map and rebuilt its Skia canvas
+      // — all to land exactly the rows the device already had.
+      if (!annotationsEqual(merged, get().annotations)) {
+        set({ annotations: merged });
+        persist(merged);
+      }
       reportSyncSucceeded("annotations");
     } catch {
       // Pull failed (offline) — cached pins stand, queue intact.

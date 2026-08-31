@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { persistedStorage } from "@/lib/stores/persisted-storage";
+import { rowsEqual } from "@/lib/stores/row-compare";
 import { capture, reportSyncFailed, reportSyncSucceeded } from "@/lib/analytics";
 import {
   listPmTemplateRounds,
@@ -55,9 +56,51 @@ function withTask(
 ): PmTemplateRound[] {
   return templates.map((template) =>
     template.tasks.some((task) => task.id === taskId)
-      ? { ...template, tasks: template.tasks.map((task) => (task.id === taskId ? patch(task) : task)) }
+      ? {
+          ...template,
+          tasks: template.tasks.map((task) => (task.id === taskId ? patch(task) : task)),
+        }
       : template,
   );
+}
+
+/**
+ * Whether one template group differs, its tasks included.
+ *
+ * Keys are walked rather than listed so a field added to PmTemplateRoundSchema
+ * is compared automatically — a compare that silently ignores a new field
+ * leaves the board showing stale work, which is far worse than an extra
+ * render. `tasks` is the one non-scalar, and its rows are flat.
+ */
+function templateEqual(a: PmTemplateRound, b: PmTemplateRound): boolean {
+  if (a === b) return true;
+  const keys = Object.keys(a) as (keyof PmTemplateRound)[];
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const key of keys) {
+    if (key === "tasks") {
+      if (!rowsEqual(a.tasks, b.tasks)) return false;
+    } else if (!Object.is(a[key], b[key])) return false;
+  }
+  return true;
+}
+
+/**
+ * Whether a fetched round differs from what is cached.
+ *
+ * This answered `JSON.stringify(a) !== JSON.stringify(b)`, which built two full
+ * string copies of the round on every 15s tick — on Hermes, four serializations
+ * a minute all day, almost always to conclude that nothing moved. Comparing the
+ * groups directly is the same answer for a fraction of the work.
+ *
+ * Order-sensitive, exactly like the stringify pair it replaces: the endpoint
+ * returns a stable server ordering of templates and of their tasks.
+ */
+function roundDiffers(next: readonly PmTemplateRound[], prev: readonly PmTemplateRound[]): boolean {
+  if (next.length !== prev.length) return true;
+  for (let i = 0; i < next.length; i += 1) {
+    if (!templateEqual(next[i], prev[i])) return true;
+  }
+  return false;
 }
 
 function findTask(
@@ -108,7 +151,7 @@ export const usePm = create<PmState>()(
           const templates = await listPmTemplateRounds(config);
           // The state only moves when the data did — a quiet 60s poll must not
           // re-render the board just to confirm nothing happened.
-          if (JSON.stringify(templates) !== JSON.stringify(get().templates)) {
+          if (roundDiffers(templates, get().templates)) {
             set((s) => ({ templates, dataVersion: s.dataVersion + 1, refreshedAt: Date.now() }));
           } else {
             set({ refreshedAt: Date.now() });

@@ -773,9 +773,23 @@ create index if not exists resman_units_resman_property_id_scraped_at_idx on pub
 create index if not exists resman_units_property_updated_at_idx
   on public.resman_units (resman_property_id, updated_at desc);
 
--- Change-detecting, NOT the shared unconditional trigger: this is a mirror
--- table, re-upserted in full every sync pass, and the maintenance app reads it
--- as a delta (?updated_since=). synced_at remains the "last scrape" signal.
+-- Change-detecting trigger — but NOT yet effective on this table, and the
+-- device-side delta that depended on it has been reverted.
+--
+-- touch_updated_at_on_change compares to_jsonb(new) - 'updated_at' - 'synced_at'
+-- against the old row: it excludes exactly two columns. resman_units also has
+-- `scraped_at`, which a sync pass moves, so the projections differ every pass
+-- and updated_at is stamped anyway. Measured on 2026-08-31 after the swap: a
+-- single pass bumped ALL 891 rows (413 + 343 + 135, one group per upsert chunk),
+-- i.e. updated_at here still means "the scraper last ran".
+--
+-- Making a units delta real needs `scraped_at` excluded from the comparison too
+-- (check every other consumer of the shared function first), AND the app-side
+-- issues an audit found in the reverted delta: a cursor advanced to
+-- max(updated_at) can permanently miss a row committed out of timestamp order
+-- by the 4 concurrent upsert chunks, resolveSince truncates the bound to
+-- milliseconds while the column holds microseconds, and the merge needs an
+-- order-insensitive comparator plus a dedupe.
 drop trigger if exists resman_units_updated_at on public.resman_units;
 create trigger resman_units_updated_at
   before update on public.resman_units

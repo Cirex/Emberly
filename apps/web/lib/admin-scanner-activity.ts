@@ -1,6 +1,11 @@
 import { getScannerDeviceHealth } from "@/lib/admin-operations";
 import type { AdminScanner, ScannerDeviceRow } from "@/lib/admin-scanners";
-import { propertyDayKey, propertyHour, propertyWeekdayShort, startOfPropertyDay } from "@/lib/property-time";
+import {
+  propertyDayKey,
+  propertyHour,
+  propertyWeekdayShort,
+  startOfPropertyDay,
+} from "@/lib/property-time";
 import { createUntypedAdminClient } from "@/lib/supabase/admin";
 
 export type ScannerScan = {
@@ -33,6 +38,15 @@ export type ScannerActivity = {
   recent: ScannerScan[];
 };
 
+/**
+ * Rows one PostgREST response returns regardless of what `.limit()` asks for
+ * (the server-side `db-max-rows` ceiling).
+ */
+const POSTGREST_PAGE_SIZE = 1_000;
+
+/** Safety valve on the paged activity scan, well above one scanner's window. */
+const ACTIVITY_ROW_CAP = 20_000;
+
 function hourRangeLabel(hour: number): string {
   const fmt = (h: number) => {
     const period = h >= 12 ? "PM" : "AM";
@@ -47,36 +61,55 @@ export async function getScannerScanCountsToday(): Promise<Record<string, number
   const supabase = createUntypedAdminClient();
   const since = startOfPropertyDay(new Date()).toISOString();
 
-  const { data, error } = await supabase
-    .from("entry_logs")
-    .select("scanner_id")
-    .gte("entered_at", since)
-    .not("scanner_id", "is", null)
-    .limit(5000);
+  const { data: deviceRows, error: devicesError } = await supabase
+    .from("scanner_devices")
+    .select("scanner_id");
 
-  if (error) {
-    console.error("[admin/scanner-activity] Today count query error:", error);
+  if (devicesError) {
+    console.error("[admin/scanner-activity] Scanner list query error:", devicesError);
     return {};
   }
 
+  const scannerIds = [
+    ...new Set(
+      ((deviceRows ?? []) as Array<{ scanner_id: string | null }>)
+        .map((row) => row.scanner_id)
+        .filter((scannerId): scannerId is string => Boolean(scannerId)),
+    ),
+  ];
+
+  // One exact COUNT per scanner rather than fetching today's scan rows and
+  // tallying them here: PostgREST caps a row read at ~1000 whatever `.limit()`
+  // says, so a busy day quietly under-reported every scanner.
   const counts: Record<string, number> = {};
-  for (const row of (data ?? []) as Array<{ scanner_id: string | null }>) {
-    if (!row.scanner_id) continue;
-    counts[row.scanner_id] = (counts[row.scanner_id] ?? 0) + 1;
-  }
+  await Promise.all(
+    scannerIds.map(async (scannerId) => {
+      const { count, error } = await supabase
+        .from("entry_logs")
+        .select("id", { count: "exact", head: true })
+        .eq("scanner_id", scannerId)
+        .gte("entered_at", since);
+
+      if (error) {
+        console.error("[admin/scanner-activity] Today count query error:", error);
+        return;
+      }
+      counts[scannerId] = count ?? 0;
+    }),
+  );
   return counts;
 }
 
 export async function getScannerActivity(
   scannerId: string,
-  days = 7
+  days = 7,
 ): Promise<ScannerActivity | null> {
   const supabase = createUntypedAdminClient();
 
   const { data: deviceRow, error: deviceError } = await supabase
     .from("scanner_devices")
     .select(
-      "id, scanner_id, name, location, enabled, secret_rotated_at, last_seen_at, created_at, updated_at"
+      "id, scanner_id, name, location, enabled, secret_rotated_at, last_seen_at, created_at, updated_at",
     )
     .eq("scanner_id", scannerId)
     .maybeSingle();
@@ -94,20 +127,33 @@ export async function getScannerActivity(
   const todayMidnight = startOfPropertyDay(now).getTime();
   const windowStart = new Date(todayMidnight - (days - 1) * 86_400_000);
 
-  const { data: rows, error } = await supabase
-    .from("entry_logs")
-    .select("id, entry_type, tenant_name, unit_address, resident_id, entered_at")
-    .eq("scanner_id", scannerId)
-    .gte("entered_at", windowStart.toISOString())
-    .order("entered_at", { ascending: false })
-    .limit(2000);
+  // Page the window instead of asking for it in one `.limit()`: PostgREST caps
+  // a response at POSTGREST_PAGE_SIZE regardless, so the per-day buckets and
+  // totals below were computed on a prefix of a busy scanner's window. Ordering
+  // newest-first keeps the "recent" list right, and `id` is the unique
+  // tiebreaker that makes offset paging a stable total order.
+  const scans: ScannerScan[] = [];
+  for (let offset = 0; offset < ACTIVITY_ROW_CAP; offset += POSTGREST_PAGE_SIZE) {
+    const size = Math.min(POSTGREST_PAGE_SIZE, ACTIVITY_ROW_CAP - offset);
+    const { data: rows, error } = await supabase
+      .from("entry_logs")
+      .select("id, entry_type, tenant_name, unit_address, resident_id, entered_at")
+      .eq("scanner_id", scannerId)
+      .gte("entered_at", windowStart.toISOString())
+      .order("entered_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, offset + size - 1);
 
-  if (error) {
-    console.error("[admin/scanner-activity] Activity query error:", error);
-    throw new Error("Failed to fetch scanner activity");
+    if (error) {
+      console.error("[admin/scanner-activity] Activity query error:", error);
+      throw new Error("Failed to fetch scanner activity");
+    }
+
+    const page = (rows ?? []) as ScannerScan[];
+    scans.push(...page);
+    // A short page is the only reliable end-of-data signal.
+    if (page.length < size) break;
   }
-
-  const scans = (rows ?? []) as ScannerScan[];
 
   // Pre-seed one bucket per day in the window, oldest → newest.
   const perDay: ScannerDayBucket[] = [];

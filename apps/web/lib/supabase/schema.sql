@@ -766,11 +766,16 @@ create index if not exists resman_units_resman_building_id_idx on public.resman_
 create index if not exists resman_units_number_resman_building_id_idx on public.resman_units (number, resman_building_id);
 create index if not exists resman_units_current_lease_id_idx on public.resman_units (current_lease_id);
 create index if not exists resman_units_resman_property_id_scraped_at_idx on public.resman_units (resman_property_id, scraped_at);
+create index if not exists resman_units_property_updated_at_idx
+  on public.resman_units (resman_property_id, updated_at desc);
 
+-- Change-detecting, NOT the shared unconditional trigger: this is a mirror
+-- table, re-upserted in full every sync pass, and the maintenance app reads it
+-- as a delta (?updated_since=). synced_at remains the "last scrape" signal.
 drop trigger if exists resman_units_updated_at on public.resman_units;
 create trigger resman_units_updated_at
   before update on public.resman_units
-  for each row execute function public.update_updated_at_column();
+  for each row execute function public.touch_updated_at_on_change();
 
 alter table public.resman_units enable row level security;
 

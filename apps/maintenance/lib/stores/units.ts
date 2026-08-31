@@ -30,6 +30,12 @@ interface UnitsState {
   /** Full unfiltered set for the Property Map (paginated past the 200 cap). */
   allUnits: ResmanUnit[];
   loadingAll: boolean;
+  /**
+   * Newest server `updated_at` this device has absorbed. "" means no cursor
+   * yet (fresh install, or a cache persisted before delta sync existed) and
+   * forces one full read to establish it.
+   */
+  deltaCursor: string;
   setFilter: (f: UnitFilter) => void;
   setSearch: (q: string) => void;
   load: (config: ResmanConfig) => Promise<void>;
@@ -45,6 +51,44 @@ interface UnitsState {
 }
 
 const PAGE = 200;
+
+/** Newest server `updated_at` across `rows`, or `fallback` when none is newer. */
+function maxUpdatedAt(rows: readonly ResmanUnit[], fallback: string): string {
+  let max = fallback;
+  for (const row of rows) {
+    const stamp = row.updated_at ?? "";
+    // ISO-8601 UTC strings from PostgREST sort lexicographically.
+    if (stamp > max) max = stamp;
+  }
+  return max;
+}
+
+/** Page just the units that changed since `since`. */
+async function fetchSince(config: ResmanConfig, since: string): Promise<ResmanUnit[]> {
+  const acc: ResmanUnit[] = [];
+  let offset = 0;
+  for (;;) {
+    const res = await listUnits({ limit: PAGE, offset, updatedSince: since }, config);
+    acc.push(...res.data);
+    if (!res.pagination.hasMore) break;
+    offset += PAGE;
+    if (offset > 20_000) break; // safety valve
+  }
+  return acc;
+}
+
+/**
+ * The server's total row count, from a one-row request.
+ *
+ * This is how DELETIONS are caught. A delta read only ever reports rows that
+ * still exist, so a unit removed from ResMan (and swept by the sync's
+ * delete-missing pass) would otherwise sit on the device forever. Comparing
+ * the count is exact and costs one tiny request.
+ */
+async function fetchTotalCount(config: ResmanConfig): Promise<number> {
+  const res = await listUnits({ limit: 1 }, config);
+  return res.pagination.count;
+}
 
 /** Fetch every page of the unfiltered set. */
 async function fetchAll(config: ResmanConfig): Promise<ResmanUnit[]> {
@@ -81,6 +125,7 @@ export const useUnits = create<UnitsState>()(
       loading: false,
       allUnits: [],
       loadingAll: false,
+      deltaCursor: "",
 
       setFilter: (filter) => set({ filter }),
       setSearch: (search) => set({ search }),
@@ -92,9 +137,12 @@ export const useUnits = create<UnitsState>()(
         set({ loadingAll: get().allUnits.length === 0, error: undefined });
         try {
           const acc = await fetchAll(config);
-          set({ allUnits: acc, loadingAll: false });
+          set({ allUnits: acc, loadingAll: false, deltaCursor: maxUpdatedAt(acc, "") });
         } catch (err) {
-          set({ loadingAll: false, error: err instanceof Error ? err.message : "Failed to load units" });
+          set({
+            loadingAll: false,
+            error: err instanceof Error ? err.message : "Failed to load units",
+          });
         }
       },
 
@@ -104,7 +152,10 @@ export const useUnits = create<UnitsState>()(
           const res = await listUnits(filterParams(get().filter), config);
           set({ units: res.data, total: res.pagination.count, loading: false });
         } catch (err) {
-          set({ loading: false, error: err instanceof Error ? err.message : "Failed to load units" });
+          set({
+            loading: false,
+            error: err instanceof Error ? err.message : "Failed to load units",
+          });
         }
       },
 
@@ -113,11 +164,43 @@ export const useUnits = create<UnitsState>()(
         refreshing = true;
         try {
           const { filter } = get();
-          const [all, page] = await Promise.all([fetchAll(config), listUnits(filterParams(filter), config)]);
-          // The state only moves when the data did — a quiet 60s poll must not
-          // re-render four screens just to confirm nothing happened.
+          const cursor = get().deltaCursor;
+
+          // The roster is ~900 units of ~45 columns and the sync worker only
+          // rewrites it hourly, so re-downloading it on every tick was the
+          // app's largest recurring transfer. Ask for what MOVED instead, and
+          // page the current filter alongside it.
+          const [changed, total, page] = await Promise.all([
+            cursor === "" ? fetchAll(config) : fetchSince(config, cursor),
+            cursor === "" ? Promise.resolve(-1) : fetchTotalCount(config),
+            listUnits(filterParams(filter), config),
+          ]);
+
           const prev = get();
-          if (!rowsEqual(all, prev.allUnits)) set({ allUnits: all });
+          if (cursor === "") {
+            // No cursor yet — this read IS the full set, and establishes it.
+            if (!rowsEqual(changed, prev.allUnits)) set({ allUnits: changed });
+            set({ deltaCursor: maxUpdatedAt(changed, "") });
+          } else {
+            const byId = new Map(prev.allUnits.map((row) => [row.resman_unit_id, row]));
+            for (const row of changed) byId.set(row.resman_unit_id, row);
+            if (byId.size !== total) {
+              // Row count disagrees with the server: a unit was deleted (or an
+              // earlier delta was missed). Only a full read can tell which, and
+              // guessing would leave a phantom unit on the map.
+              const all = await fetchAll(config);
+              if (!rowsEqual(all, prev.allUnits)) set({ allUnits: all });
+              set({ deltaCursor: maxUpdatedAt(all, "") });
+            } else if (changed.length > 0) {
+              set({
+                allUnits: [...byId.values()],
+                deltaCursor: maxUpdatedAt(changed, cursor),
+              });
+            }
+            // changed.length === 0 and the count agrees: nothing moved, so no
+            // state write at all — that silence is the point of the delta.
+          }
+
           if (
             prev.filter === filter &&
             (!rowsEqual(page.data, prev.units) || page.pagination.count !== prev.total)
@@ -149,7 +232,17 @@ export const useUnits = create<UnitsState>()(
       storage: persistedStorage(),
       // Only the data survives restarts. Flags are per-session, and search is
       // a momentary input, not a preference.
-      partialize: (s) => ({ units: s.units, total: s.total, filter: s.filter, allUnits: s.allUnits }),
+      partialize: (s) => ({
+        units: s.units,
+        total: s.total,
+        filter: s.filter,
+        allUnits: s.allUnits,
+        // Persisted with the rows it describes: a cursor without its cache (or
+        // a cache without its cursor) would silently skip the units that moved
+        // in between. A cache restored from before delta sync has no cursor,
+        // reads as "", and takes the full-read path once.
+        deltaCursor: s.deltaCursor,
+      }),
     },
   ),
 );

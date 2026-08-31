@@ -143,18 +143,23 @@ interface ResmanResourceDef<T extends TableName> {
    * AND of simple predicates only. Anything needing OR stays a documented note
    * rather than being half-expressed here and quietly wrong.
    */
-  scopes?: Readonly<Record<string, {
-    description: string;
-    /** ANDed predicates. */
-    filters?: readonly ScopePredicate<ColumnOf<T>>[];
-    /**
-     * An OR group, ANDed with `filters`. Exactly one group, on purpose: the
-     * definitions that need it ("delinquent" = a balance OR a stated reason)
-     * are one disjunction deep, and allowing arbitrary nesting would rebuild
-     * a query language behind a capability name.
-     */
-    any?: readonly ScopePredicate<ColumnOf<T>>[];
-  }>>;
+  scopes?: Readonly<
+    Record<
+      string,
+      {
+        description: string;
+        /** ANDed predicates. */
+        filters?: readonly ScopePredicate<ColumnOf<T>>[];
+        /**
+         * An OR group, ANDed with `filters`. Exactly one group, on purpose: the
+         * definitions that need it ("delinquent" = a balance OR a stated reason)
+         * are one disjunction deep, and allowing arbitrary nesting would rebuild
+         * a query language behind a capability name.
+         */
+        any?: readonly ScopePredicate<ColumnOf<T>>[];
+      }
+    >
+  >;
   /** Columns the caller may sort by (beyond the resource's default order). */
   sortable?: readonly ColumnOf<T>[];
   /**
@@ -239,11 +244,16 @@ export interface ResmanResource {
   periods: Readonly<Record<string, { column: string; kind: "date" | "timestamp" }>>;
   entities: readonly string[];
   notes: readonly string[];
-  scopes: Readonly<Record<string, {
-    description: string;
-    filters: readonly ScopePredicate<string>[];
-    any: readonly ScopePredicate<string>[];
-  }>>;
+  scopes: Readonly<
+    Record<
+      string,
+      {
+        description: string;
+        filters: readonly ScopePredicate<string>[];
+        any: readonly ScopePredicate<string>[];
+      }
+    >
+  >;
   sortable: readonly string[];
   relations: readonly ResmanRelation[];
 }
@@ -290,11 +300,31 @@ export const propertiesResource = defineResource({
   table: "resman_properties",
   idColumn: "resman_property_id",
   selectColumns: [
-    "resman_property_id", "resman_account_id", "name", "custom_name", "abbreviation",
-    "phone", "email", "website", "logo_url", "management_company", "property_type",
-    "time_zone", "regional_manager", "property_manager", "leasing_agent",
-    "resident_portal_url", "address", "city", "state", "postal_code", "unit_count",
-    "last_sync_date", "synced_at", "created_at", "updated_at",
+    "resman_property_id",
+    "resman_account_id",
+    "name",
+    "custom_name",
+    "abbreviation",
+    "phone",
+    "email",
+    "website",
+    "logo_url",
+    "management_company",
+    "property_type",
+    "time_zone",
+    "regional_manager",
+    "property_manager",
+    "leasing_agent",
+    "resident_portal_url",
+    "address",
+    "city",
+    "state",
+    "postal_code",
+    "unit_count",
+    "last_sync_date",
+    "synced_at",
+    "created_at",
+    "updated_at",
   ],
   filters: { account: "resman_account_id" },
   order: { column: "name", ascending: true },
@@ -307,12 +337,27 @@ export const propertiesResource = defineResource({
   measures: ["unit_count"],
   sortable: ["name", "unit_count"],
   relations: [
-    { name: "buildings", resource: "buildings", localColumn: "resman_property_id",
-      foreignColumn: "resman_property_id", kind: "many" },
-    { name: "units", resource: "units", localColumn: "resman_property_id",
-      foreignColumn: "resman_property_id", kind: "many" },
-    { name: "floorplans", resource: "floorplans", localColumn: "resman_property_id",
-      foreignColumn: "resman_property_id", kind: "many" },
+    {
+      name: "buildings",
+      resource: "buildings",
+      localColumn: "resman_property_id",
+      foreignColumn: "resman_property_id",
+      kind: "many",
+    },
+    {
+      name: "units",
+      resource: "units",
+      localColumn: "resman_property_id",
+      foreignColumn: "resman_property_id",
+      kind: "many",
+    },
+    {
+      name: "floorplans",
+      resource: "floorplans",
+      localColumn: "resman_property_id",
+      foreignColumn: "resman_property_id",
+      kind: "many",
+    },
   ],
 });
 
@@ -321,7 +366,12 @@ export const buildingsResource = defineResource({
   table: "resman_buildings",
   idColumn: "resman_building_id",
   selectColumns: [
-    "resman_building_id", "resman_property_id", "name", "synced_at", "created_at", "updated_at",
+    "resman_building_id",
+    "resman_property_id",
+    "name",
+    "synced_at",
+    "created_at",
+    "updated_at",
   ],
   filters: { property: "resman_property_id" },
   order: { column: "name", ascending: true },
@@ -329,10 +379,20 @@ export const buildingsResource = defineResource({
   groupable: ["resman_property_id"],
   sortable: ["name"],
   relations: [
-    { name: "property", resource: "properties", localColumn: "resman_property_id",
-      foreignColumn: "resman_property_id", kind: "one" },
-    { name: "units", resource: "units", localColumn: "resman_building_id",
-      foreignColumn: "resman_building_id", kind: "many" },
+    {
+      name: "property",
+      resource: "properties",
+      localColumn: "resman_property_id",
+      foreignColumn: "resman_property_id",
+      kind: "one",
+    },
+    {
+      name: "units",
+      resource: "units",
+      localColumn: "resman_building_id",
+      foreignColumn: "resman_building_id",
+      kind: "many",
+    },
   ],
 });
 
@@ -341,8 +401,15 @@ export const floorplansResource = defineResource({
   table: "resman_floorplans",
   idColumn: "resman_floorplan_id",
   selectColumns: [
-    "resman_floorplan_id", "resman_property_id", "name", "description",
-    "square_feet", "market_rent", "synced_at", "created_at", "updated_at",
+    "resman_floorplan_id",
+    "resman_property_id",
+    "name",
+    "description",
+    "square_feet",
+    "market_rent",
+    "synced_at",
+    "created_at",
+    "updated_at",
   ],
   filters: { property: "resman_property_id" },
   order: { column: "name", ascending: true },
@@ -352,11 +419,21 @@ export const floorplansResource = defineResource({
   measures: ["square_feet", "market_rent"],
   sortable: ["name", "square_feet", "market_rent"],
   relations: [
-    { name: "property", resource: "properties", localColumn: "resman_property_id",
-      foreignColumn: "resman_property_id", kind: "one" },
-    { name: "units", resource: "units", localColumn: "resman_floorplan_id",
-      foreignColumn: "resman_floorplan_id", kind: "many",
-      note: "floorplans.market_rent is the PLAN's asking rent; units.market_rent is the unit's own. They differ." },
+    {
+      name: "property",
+      resource: "properties",
+      localColumn: "resman_property_id",
+      foreignColumn: "resman_property_id",
+      kind: "one",
+    },
+    {
+      name: "units",
+      resource: "units",
+      localColumn: "resman_floorplan_id",
+      foreignColumn: "resman_floorplan_id",
+      kind: "many",
+      note: "floorplans.market_rent is the PLAN's asking rent; units.market_rent is the unit's own. They differ.",
+    },
   ],
 });
 
@@ -364,26 +441,73 @@ export const unitsResource = defineResource({
   name: "units",
   table: "resman_units",
   defaultColumns: [
-    "resman_unit_id", "number", "resman_building_id", "occupancy_status", "occupied", "lease_status", "availability", "market_rent", "balance", "tenant_names", "lease_end_date", "move_out_date",
+    "resman_unit_id",
+    "number",
+    "resman_building_id",
+    "occupancy_status",
+    "occupied",
+    "lease_status",
+    "availability",
+    "market_rent",
+    "balance",
+    "tenant_names",
+    "lease_end_date",
+    "move_out_date",
   ],
   idColumn: "resman_unit_id",
   selectColumns: [
-    "resman_unit_id", "resman_property_id", "resman_building_id", "resman_floorplan_id",
-    "number", "current_lease_id", "pending_lease_id", "availability", "lease_status",
-    "occupancy_status", "classification", "notes", "occupied", "market_rent", "lease_rent",
-    "deposit_required", "deposit_held", "balance", "bedrooms", "bathrooms", "pets_permitted",
-    "affordable_unit", "holding_unit", "excluded_from_occupancy", "available_for_online_marketing",
-    "street", "city", "state", "postal_code", "country", "lease_start_date", "lease_end_date",
-    "move_in_date", "move_out_date", "tenant_names",
+    "resman_unit_id",
+    "resman_property_id",
+    "resman_building_id",
+    "resman_floorplan_id",
+    "number",
+    "current_lease_id",
+    "pending_lease_id",
+    "availability",
+    "lease_status",
+    "occupancy_status",
+    "classification",
+    "notes",
+    "occupied",
+    "market_rent",
+    "lease_rent",
+    "deposit_required",
+    "deposit_held",
+    "balance",
+    "bedrooms",
+    "bathrooms",
+    "pets_permitted",
+    "affordable_unit",
+    "holding_unit",
+    "excluded_from_occupancy",
+    "available_for_online_marketing",
+    "street",
+    "city",
+    "state",
+    "postal_code",
+    "country",
+    "lease_start_date",
+    "lease_end_date",
+    "move_in_date",
+    "move_out_date",
+    "tenant_names",
     // Delinquency-with-aging enrichment — the manager app's heat map and
     // callouts read these; harmless extras for the other apps.
-    "current_month_balance", "last_month_balance", "period_balance", "previous_balance",
-    "times_late", "delinquency_reason", "leasing_agent",
+    "current_month_balance",
+    "last_month_balance",
+    "period_balance",
+    "previous_balance",
+    "times_late",
+    "delinquency_reason",
+    "leasing_agent",
     // Available-units enrichment — the pipeline board shows when a not-ready
     // unit becomes available next to the applicant's move-in date.
     "date_available",
-    "source_url", "scraped_at", "synced_at",
-    "created_at", "updated_at",
+    "source_url",
+    "scraped_at",
+    "synced_at",
+    "created_at",
+    "updated_at",
   ],
   filters: {
     property: "resman_property_id",
@@ -392,6 +516,10 @@ export const unitsResource = defineResource({
     lease_status: "lease_status",
     occupancy_status: "occupancy_status",
   },
+  // The maintenance app polls the whole roster; without this it re-downloaded
+  // all ~900 units every tick against a mirror the cron only rewrites hourly.
+  // Same delta contract the work-orders resource uses: ask for what moved.
+  since: { param: "updated_since", column: "updated_at" },
   // Holding units are ResMan bookkeeping placeholders ("EFF Holding unit",
   // "Diamond Emberly 2", …) parked at the office address — there is no door a
   // guard could stand in front of, so scanners never see them. The two Model
@@ -412,13 +540,30 @@ export const unitsResource = defineResource({
   // docs/resman-mcp.md — grouping by the wrong one is the single most common
   // way to get an occupancy number wrong.
   groupable: [
-    "occupancy_status", "occupied", "lease_status", "classification", "availability",
-    "bedrooms", "resman_building_id", "resman_floorplan_id", "holding_unit",
-    "excluded_from_occupancy", "pets_permitted", "affordable_unit", "leasing_agent",
+    "occupancy_status",
+    "occupied",
+    "lease_status",
+    "classification",
+    "availability",
+    "bedrooms",
+    "resman_building_id",
+    "resman_floorplan_id",
+    "holding_unit",
+    "excluded_from_occupancy",
+    "pets_permitted",
+    "affordable_unit",
+    "leasing_agent",
   ],
   measures: [
-    "market_rent", "lease_rent", "balance", "current_month_balance",
-    "deposit_held", "deposit_required", "times_late", "bedrooms", "bathrooms",
+    "market_rent",
+    "lease_rent",
+    "balance",
+    "current_month_balance",
+    "deposit_held",
+    "deposit_required",
+    "times_late",
+    "bedrooms",
+    "bathrooms",
   ],
   sortable: ["number", "market_rent", "lease_rent", "balance", "lease_end_date", "move_in_date"],
   entities: ["resman_unit_id"],
@@ -434,7 +579,8 @@ export const unitsResource = defineResource({
       ],
     },
     occupied: {
-      description: "Rentable units with someone living in them (the PHYSICAL view — includes Notice).",
+      description:
+        "Rentable units with someone living in them (the PHYSICAL view — includes Notice).",
       filters: [
         { column: "holding_unit", op: "eq", value: false },
         { column: "excluded_from_occupancy", op: "eq", value: false },
@@ -476,23 +622,60 @@ export const unitsResource = defineResource({
     lease_end: { column: "lease_end_date", kind: "date" },
   },
   relations: [
-    { name: "current_lease", resource: "leases", localColumn: "current_lease_id",
-      foreignColumn: "resman_lease_id", kind: "one",
-      note: "Denormalized pointer with no FK. It can lag the leases table — 14 units currently disagree on lease status between the two sources." },
-    { name: "leases", resource: "leases", localColumn: "resman_unit_id",
-      foreignColumn: "resman_unit_id", kind: "many", joinable: true,
-      note: "Every lease this unit has ever had." },
-    { name: "work_orders", resource: "work-orders", localColumn: "resman_unit_id",
-      foreignColumn: "resman_unit_id", kind: "many", joinable: true },
-    { name: "transactions", resource: "transactions", localColumn: "resman_unit_id",
-      foreignColumn: "resman_unit_id", kind: "many" },
-    { name: "utility_accounts", resource: "mlgw/accounts", localColumn: "resman_unit_id",
-      foreignColumn: "resman_unit_id", kind: "many",
-      note: "MLGW accounts matched to this unit BY ADDRESS, not by a shared key — absence may mean unmatched rather than no service." },
-    { name: "building", resource: "buildings", localColumn: "resman_building_id",
-      foreignColumn: "resman_building_id", kind: "one" },
-    { name: "floorplan", resource: "floorplans", localColumn: "resman_floorplan_id",
-      foreignColumn: "resman_floorplan_id", kind: "one" },
+    {
+      name: "current_lease",
+      resource: "leases",
+      localColumn: "current_lease_id",
+      foreignColumn: "resman_lease_id",
+      kind: "one",
+      note: "Denormalized pointer with no FK. It can lag the leases table — 14 units currently disagree on lease status between the two sources.",
+    },
+    {
+      name: "leases",
+      resource: "leases",
+      localColumn: "resman_unit_id",
+      foreignColumn: "resman_unit_id",
+      kind: "many",
+      joinable: true,
+      note: "Every lease this unit has ever had.",
+    },
+    {
+      name: "work_orders",
+      resource: "work-orders",
+      localColumn: "resman_unit_id",
+      foreignColumn: "resman_unit_id",
+      kind: "many",
+      joinable: true,
+    },
+    {
+      name: "transactions",
+      resource: "transactions",
+      localColumn: "resman_unit_id",
+      foreignColumn: "resman_unit_id",
+      kind: "many",
+    },
+    {
+      name: "utility_accounts",
+      resource: "mlgw/accounts",
+      localColumn: "resman_unit_id",
+      foreignColumn: "resman_unit_id",
+      kind: "many",
+      note: "MLGW accounts matched to this unit BY ADDRESS, not by a shared key — absence may mean unmatched rather than no service.",
+    },
+    {
+      name: "building",
+      resource: "buildings",
+      localColumn: "resman_building_id",
+      foreignColumn: "resman_building_id",
+      kind: "one",
+    },
+    {
+      name: "floorplan",
+      resource: "floorplans",
+      localColumn: "resman_floorplan_id",
+      foreignColumn: "resman_floorplan_id",
+      kind: "one",
+    },
   ],
 });
 
@@ -500,16 +683,47 @@ export const leasesResource = defineResource({
   name: "leases",
   table: "resman_leases",
   defaultColumns: [
-    "resman_lease_id", "resman_unit_id", "unit_number", "status", "start_date", "end_date", "move_out_date", "resident_rent", "balance", "is_current_lease",
+    "resman_lease_id",
+    "resman_unit_id",
+    "unit_number",
+    "status",
+    "start_date",
+    "end_date",
+    "move_out_date",
+    "resident_rent",
+    "balance",
+    "is_current_lease",
   ],
   idColumn: "resman_lease_id",
   selectColumns: [
-    "resman_lease_id", "unit_lease_group_id", "resman_property_id", "resman_unit_id",
-    "unit_number", "status", "approval_status", "application_date", "signed_date",
-    "start_date", "end_date", "move_in_date", "move_out_date", "leasing_agent",
-    "renewal_date", "notice_given_date", "market_rent", "resident_rent", "hap_rent",
-    "monthly_charge", "balance", "collection_balance", "reason_for_leaving",
-    "is_current_lease", "is_most_recent_lease", "synced_at", "created_at", "updated_at",
+    "resman_lease_id",
+    "unit_lease_group_id",
+    "resman_property_id",
+    "resman_unit_id",
+    "unit_number",
+    "status",
+    "approval_status",
+    "application_date",
+    "signed_date",
+    "start_date",
+    "end_date",
+    "move_in_date",
+    "move_out_date",
+    "leasing_agent",
+    "renewal_date",
+    "notice_given_date",
+    "market_rent",
+    "resident_rent",
+    "hap_rent",
+    "monthly_charge",
+    "balance",
+    "collection_balance",
+    "reason_for_leaving",
+    "is_current_lease",
+    "is_most_recent_lease",
+    "synced_at",
+    "created_at",
+    "updated_at",
   ],
   filters: {
     property: "resman_property_id",
@@ -522,12 +736,16 @@ export const leasesResource = defineResource({
   order: { column: "start_date", ascending: false },
   scopes: {
     current: {
-      description: "The lease currently in force for each unit — the one to reason about for occupancy or rent.",
+      description:
+        "The lease currently in force for each unit — the one to reason about for occupancy or rent.",
       filters: [{ column: "is_current_lease", op: "eq", value: true }],
     },
     terminal: {
-      description: "Leases that have ended — Former, Evicted, Cancelled. These never appear in units.lease_status.",
-      filters: [{ column: "status", op: "in", values: ["Former", "Evicted", "Cancelled", "Denied"] }],
+      description:
+        "Leases that have ended — Former, Evicted, Cancelled. These never appear in units.lease_status.",
+      filters: [
+        { column: "status", op: "in", values: ["Former", "Evicted", "Cancelled", "Denied"] },
+      ],
     },
   },
   searchable: ["unit_number", "leasing_agent", "reason_for_leaving"],
@@ -535,8 +753,22 @@ export const leasesResource = defineResource({
   // `status` here is the FULL lease lifecycle (Current, Renewed, Evicted,
   // Former, Denied, …) — richer than units.lease_status, which the All-Units
   // report narrows to eight values.
-  groupable: ["status", "approval_status", "is_current_lease", "is_most_recent_lease", "leasing_agent", "resman_property_id"],
-  measures: ["market_rent", "resident_rent", "hap_rent", "monthly_charge", "balance", "collection_balance"],
+  groupable: [
+    "status",
+    "approval_status",
+    "is_current_lease",
+    "is_most_recent_lease",
+    "leasing_agent",
+    "resman_property_id",
+  ],
+  measures: [
+    "market_rent",
+    "resident_rent",
+    "hap_rent",
+    "monthly_charge",
+    "balance",
+    "collection_balance",
+  ],
   sortable: ["start_date", "end_date", "balance", "move_out_date"],
   entities: ["resman_unit_id"],
   periods: {
@@ -546,9 +778,28 @@ export const leasesResource = defineResource({
     signed: { column: "signed_date", kind: "date" },
   },
   relations: [
-    { name: "unit", resource: "units", localColumn: "resman_unit_id", foreignColumn: "resman_unit_id", kind: "one" },
-    { name: "residents", resource: "residents", localColumn: "resman_lease_id", foreignColumn: "resman_lease_id", kind: "many", joinable: true },
-    { name: "transactions", resource: "transactions", localColumn: "resman_lease_id", foreignColumn: "resman_lease_id", kind: "many" },
+    {
+      name: "unit",
+      resource: "units",
+      localColumn: "resman_unit_id",
+      foreignColumn: "resman_unit_id",
+      kind: "one",
+    },
+    {
+      name: "residents",
+      resource: "residents",
+      localColumn: "resman_lease_id",
+      foreignColumn: "resman_lease_id",
+      kind: "many",
+      joinable: true,
+    },
+    {
+      name: "transactions",
+      resource: "transactions",
+      localColumn: "resman_lease_id",
+      foreignColumn: "resman_lease_id",
+      kind: "many",
+    },
   ],
 });
 
@@ -561,14 +812,36 @@ export const residentsResource = defineResource({
   table: "resman_residents",
   idColumn: "resman_person_lease_id",
   selectColumns: [
-    "resman_person_lease_id", "resman_person_id", "resman_lease_id",
-    "first_name", "last_name", "gender", "household_status", "language",
-    "is_primary", "email", "phone_numbers", "synced_at", "created_at", "updated_at",
+    "resman_person_lease_id",
+    "resman_person_id",
+    "resman_lease_id",
+    "first_name",
+    "last_name",
+    "gender",
+    "household_status",
+    "language",
+    "is_primary",
+    "email",
+    "phone_numbers",
+    "synced_at",
+    "created_at",
+    "updated_at",
   ],
   publicColumns: [
-    "resman_person_lease_id", "resman_person_id", "resman_lease_id",
-    "first_name", "last_name", "gender", "household_status", "language",
-    "is_primary", "has_email", "has_phone", "synced_at", "created_at", "updated_at",
+    "resman_person_lease_id",
+    "resman_person_id",
+    "resman_lease_id",
+    "first_name",
+    "last_name",
+    "gender",
+    "household_status",
+    "language",
+    "is_primary",
+    "has_email",
+    "has_phone",
+    "synced_at",
+    "created_at",
+    "updated_at",
   ],
   derive: (row) => {
     const phones = row.phone_numbers;
@@ -593,7 +866,13 @@ export const residentsResource = defineResource({
   measures: [],
   sortable: ["last_name", "first_name"],
   relations: [
-    { name: "lease", resource: "leases", localColumn: "resman_lease_id", foreignColumn: "resman_lease_id", kind: "one" },
+    {
+      name: "lease",
+      resource: "leases",
+      localColumn: "resman_lease_id",
+      foreignColumn: "resman_lease_id",
+      kind: "one",
+    },
   ],
 });
 
@@ -601,14 +880,38 @@ export const transactionsResource = defineResource({
   name: "transactions",
   table: "resman_transactions",
   defaultColumns: [
-    "resman_ledger_entry_id", "resman_unit_id", "date", "transaction_type", "category", "ledger_description", "charges", "credits", "balance",
+    "resman_ledger_entry_id",
+    "resman_unit_id",
+    "date",
+    "transaction_type",
+    "category",
+    "ledger_description",
+    "charges",
+    "credits",
+    "balance",
   ],
   idColumn: "resman_ledger_entry_id",
   selectColumns: [
-    "resman_ledger_entry_id", "resman_property_id", "resman_unit_id", "resman_lease_id",
-    "transaction_id", "transaction_type", "date", "reference", "batch", "batch_id",
-    "category", "ledger_description", "notes", "charges", "credits", "balance", "ledger_sequence",
-    "synced_at", "created_at", "updated_at",
+    "resman_ledger_entry_id",
+    "resman_property_id",
+    "resman_unit_id",
+    "resman_lease_id",
+    "transaction_id",
+    "transaction_type",
+    "date",
+    "reference",
+    "batch",
+    "batch_id",
+    "category",
+    "ledger_description",
+    "notes",
+    "charges",
+    "credits",
+    "balance",
+    "ledger_sequence",
+    "synced_at",
+    "created_at",
+    "updated_at",
   ],
   filters: {
     property: "resman_property_id",
@@ -629,8 +932,20 @@ export const transactionsResource = defineResource({
   entities: ["resman_unit_id", "resman_lease_id"],
   periods: { date: { column: "date", kind: "date" } },
   relations: [
-    { name: "unit", resource: "units", localColumn: "resman_unit_id", foreignColumn: "resman_unit_id", kind: "one" },
-    { name: "lease", resource: "leases", localColumn: "resman_lease_id", foreignColumn: "resman_lease_id", kind: "one" },
+    {
+      name: "unit",
+      resource: "units",
+      localColumn: "resman_unit_id",
+      foreignColumn: "resman_unit_id",
+      kind: "one",
+    },
+    {
+      name: "lease",
+      resource: "leases",
+      localColumn: "resman_lease_id",
+      foreignColumn: "resman_lease_id",
+      kind: "one",
+    },
   ],
 });
 
@@ -638,17 +953,50 @@ export const workOrdersResource = defineResource({
   name: "work-orders",
   table: "resman_work_orders",
   defaultColumns: [
-    "resman_work_order_id", "number", "unit_number", "status", "priority", "category", "title", "technician", "date_reported", "date_scheduled", "date_completed",
+    "resman_work_order_id",
+    "number",
+    "unit_number",
+    "status",
+    "priority",
+    "category",
+    "title",
+    "technician",
+    "date_reported",
+    "date_scheduled",
+    "date_completed",
   ],
   idColumn: "resman_work_order_id",
   selectColumns: [
-    "resman_work_order_id", "number", "resman_unit_id", "unit_lease_group_id",
-    "resman_lease_id", "unit_number", "resman_property_id", "status", "priority",
-    "category", "title", "notes", "completion_notes", "technician", "date_reported",
-    "date_scheduled", "date_completed", "is_make_ready", "callback_requested",
-    "callback_completed", "tags", "is_duplicate", "callback_status",
-    "callback_matched_work_order_id", "callback_engine_version", "callback_source",
-    "callback_detected_at", "synced_at", "created_at", "updated_at",
+    "resman_work_order_id",
+    "number",
+    "resman_unit_id",
+    "unit_lease_group_id",
+    "resman_lease_id",
+    "unit_number",
+    "resman_property_id",
+    "status",
+    "priority",
+    "category",
+    "title",
+    "notes",
+    "completion_notes",
+    "technician",
+    "date_reported",
+    "date_scheduled",
+    "date_completed",
+    "is_make_ready",
+    "callback_requested",
+    "callback_completed",
+    "tags",
+    "is_duplicate",
+    "callback_status",
+    "callback_matched_work_order_id",
+    "callback_engine_version",
+    "callback_source",
+    "callback_detected_at",
+    "synced_at",
+    "created_at",
+    "updated_at",
   ],
   filters: {
     property: "resman_property_id",
@@ -666,8 +1014,15 @@ export const workOrdersResource = defineResource({
   // NOT groupable by `title` or `notes` — free text, effectively unique per row,
   // so a GROUP BY on it is a full dump wearing an aggregate's clothes.
   groupable: [
-    "status", "priority", "category", "technician", "is_make_ready",
-    "is_duplicate", "callback_status", "callback_requested", "resman_property_id",
+    "status",
+    "priority",
+    "category",
+    "technician",
+    "is_make_ready",
+    "is_duplicate",
+    "callback_status",
+    "callback_requested",
+    "resman_property_id",
   ],
   measures: [],
   sortable: ["date_reported", "date_scheduled", "date_completed", "number"],
@@ -680,16 +1035,27 @@ export const workOrdersResource = defineResource({
     open: {
       description:
         "Work orders not in a terminal state. Mirrors the sync's own open set — use this rather than guessing which statuses count.",
-      filters: [{ column: "status", op: "in", values: ["Open", "In Progress", "Not Started", "On Hold", "Submitted", "Scheduled"] }],
+      filters: [
+        {
+          column: "status",
+          op: "in",
+          values: ["Open", "In Progress", "Not Started", "On Hold", "Submitted", "Scheduled"],
+        },
+      ],
     },
     closed: {
       description: "Terminal work orders (Completed / Closed / Canceled).",
       filters: [{ column: "status", op: "in", values: ["Completed", "Closed", "Canceled"] }],
     },
     unscheduled_open: {
-      description: "Open work orders with no scheduled date — the backlog nobody has committed to yet.",
+      description:
+        "Open work orders with no scheduled date — the backlog nobody has committed to yet.",
       filters: [
-        { column: "status", op: "in", values: ["Open", "In Progress", "Not Started", "On Hold", "Submitted", "Scheduled"] },
+        {
+          column: "status",
+          op: "in",
+          values: ["Open", "In Progress", "Not Started", "On Hold", "Submitted", "Scheduled"],
+        },
         { column: "date_scheduled", op: "is_null" },
       ],
     },
@@ -700,8 +1066,20 @@ export const workOrdersResource = defineResource({
     completed: { column: "date_completed", kind: "date" },
   },
   relations: [
-    { name: "unit", resource: "units", localColumn: "resman_unit_id", foreignColumn: "resman_unit_id", kind: "one" },
-    { name: "lease", resource: "leases", localColumn: "resman_lease_id", foreignColumn: "resman_lease_id", kind: "one" },
+    {
+      name: "unit",
+      resource: "units",
+      localColumn: "resman_unit_id",
+      foreignColumn: "resman_unit_id",
+      kind: "one",
+    },
+    {
+      name: "lease",
+      resource: "leases",
+      localColumn: "resman_lease_id",
+      foreignColumn: "resman_lease_id",
+      kind: "one",
+    },
   ],
 });
 
@@ -712,9 +1090,19 @@ export const mlgwAccountsResource = defineResource({
   table: "mlgw_accounts",
   idColumn: "id",
   selectColumns: [
-    "id", "resman_property_id", "property_name", "account_number", "service_address",
-    "resman_unit_id", "unit_number", "is_house_account", "due_now", "due_date",
-    "synced_at", "created_at", "updated_at",
+    "id",
+    "resman_property_id",
+    "property_name",
+    "account_number",
+    "service_address",
+    "resman_unit_id",
+    "unit_number",
+    "is_house_account",
+    "due_now",
+    "due_date",
+    "synced_at",
+    "created_at",
+    "updated_at",
   ],
   filters: {
     property: "resman_property_id",
@@ -737,13 +1125,28 @@ export const mlgwAccountsResource = defineResource({
   measures: ["due_now"],
   sortable: ["account_number", "due_now", "due_date"],
   relations: [
-    { name: "bills", resource: "mlgw/bills", localColumn: "id",
-      foreignColumn: "mlgw_account_id", kind: "many" },
-    { name: "payments", resource: "mlgw/payments", localColumn: "id",
-      foreignColumn: "mlgw_account_id", kind: "many" },
-    { name: "unit", resource: "units", localColumn: "resman_unit_id",
-      foreignColumn: "resman_unit_id", kind: "one",
-      note: "Matched by address, not a ResMan key — an unmatched account has a null resman_unit_id." },
+    {
+      name: "bills",
+      resource: "mlgw/bills",
+      localColumn: "id",
+      foreignColumn: "mlgw_account_id",
+      kind: "many",
+    },
+    {
+      name: "payments",
+      resource: "mlgw/payments",
+      localColumn: "id",
+      foreignColumn: "mlgw_account_id",
+      kind: "many",
+    },
+    {
+      name: "unit",
+      resource: "units",
+      localColumn: "resman_unit_id",
+      foreignColumn: "resman_unit_id",
+      kind: "one",
+      note: "Matched by address, not a ResMan key — an unmatched account has a null resman_unit_id.",
+    },
   ],
 });
 
@@ -753,23 +1156,65 @@ export const mlgwBillsResource = defineResource({
   name: "mlgw/bills",
   table: "mlgw_bills",
   defaultColumns: [
-    "id", "mlgw_account_id", "bill_date", "due_date", "amount_due", "balance_forward", "electric_total", "gas_total", "water_total", "sewer_total", "is_current",
+    "id",
+    "mlgw_account_id",
+    "bill_date",
+    "due_date",
+    "amount_due",
+    "balance_forward",
+    "electric_total",
+    "gas_total",
+    "water_total",
+    "sewer_total",
+    "is_current",
   ],
   idColumn: "id",
   selectColumns: [
-    "id", "document_key", "mlgw_account_id", "resman_property_id", "document_id",
-    "is_current", "bill_date", "due_date", "amount_due", "balance_forward",
-    "average_temperature", "bill_for", "gas_usage", "gas_read_start_date",
-    "gas_read_end_date", "gas_total", "electric_usage", "electric_read_start_date",
-    "electric_read_end_date", "electric_total", "water_usage", "water_read_start_date",
-    "water_read_end_date", "water_total", "sewer_usage", "sewer_read_start_date",
-    "sewer_read_end_date", "sewer_total", "other_mlgw_total", "non_mlgw_total",
-    "street_light_fee_total", "electrical_late_fee_total", "security_deposit_total",
-    "smart_meter_connect_charge_total", "credit_balance_transfer_total",
-    "share_the_pennies_total", "water_cross_connection_fee_total",
-    "leasing_outdoor_lighting_total", "mosquito_rodent_control_fee_total",
-    "sewer_charge_total", "storm_water_fee_total", "solid_waste_fee_total",
-    "synced_at", "created_at", "updated_at",
+    "id",
+    "document_key",
+    "mlgw_account_id",
+    "resman_property_id",
+    "document_id",
+    "is_current",
+    "bill_date",
+    "due_date",
+    "amount_due",
+    "balance_forward",
+    "average_temperature",
+    "bill_for",
+    "gas_usage",
+    "gas_read_start_date",
+    "gas_read_end_date",
+    "gas_total",
+    "electric_usage",
+    "electric_read_start_date",
+    "electric_read_end_date",
+    "electric_total",
+    "water_usage",
+    "water_read_start_date",
+    "water_read_end_date",
+    "water_total",
+    "sewer_usage",
+    "sewer_read_start_date",
+    "sewer_read_end_date",
+    "sewer_total",
+    "other_mlgw_total",
+    "non_mlgw_total",
+    "street_light_fee_total",
+    "electrical_late_fee_total",
+    "security_deposit_total",
+    "smart_meter_connect_charge_total",
+    "credit_balance_transfer_total",
+    "share_the_pennies_total",
+    "water_cross_connection_fee_total",
+    "leasing_outdoor_lighting_total",
+    "mosquito_rodent_control_fee_total",
+    "sewer_charge_total",
+    "storm_water_fee_total",
+    "solid_waste_fee_total",
+    "synced_at",
+    "created_at",
+    "updated_at",
   ],
   filters: {
     property: "resman_property_id",
@@ -791,10 +1236,22 @@ export const mlgwBillsResource = defineResource({
   // Usage columns sit alongside them because spend and consumption move apart —
   // a rate change shows up in one and not the other.
   measures: [
-    "amount_due", "balance_forward", "gas_total", "electric_total", "water_total",
-    "sewer_total", "gas_usage", "electric_usage", "water_usage", "sewer_usage",
-    "other_mlgw_total", "non_mlgw_total", "storm_water_fee_total",
-    "solid_waste_fee_total", "sewer_charge_total", "average_temperature",
+    "amount_due",
+    "balance_forward",
+    "gas_total",
+    "electric_total",
+    "water_total",
+    "sewer_total",
+    "gas_usage",
+    "electric_usage",
+    "water_usage",
+    "sewer_usage",
+    "other_mlgw_total",
+    "non_mlgw_total",
+    "storm_water_fee_total",
+    "solid_waste_fee_total",
+    "sewer_charge_total",
+    "average_temperature",
   ],
   sortable: ["bill_date", "due_date", "amount_due"],
   entities: ["mlgw_account_id"],
@@ -803,8 +1260,13 @@ export const mlgwBillsResource = defineResource({
     due_date: { column: "due_date", kind: "date" },
   },
   relations: [
-    { name: "account", resource: "mlgw/accounts", localColumn: "mlgw_account_id",
-      foreignColumn: "id", kind: "one" },
+    {
+      name: "account",
+      resource: "mlgw/accounts",
+      localColumn: "mlgw_account_id",
+      foreignColumn: "id",
+      kind: "one",
+    },
   ],
 });
 
@@ -815,9 +1277,21 @@ export const mlgwPaymentsResource = defineResource({
   table: "mlgw_payments",
   idColumn: "id",
   selectColumns: [
-    "id", "mlgw_account_id", "resman_property_id", "account_number", "reference_number",
-    "status", "amount", "paid_date", "payment_method", "authorization_number",
-    "account_selection", "fetched_at", "detail_fetched_at", "created_at", "updated_at",
+    "id",
+    "mlgw_account_id",
+    "resman_property_id",
+    "account_number",
+    "reference_number",
+    "status",
+    "amount",
+    "paid_date",
+    "payment_method",
+    "authorization_number",
+    "account_selection",
+    "fetched_at",
+    "detail_fetched_at",
+    "created_at",
+    "updated_at",
   ],
   filters: {
     property: "resman_property_id",
@@ -837,8 +1311,13 @@ export const mlgwPaymentsResource = defineResource({
   entities: ["mlgw_account_id"],
   periods: { paid_date: { column: "paid_date", kind: "date" } },
   relations: [
-    { name: "account", resource: "mlgw/accounts", localColumn: "mlgw_account_id",
-      foreignColumn: "id", kind: "one" },
+    {
+      name: "account",
+      resource: "mlgw/accounts",
+      localColumn: "mlgw_account_id",
+      foreignColumn: "id",
+      kind: "one",
+    },
   ],
 });
 
@@ -856,8 +1335,15 @@ export const guestPassesResource = defineResource({
   table: "guest_passes",
   idColumn: "id",
   selectColumns: [
-    "id", "resident_id", "guest_name", "status", "expires_at", "used_at",
-    "email_delivery_status", "email_sent_at", "created_at",
+    "id",
+    "resident_id",
+    "guest_name",
+    "status",
+    "expires_at",
+    "used_at",
+    "email_delivery_status",
+    "email_sent_at",
+    "created_at",
   ],
   filters: {
     resident: "resident_id",
@@ -877,9 +1363,15 @@ export const guestPassesResource = defineResource({
     used: { column: "used_at", kind: "timestamp" },
   },
   relations: [
-    { name: "entries", resource: "entry-logs", localColumn: "id",
-      foreignColumn: "guest_pass_id", kind: "many", joinable: true,
-      note: "Scans made against this pass. A pass with no entries was issued but never used." },
+    {
+      name: "entries",
+      resource: "entry-logs",
+      localColumn: "id",
+      foreignColumn: "guest_pass_id",
+      kind: "many",
+      joinable: true,
+      note: "Scans made against this pass. A pass with no entries was issued but never used.",
+    },
   ],
 });
 
@@ -890,8 +1382,16 @@ export const entryLogsResource = defineResource({
   table: "entry_logs",
   idColumn: "id",
   selectColumns: [
-    "id", "resident_id", "guest_pass_id", "entry_type", "tenant_name",
-    "unit_address", "property_name", "entered_at", "scanner_id", "notes",
+    "id",
+    "resident_id",
+    "guest_pass_id",
+    "entry_type",
+    "tenant_name",
+    "unit_address",
+    "property_name",
+    "entered_at",
+    "scanner_id",
+    "notes",
   ],
   filters: {
     resident: "resident_id",
@@ -911,9 +1411,14 @@ export const entryLogsResource = defineResource({
   sortable: ["entered_at"],
   periods: { entered: { column: "entered_at", kind: "timestamp" } },
   relations: [
-    { name: "guest_pass", resource: "guest-passes", localColumn: "guest_pass_id",
-      foreignColumn: "id", kind: "one",
-      note: "Null for a resident scan — only guest entries carry a pass." },
+    {
+      name: "guest_pass",
+      resource: "guest-passes",
+      localColumn: "guest_pass_id",
+      foreignColumn: "id",
+      kind: "one",
+      note: "Null for a resident scan — only guest entries carry a pass.",
+    },
   ],
 });
 
@@ -938,10 +1443,24 @@ export const propertySnapshotsResource = defineResource({
   table: "property_snapshots",
   idColumn: "snapshot_date",
   selectColumns: [
-    "snapshot_date", "total_units", "occupied_units", "vacant_units", "occupancy_pct",
-    "rent_roll", "lease_rent_total", "balance_total", "balance_0_30", "balance_31_60",
-    "balance_61_90", "balance_90_plus", "delinquent_units", "turns_in_progress",
-    "open_work_orders", "utility_due", "source", "created_at",
+    "snapshot_date",
+    "total_units",
+    "occupied_units",
+    "vacant_units",
+    "occupancy_pct",
+    "rent_roll",
+    "lease_rent_total",
+    "balance_total",
+    "balance_0_30",
+    "balance_31_60",
+    "balance_61_90",
+    "balance_90_plus",
+    "delinquent_units",
+    "turns_in_progress",
+    "open_work_orders",
+    "utility_due",
+    "source",
+    "created_at",
   ],
   filters: { source: "source" },
   order: { column: "snapshot_date", ascending: false },
@@ -952,10 +1471,21 @@ export const propertySnapshotsResource = defineResource({
   },
   groupable: ["source"],
   measures: [
-    "total_units", "occupied_units", "vacant_units", "occupancy_pct",
-    "rent_roll", "lease_rent_total", "balance_total", "balance_0_30", "balance_31_60",
-    "balance_61_90", "balance_90_plus", "delinquent_units", "turns_in_progress",
-    "open_work_orders", "utility_due",
+    "total_units",
+    "occupied_units",
+    "vacant_units",
+    "occupancy_pct",
+    "rent_roll",
+    "lease_rent_total",
+    "balance_total",
+    "balance_0_30",
+    "balance_31_60",
+    "balance_61_90",
+    "balance_90_plus",
+    "delinquent_units",
+    "turns_in_progress",
+    "open_work_orders",
+    "utility_due",
   ],
   periods: { snapshot_date: { column: "snapshot_date", kind: "date" } },
   sortable: ["snapshot_date", "occupancy_pct", "balance_total", "open_work_orders"],
@@ -983,15 +1513,38 @@ export const unitSnapshotsResource = defineResource({
   name: "unit-snapshots",
   table: "unit_snapshots",
   defaultColumns: [
-    "snapshot_date", "resman_unit_id", "unit_number", "occupancy_status", "occupied", "availability", "balance", "market_rent",
+    "snapshot_date",
+    "resman_unit_id",
+    "unit_number",
+    "occupancy_status",
+    "occupied",
+    "availability",
+    "balance",
+    "market_rent",
   ],
   idColumn: "resman_unit_id",
   selectColumns: [
-    "snapshot_date", "resman_unit_id", "unit_number", "resman_building_id",
-    "resman_floorplan_id", "occupancy_status", "occupied", "lease_status",
-    "availability", "balance", "current_month_balance", "market_rent",
-    "lease_rent", "times_late", "holding_unit", "excluded_from_occupancy",
-    "move_in_date", "move_out_date", "lease_end_date", "source", "created_at",
+    "snapshot_date",
+    "resman_unit_id",
+    "unit_number",
+    "resman_building_id",
+    "resman_floorplan_id",
+    "occupancy_status",
+    "occupied",
+    "lease_status",
+    "availability",
+    "balance",
+    "current_month_balance",
+    "market_rent",
+    "lease_rent",
+    "times_late",
+    "holding_unit",
+    "excluded_from_occupancy",
+    "move_in_date",
+    "move_out_date",
+    "lease_end_date",
+    "source",
+    "created_at",
   ],
   filters: {
     unit: "resman_unit_id",
@@ -1007,8 +1560,14 @@ export const unitSnapshotsResource = defineResource({
   searchable: ["unit_number"],
   ranges: { snapshot_date: "snapshot_date", balance: "balance", market_rent: "market_rent" },
   groupable: [
-    "occupancy_status", "occupied", "lease_status", "availability",
-    "resman_building_id", "holding_unit", "excluded_from_occupancy", "source",
+    "occupancy_status",
+    "occupied",
+    "lease_status",
+    "availability",
+    "resman_building_id",
+    "holding_unit",
+    "excluded_from_occupancy",
+    "source",
   ],
   measures: ["balance", "current_month_balance", "market_rent", "lease_rent", "times_late"],
   periods: { snapshot_date: { column: "snapshot_date", kind: "date" } },
@@ -1017,7 +1576,8 @@ export const unitSnapshotsResource = defineResource({
   // same way as today's or the series compares two different things.
   scopes: {
     rentable: {
-      description: "Real, rentable apartments on that date — the denominator for a historical occupancy rate.",
+      description:
+        "Real, rentable apartments on that date — the denominator for a historical occupancy rate.",
       filters: [
         { column: "holding_unit", op: "eq", value: false },
         { column: "excluded_from_occupancy", op: "eq", value: false },
@@ -1034,9 +1594,14 @@ export const unitSnapshotsResource = defineResource({
   },
   sortable: ["snapshot_date", "balance", "market_rent", "unit_number"],
   relations: [
-    { name: "unit", resource: "units", localColumn: "resman_unit_id",
-      foreignColumn: "resman_unit_id", kind: "one",
-      note: "The unit's CURRENT state. This row is a past day — they will differ, which is the point." },
+    {
+      name: "unit",
+      resource: "units",
+      localColumn: "resman_unit_id",
+      foreignColumn: "resman_unit_id",
+      kind: "one",
+      note: "The unit's CURRENT state. This row is a past day — they will differ, which is the point.",
+    },
   ],
   notes: [
     "History starts the day this table was created (2026-07-30). There is no backfill and none is possible: the mirror overwrote the past, so earlier days do not exist anywhere. A range before that returns nothing — which is missing history, NOT a period with no units.",
@@ -1063,13 +1628,25 @@ export const monitorFindingsResource = defineResource({
   table: "monitor_findings",
   idColumn: "id",
   selectColumns: [
-    "id", "fingerprint", "kind", "severity", "resource", "entity", "period",
+    "id",
+    "fingerprint",
+    "kind",
+    "severity",
+    "resource",
+    "entity",
+    "period",
     // `detail` carries the baseline that produced each score. It was withheld
     // to keep pages small, which made the note telling callers to "fetch it by
     // id" describe something no code path could do. The response budget now
     // handles size — a wide row simply means fewer rows per page — so the
     // honest fix is to expose it rather than document a route that isn't there.
-    "summary", "detail", "first_seen_at", "last_seen_at", "resolved_at", "notified_at", "created_at",
+    "summary",
+    "detail",
+    "first_seen_at",
+    "last_seen_at",
+    "resolved_at",
+    "notified_at",
+    "created_at",
   ],
   filters: {
     kind: "kind",
@@ -1091,8 +1668,12 @@ export const monitorFindingsResource = defineResource({
       filters: [{ column: "resolved_at", op: "not_null" }],
     },
     unannounced: {
-      description: "Open findings no notification has gone out for yet — normally empty; non-empty means the notifier is failing.",
-      filters: [{ column: "resolved_at", op: "is_null" }, { column: "notified_at", op: "is_null" }],
+      description:
+        "Open findings no notification has gone out for yet — normally empty; non-empty means the notifier is failing.",
+      filters: [
+        { column: "resolved_at", op: "is_null" },
+        { column: "notified_at", op: "is_null" },
+      ],
     },
   },
   order: { column: "last_seen_at", ascending: false },
@@ -1113,9 +1694,20 @@ export const monitorFindingsResource = defineResource({
 });
 
 export const RESMAN_RESOURCES: readonly ResmanResource[] = [
-  propertiesResource, buildingsResource, floorplansResource, unitsResource,
-  leasesResource, residentsResource, transactionsResource, workOrdersResource,
-  mlgwAccountsResource, mlgwBillsResource, mlgwPaymentsResource,
-  guestPassesResource, entryLogsResource, propertySnapshotsResource,
-  unitSnapshotsResource, monitorFindingsResource,
+  propertiesResource,
+  buildingsResource,
+  floorplansResource,
+  unitsResource,
+  leasesResource,
+  residentsResource,
+  transactionsResource,
+  workOrdersResource,
+  mlgwAccountsResource,
+  mlgwBillsResource,
+  mlgwPaymentsResource,
+  guestPassesResource,
+  entryLogsResource,
+  propertySnapshotsResource,
+  unitSnapshotsResource,
+  monitorFindingsResource,
 ];

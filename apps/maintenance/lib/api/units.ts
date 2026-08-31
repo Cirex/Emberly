@@ -43,6 +43,9 @@ export const ResmanUnitSchema = z.object({
   source_url: str,
   scraped_at: str,
   synced_at: str,
+  // The delta cursor the units store pages against (?updated_since=). COLUMNS
+  // is derived from these keys, so it must be requested to come back.
+  updated_at: str,
 });
 export type ResmanUnit = z.infer<typeof ResmanUnitSchema>;
 
@@ -66,7 +69,6 @@ export type OccupancyFilter = "Occupied" | "Vacant" | "Notice";
  */
 export type LeaseStatusFilter = "Notice to Vacate" | "Under Eviction";
 
-
 /**
  * Exactly the columns this module parses, derived from the schema so a field
  * added to one cannot go missing from the other.
@@ -89,6 +91,8 @@ export async function listUnits(
     offset?: number;
     occupancy_status?: OccupancyFilter;
     lease_status?: LeaseStatusFilter;
+    /** ISO-8601; ask the server for rows whose updated_at is newer. */
+    updatedSince?: string;
   },
   config: ResmanConfig,
 ): Promise<ResmanList> {
@@ -98,11 +102,13 @@ export async function listUnits(
   if (params.offset) q.set("offset", String(params.offset));
   if (params.occupancy_status) q.set("occupancy_status", params.occupancy_status);
   if (params.lease_status) q.set("lease_status", params.lease_status);
+  if (params.updatedSince) q.set("updated_since", params.updatedSince);
 
   const res = await fetch(`${config.baseUrl}/api/resman/units?${q.toString()}`, {
     headers: { Authorization: `Bearer ${config.token}` },
   });
-  if (res.status === 401 || res.status === 403) throw new Error("Not authorized for the ResMan API");
+  if (res.status === 401 || res.status === 403)
+    throw new Error("Not authorized for the ResMan API");
   if (!res.ok) throw new Error(`Failed to load units (${res.status})`);
   return ResmanListSchema.parse(await res.json());
 }

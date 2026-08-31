@@ -14,7 +14,12 @@ const test = require("node:test");
  */
 
 const { resolveSince } = require("../lib/resman-api");
-const { workOrdersResource, unitsResource, leasesResource } = require("../lib/resman-resources");
+const {
+  workOrdersResource,
+  unitsResource,
+  leasesResource,
+  buildingsResource,
+} = require("../lib/resman-resources");
 
 function params(query) {
   return new URLSearchParams(query);
@@ -24,7 +29,11 @@ test("work orders opt into the delta bound; other resources do not", () => {
   assert.deepEqual(workOrdersResource.since, { param: "updated_since", column: "updated_at" });
   // Opting a resource in without a change-detecting trigger on its table would
   // hand callers a filter that silently returns everything.
-  assert.equal(unitsResource.since, undefined);
+  // Units opted in too — and only safely because 2026-08-28-units-change-
+  // detecting-updated-at.sql swapped resman_units onto touch_updated_at_on_change.
+  // Under the shared unconditional trigger a mirror table's updated_at moves on
+  // every sync pass, so the filter would have returned the whole table.
+  assert.deepEqual(unitsResource.since, { param: "updated_since", column: "updated_at" });
   assert.equal(leasesResource.since, undefined);
 });
 
@@ -64,5 +73,24 @@ test("a garbage timestamp FAILS OPEN — full list, never an empty one", () => {
 });
 
 test("a resource without `since` ignores the param entirely", () => {
-  assert.equal(resolveSince(unitsResource, params("updated_since=2026-07-24T12:00:00.000Z")), null);
+  // buildingsResource declares no `since`. (This assertion used to use units,
+  // which now supports delta reads — see the next test.)
+  assert.equal(
+    resolveSince(buildingsResource, params("updated_since=2026-07-24T12:00:00.000Z")),
+    null,
+  );
+});
+
+test("units supports delta reads, on the same validated contract as work orders", () => {
+  // The maintenance app polls the whole ~900-unit roster; without this it
+  // re-downloaded all of it every tick against an hourly-written mirror.
+  const iso = "2026-07-24T12:00:00.000Z";
+  assert.deepEqual(resolveSince(unitsResource, params("updated_since=" + iso)), {
+    column: "updated_at",
+    value: iso,
+  });
+  // And it inherits the same rejection of ambiguous/dangerous bounds: a future
+  // or bare-date bound would silently render an EMPTY roster on the map.
+  assert.equal(resolveSince(unitsResource, params("updated_since=3000")), null);
+  assert.equal(resolveSince(unitsResource, params("updated_since=2026-07-24")), null);
 });

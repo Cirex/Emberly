@@ -28,10 +28,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const lang = (searchParams.get("lang") ?? "").trim().toLowerCase();
   if (!SUPPORTED.has(lang)) {
-    return NextResponse.json(
-      { error: "lang must be one of: en, es" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "lang must be one of: en, es" }, { status: 400 });
   }
   const since = searchParams.get("since")?.trim();
 
@@ -49,6 +46,14 @@ export async function GET(request: Request): Promise<NextResponse> {
         .select("source_hash, translated_text, updated_at")
         .eq("target_lang", lang)
         .order("updated_at", { ascending: true })
+        // updated_at is NOT unique — one sync pass stamps hundreds of rows in
+        // the same millisecond — and offset paging over a tied sort is
+        // non-deterministic, so a tied row lands on two pages while its
+        // neighbour lands on none. source_hash is the primary key under the
+        // target_lang filter, so ending on it makes the sort total. Without it
+        // the device silently never learns about the skipped translations, and
+        // a content-addressed cache has no way to notice the gap.
+        .order("source_hash", { ascending: true })
         .range(from, from + PAGE - 1);
       if (since) query = query.gt("updated_at", since);
 

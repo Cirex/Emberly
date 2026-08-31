@@ -66,15 +66,23 @@ function chunked<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-/** Distinct, trimmed prose across all work orders → its content hash. */
-async function loadDistinctProse(
-  supabase: ServiceClient,
-): Promise<Map<string, string>> {
+/**
+ * Distinct, trimmed prose across all work orders → its content hash.
+ *
+ * Ordered by the primary key because offset paging over an unordered read is
+ * non-deterministic: Postgres may return rows in a different order per request,
+ * so one row lands on two pages and another lands on none. A work order missed
+ * here is worse than merely absent — its hash is not among the live ones, so
+ * reapStale DELETES the cached translation, and the next run buys it again from
+ * the paid API. A silent recurring charge, plus churned prose on the phone.
+ */
+async function loadDistinctProse(supabase: ServiceClient): Promise<Map<string, string>> {
   const bySource = new Map<string, string>();
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from("resman_work_orders")
       .select("title, notes, completion_notes")
+      .order("resman_work_order_id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`load work-order prose: ${error.message}`);
     if (!data || data.length === 0) break;
@@ -89,13 +97,21 @@ async function loadDistinctProse(
   return bySource;
 }
 
-/** Every source_hash already in the cache (any target). */
+/**
+ * Every source_hash already in the cache (any target).
+ *
+ * Sorted by the full primary key, for the same reason as loadDistinctProse: a
+ * cached hash dropped by an unstable page reads as "new", so its text goes back
+ * to the paid translator on every single run.
+ */
 async function loadCachedHashes(supabase: ServiceClient): Promise<Set<string>> {
   const cached = new Set<string>();
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from("work_order_translations")
       .select("source_hash")
+      .order("source_hash", { ascending: true })
+      .order("target_lang", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`load cached hashes: ${error.message}`);
     if (!data || data.length === 0) break;
@@ -208,7 +224,8 @@ export async function translateWorkOrders(
     if (error) throw new Error(`upsert overrides: ${error.message}`);
     overrodeCount += chunk.length;
   }
-  if (overrodeCount > 0) log(`[translate-work-orders] applied ${overrodeCount} curated override(s)`);
+  if (overrodeCount > 0)
+    log(`[translate-work-orders] applied ${overrodeCount} curated override(s)`);
 
   const reaped = await reapStale(deps.supabase, liveHashes);
   log(`[translate-work-orders] translated ${translated}, reaped ${reaped}`);
@@ -230,6 +247,10 @@ async function reapStale(supabase: ServiceClient, liveHashes: Set<string>): Prom
     const { data, error } = await supabase
       .from("work_order_translations")
       .select("source_hash")
+      // Total order, primary key last: this scan decides what gets DELETED, so
+      // a row shuffled across a page boundary is a translation bought twice.
+      .order("source_hash", { ascending: true })
+      .order("target_lang", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`scan for stale: ${error.message}`);
     if (!data || data.length === 0) break;

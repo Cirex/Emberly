@@ -82,16 +82,60 @@ test("LangblyClient.detect reads the top candidate, tolerates malformed", async 
 // ── the job, against in-memory fakes ─────────────────────────────────────────
 
 function fakeSupabase(tables) {
+  // Requests served so far, used to shift tied rows — see page().
+  let request = 0;
+
+  /**
+   * Serve one offset page the way Postgres does.
+   *
+   * Rows are sorted by the declared .order() keys; rows that tie on all of them
+   * (and, with no .order() at all, that is every row) come back in an order that
+   * moves between requests. So a read whose sort is not TOTAL returns some rows
+   * twice and others never — which is the actual failure this fake exists to
+   * catch, since the job then reaps and re-buys translations it already had.
+   */
+  function page(rows, orders, from, to) {
+    const sorted = [...rows].sort((a, b) => {
+      for (const { column, ascending } of orders) {
+        const av = a[column] ?? "";
+        const bv = b[column] ?? "";
+        if (av !== bv) return (av < bv ? -1 : 1) * (ascending === false ? -1 : 1);
+      }
+      return 0;
+    });
+    const shift = request++;
+    const served = [];
+    for (let i = 0; i < sorted.length;) {
+      let end = i + 1;
+      while (
+        end < sorted.length &&
+        orders.every(({ column }) => (sorted[end][column] ?? "") === (sorted[i][column] ?? ""))
+      ) {
+        end++;
+      }
+      const tied = sorted.slice(i, end);
+      for (let k = 0; k < tied.length; k++) served.push(tied[(k + shift) % tied.length]);
+      i = end;
+    }
+    return served.slice(from, to + 1);
+  }
+
   return {
     from(table) {
       const rows = tables[table] ?? (tables[table] = []);
       return {
         select() {
-          return {
+          const orders = [];
+          const builder = {
+            order(column, opts) {
+              orders.push({ column, ascending: opts?.ascending });
+              return builder;
+            },
             range(from, to) {
-              return Promise.resolve({ data: rows.slice(from, to + 1), error: null });
+              return Promise.resolve({ data: page(rows, orders, from, to), error: null });
             },
           };
+          return builder;
         },
         upsert(incoming, { onConflict }) {
           const keys = onConflict.split(",");
@@ -140,10 +184,19 @@ test("job translates new prose, skips cached, and reaps stale", async () => {
     ],
     work_order_translations: [
       // A stale row for text no longer present in any work order.
-      { source_hash: textHash("OLD REMOVED TEXT"), target_lang: "es", source_lang: "en", translated_text: "es:x", char_count: 3 },
+      {
+        source_hash: textHash("OLD REMOVED TEXT"),
+        target_lang: "es",
+        source_lang: "en",
+        translated_text: "es:x",
+        char_count: 3,
+      },
     ],
   };
-  const result = await translateWorkOrders({ supabase: fakeSupabase(tables), translator: fakeTranslator });
+  const result = await translateWorkOrders({
+    supabase: fakeSupabase(tables),
+    translator: fakeTranslator,
+  });
 
   assert.equal(result.distinctSources, 3); // Doors, "my air does not work", "Reparación urgente"
   assert.equal(result.translated, 3);
@@ -199,8 +252,13 @@ test("curated overrides beat the translator and correct already-cached rows", as
     resman_work_orders: [{ title: "Punch", notes: "", completion_notes: "" }],
     // A row a previous run wrote with the machine's wrong wording.
     work_order_translations: [
-      { source_hash: textHash("Punch"), target_lang: "es", source_lang: "en",
-        translated_text: "Puñetazo", char_count: 5 },
+      {
+        source_hash: textHash("Punch"),
+        target_lang: "es",
+        source_lang: "en",
+        translated_text: "Puñetazo",
+        char_count: 5,
+      },
     ],
   };
   const result = await translateWorkOrders({
@@ -213,4 +271,47 @@ test("curated overrides beat the translator and correct already-cached rows", as
   // ...and it never went to the translator.
   assert.equal(result.translated, 0);
   assert.equal(tables.work_order_translations[0].translated_text, "Repaso (punch list)");
+});
+
+// ── paging stability ─────────────────────────────────────────────────────────
+
+/** More work orders than one PostgREST page, each with unique prose. */
+function manyWorkOrders(count) {
+  return Array.from({ length: count }, (_, i) => ({
+    resman_work_order_id: `WO-${String(i).padStart(5, "0")}`,
+    title: `Fix unit ${i}`,
+    notes: "",
+    completion_notes: "",
+  }));
+}
+
+test("a corpus larger than one page loses no work order", async () => {
+  const tables = { resman_work_orders: manyWorkOrders(1200), work_order_translations: [] };
+  const result = await translateWorkOrders({
+    supabase: fakeSupabase(tables),
+    translator: fakeTranslator,
+  });
+
+  // Every distinct title must survive the page boundary. Without a total sort
+  // the second page repeats a row the first already returned and drops the row
+  // that should have started it, so that work order is never translated.
+  assert.equal(result.distinctSources, 1200);
+  assert.equal(tables.work_order_translations.length, 1200);
+});
+
+test("a second run over a multi-page corpus reaps nothing and pays for nothing", async () => {
+  // The one that costs money. Every paged read here — work orders, cached
+  // hashes, the stale scan — has to be stable, or a row missed by one of them is
+  // deleted as stale and bought again from the paid translator on the next run,
+  // every run, forever.
+  const tables = { resman_work_orders: manyWorkOrders(1200), work_order_translations: [] };
+  const deps = { supabase: fakeSupabase(tables), translator: fakeTranslator };
+
+  await translateWorkOrders(deps);
+  const second = await translateWorkOrders(deps);
+
+  assert.equal(second.translated, 0);
+  assert.equal(second.reaped, 0);
+  assert.equal(second.alreadyCached, 1200);
+  assert.equal(tables.work_order_translations.length, 1200);
 });

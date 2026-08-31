@@ -63,6 +63,11 @@ export function GlassSurface({
             : androidGlass
               ? ANDROID_GLASS_HAIRLINE
               : "rgba(255,255,255,0.30)",
+        // The blur used to supply the visual lift on iOS; with it gone, a
+        // small elevation keeps the surface off whatever it floats over. It
+        // sits HERE rather than on the clipping parent because Android casts
+        // the shadow from the background drawable, and the parent has none.
+        ...(androidGlass ? { elevation: ANDROID_GLASS_ELEVATION } : null),
         backgroundColor: androidGlass
           ? androidGlassFill("chrome", dark, active)
           : active
@@ -83,17 +88,7 @@ export function GlassSurface({
   );
 
   return (
-    <View
-      style={[
-        { borderRadius: r, overflow: "hidden" },
-        // The blur used to supply the visual lift on iOS; with it gone, a
-        // small elevation keeps the surface off whatever it floats over.
-        androidGlass ? { elevation: ANDROID_GLASS_ELEVATION } : null,
-        style,
-      ]}
-      className={className}
-      {...rest}
-    >
+    <View style={[{ borderRadius: r, overflow: "hidden" }, style]} className={className} {...rest}>
       {OPAQUE_GLASS ? (
         inner
       ) : (

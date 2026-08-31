@@ -15,7 +15,12 @@ import { GlassLayer } from "@/components/ui/GlassLayer";
 import { TechBadge } from "@/components/work-orders/rows";
 import { useConfig } from "@/lib/stores/config";
 import { useFieldMode } from "@/lib/stores/settings";
-import { ANDROID_GLASS_HAIRLINE, OPAQUE_GLASS, androidGlassFill } from "@/theme/android-glass";
+import {
+  ANDROID_GLASS_ELEVATION,
+  ANDROID_GLASS_HAIRLINE,
+  OPAQUE_GLASS,
+  androidGlassFill,
+} from "@/theme/android-glass";
 import { MUTED, NAVY } from "@/theme/tokens";
 
 const RED = "#D1382E";
@@ -137,7 +142,13 @@ export function AccountMenu() {
           }}
           accessibilityRole="button"
           accessibilityLabel={`Account menu for ${name}`}
-          style={[styles.chipClip, { borderColor: glassBorder, backgroundColor: glassFill }]}
+          style={[
+            styles.chipClip,
+            { borderColor: glassBorder, backgroundColor: glassFill },
+            // styles.chipShadow on the wrapper is shadow*-only, so Android
+            // drops it. Elevation goes here, on the view holding the fill.
+            androidGlass ? { elevation: ANDROID_GLASS_ELEVATION } : null,
+          ]}
         >
           {!field && !OPAQUE_GLASS ? (
             <BlurView

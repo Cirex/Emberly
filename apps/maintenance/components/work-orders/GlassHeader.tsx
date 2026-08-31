@@ -10,7 +10,12 @@ import { Chip } from "@/components/work-orders/Chip";
 import type { ScoreCard } from "@/lib/derived/score-cards";
 import { useFieldMode } from "@/lib/stores/settings";
 import type { WorkOrdersBoardMode } from "@/lib/stores/work-orders-view";
-import { ANDROID_GLASS_HAIRLINE, OPAQUE_GLASS, androidGlassFill } from "@/theme/android-glass";
+import {
+  ANDROID_GLASS_HAIRLINE,
+  ANDROID_HEADER_ELEVATION,
+  OPAQUE_GLASS,
+  androidGlassFill,
+} from "@/theme/android-glass";
 import { HAIRLINE, HEADER_TOP_PAD, MUTED, NAVY, screenHPad } from "@/theme/tokens";
 import { useAccentPalette } from "@/lib/hooks/use-accent";
 
@@ -108,7 +113,7 @@ export const GlassHeader = memo(function GlassHeader({
             ? ANDROID_GLASS_HAIRLINE
             : "rgba(255,255,255,0.55)",
         backgroundColor: androidGlass
-          ? androidGlassFill("panel", dark)
+          ? androidGlassFill("header", dark)
           : dark
             ? "rgba(18,22,29,0.52)"
             : field
@@ -118,6 +123,10 @@ export const GlassHeader = memo(function GlassHeader({
         shadowOpacity: dark ? 0.34 : 0.08,
         shadowRadius: 15,
         shadowOffset: { width: 0, height: 8 },
+        // ...all of which Android ignores. This header has work-order rows
+        // moving continuously under it and no scrim, so it is the one surface
+        // that would read as flush with the list without a real lift.
+        ...(androidGlass ? { elevation: ANDROID_HEADER_ELEVATION } : null),
       }}
     >
       {!field && !OPAQUE_GLASS ? (

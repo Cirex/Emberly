@@ -28,6 +28,7 @@ import { markTabPress } from "@/lib/perf/render-trace";
 import {
   ANDROID_GLASS_ELEVATION,
   ANDROID_GLASS_HAIRLINE,
+  ANDROID_LOZENGE_FILL,
   OPAQUE_GLASS,
   androidGlassFill,
 } from "@/theme/android-glass";
@@ -142,10 +143,12 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
         : "rgba(255,255,255,0.30)";
   const glassBlur = field ? 12 : glassDark ? 30 : 40;
   // The selected lozenge is white-on-glass: over an OPAQUE white capsule it
-  // would disappear entirely, taking the only indication of which tab is
-  // selected with it. On Android it becomes the chrome's active tone instead.
+  // would be a 1.15:1 ghost, and it cannot be lifted with an elevation
+  // without drawing over its own icon and label. On Android it takes a
+  // deepened tone instead, which is the only move that buys separation from
+  // the capsule AND legibility for the accent ink — see ANDROID_LOZENGE_FILL.
   const lozengeFill = androidGlass
-    ? androidGlassFill("chrome", glassDark, true)
+    ? ANDROID_LOZENGE_FILL[glassDark ? "dark" : "light"]
     : dark
       ? "rgba(255,255,255,0.14)"
       : "rgba(255,255,255,0.82)";

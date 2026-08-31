@@ -76,6 +76,31 @@ describe("buildOutbox state", () => {
     expect(items).toHaveLength(0);
   });
 
+  test("a REFUSED edit is blocked — not delivered, and it says why", () => {
+    // ResMan refused the write, so nothing reached it. The row must stay, must
+    // not read as sent, and must carry the reason: this is the exact state the
+    // old code retired as an ack, which is how typed notes vanished.
+    const [item] = buildOutbox(
+      input({ edits: [edit({ blockedReason: "Description is locked by ResMan" })] }),
+    );
+    expect(item.state).toBe("blocked");
+    expect(item.lastError).toBe("Description is locked by ResMan");
+    expect(pendingCount([item])).toBe(1);
+  });
+
+  test("a blocked edit leads the list — it is the only row that needs a human", () => {
+    const items = buildOutbox(
+      input({
+        closes: [close({ workOrderId: "retry", attempts: 5, queuedAt: 1 })],
+        edits: [
+          edit({ workOrderId: "queued", editedAt: 2 }),
+          edit({ workOrderId: "blocked", editedAt: 3, blockedReason: "work order is Closed" }),
+        ],
+      }),
+    );
+    expect(items.map((i) => i.workOrderId)).toEqual(["blocked", "retry", "queued"]);
+  });
+
   test("photos are sending while a flush is in flight", () => {
     const items = buildOutbox(
       input({

@@ -120,6 +120,12 @@ async function writeLocked(
         wantedName === undefined
           ? undefined
           : async (propertyId) => {
+              // An `{ error }` return becomes a WorkOrderWriteRefused, which
+              // callers treat as ResMan's VERDICT: terminal, no more retries.
+              // A roster that is merely unreachable (offline, 5xx, a bounced
+              // session) is nothing of the sort, so it THROWS instead and the
+              // pending entry stays on the ordinary retry clock. Only a roster
+              // we read and could not act on is a real refusal.
               let response: Response;
               try {
                 response = await fetchImpl(`${BASE}${employeeListPath(propertyId)}`, {
@@ -131,10 +137,10 @@ async function writeLocked(
                   },
                 });
               } catch {
-                return { error: "employee list unreachable" };
+                throw new Error("employee list unreachable — will retry");
               }
               if (response.status !== 200)
-                return { error: `employee list HTTP ${response.status}` };
+                throw new Error(`employee list HTTP ${response.status} — will retry`);
               try {
                 return resolveTechnician(
                   parseEmployeeList(JSON.parse(await response.text())),

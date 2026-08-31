@@ -23,6 +23,7 @@ const SLATE = "#4C556F";
 const GREEN = "#1F8A4C";
 const INFO = "#2563B4";
 const AMBER = "#E38736";
+const RED = "#B3261E";
 
 /**
  * The Outbox — a read-only view over the pending-close, pending-edit, and
@@ -33,6 +34,8 @@ const AMBER = "#E38736";
 
 function stateColor(state: OutboxState, dark: boolean): string {
   switch (state) {
+    case "blocked":
+      return RED;
     case "sending":
       return INFO;
     case "retrying":
@@ -116,9 +119,13 @@ export default function Outbox() {
       .getState()
       .flush(config)
       .catch(() => {});
+    // A manual "Sync now" retries edits ResMan refused too. The automatic
+    // flush skips them (the same bytes get the same verdict), but the guards
+    // read ResMan-side state the office can change — so the one moment worth
+    // asking again is when a human deliberately asks.
     await usePendingEdits
       .getState()
-      .flush(config)
+      .flush(config, { includeBlocked: true })
       .catch(() => {});
     await useWorkOrderPhotos
       .getState()
@@ -217,8 +224,8 @@ export default function Outbox() {
                 flexDirection: "row",
                 alignItems: "flex-start",
                 gap: 12,
-                borderLeftWidth: item.state === "retrying" ? 3.5 : 0,
-                borderLeftColor: AMBER,
+                borderLeftWidth: item.state === "retrying" || item.state === "blocked" ? 3.5 : 0,
+                borderLeftColor: item.state === "blocked" ? RED : AMBER,
               }}
             >
               <View

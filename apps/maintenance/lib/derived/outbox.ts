@@ -14,12 +14,17 @@ import type { WorkOrderPhotoQueue } from "@/lib/work-order-photo-queue";
 export type OutboxKind = "close" | "photo" | "edit";
 
 /**
+ * - `blocked`  — ResMan REFUSED it (locked field, ticket closed/cancelled,
+ *                form drift). Nothing was written and the automatic flush has
+ *                stopped trying: the tech has to act. Distinct from `sent` on
+ *                purpose — this is exactly the state that used to be filed as
+ *                delivered, which is how typed notes disappeared silently.
  * - `sending`  — a flush is in flight right now (photos only expose this)
  * - `queued`   — waiting for the next sync / for signal; no attempts yet
  * - `retrying` — failed at least once, will try again on the next tick
  * - `sent`     — the server accepted it; confirming against the mirror
  */
-export type OutboxState = "sending" | "queued" | "retrying" | "sent";
+export type OutboxState = "blocked" | "sending" | "queued" | "retrying" | "sent";
 
 /** An edited field, as a stable key the screen localizes. */
 export type EditField = "notes" | "description" | "assignment";
@@ -56,9 +61,15 @@ function closeState(c: PendingClose): OutboxState {
   return (c.attempts ?? 1) > 1 ? "retrying" : "queued";
 }
 
-// Order the sections read top to bottom: what's moving, what's stuck, what's
-// waiting, what's done — most-actionable first.
-const STATE_RANK: Record<OutboxState, number> = { sending: 0, retrying: 1, queued: 2, sent: 3 };
+// Order the sections read top to bottom: what needs a human, what's moving,
+// what's stuck, what's waiting, what's done — most-actionable first.
+const STATE_RANK: Record<OutboxState, number> = {
+  blocked: 0,
+  sending: 1,
+  retrying: 2,
+  queued: 3,
+  sent: 4,
+};
 
 export interface OutboxInput {
   closes: PendingClose[];
@@ -96,15 +107,18 @@ export function buildOutbox(input: OutboxInput): OutboxItem[] {
 
   for (const e of input.edits) {
     if (e.acked) continue; // delivered — same reasoning as closes above
+    // A refused edit is the one thing on this screen that will NOT resolve on
+    // its own, so it leads the list and shows ResMan's reason verbatim.
+    const blocked = e.blockedReason !== undefined;
     items.push({
       id: `edit:${e.workOrderId}`,
       kind: "edit",
       workOrderId: e.workOrderId,
-      state: e.acked ? "sent" : "queued",
+      state: blocked ? "blocked" : "queued",
       attempts: 0,
       queuedAt: e.editedAt,
       editFields: editFields(e.patch),
-      lastError: e.acked ? undefined : e.lastError,
+      lastError: e.blockedReason ?? e.lastError,
     });
   }
 
@@ -137,7 +151,9 @@ export function buildOutbox(input: OutboxInput): OutboxItem[] {
   return items.sort((a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || a.queuedAt - b.queuedAt);
 }
 
-/** Count of items not yet accepted by the server — the tab/settings badge. */
+/** Count of items not yet accepted by the server — the tab/settings badge.
+ *  Blocked counts: the write did not happen, and a badge that hides it would
+ *  be the same lie as acking it. */
 export function pendingCount(items: OutboxItem[]): number {
   return items.filter((i) => i.state !== "sent").length;
 }

@@ -1,8 +1,8 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
 import { useColorScheme } from "nativewind";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GlassLayer } from "@/components/ui/GlassLayer";
 import { TechBadge } from "@/components/work-orders/rows";
 import { useTranslation } from "react-i18next";
 import { axesOf, directionKeys, fieldKey, optionFor, sortFieldsFor } from "@/lib/derived/sort-axes";
@@ -312,10 +312,12 @@ export function FilterSheet() {
             borderColor: dark ? "rgba(255,255,255,0.12)" : HAIRLINE_STRONG,
           }}
         >
-          {/* Liquid glass sheet: blur over the dimmed workspace, warm-paper wash on top. */}
-          <BlurView
+          {/* Liquid glass sheet: blur over the dimmed workspace, warm-paper wash
+              on top — an opaque panel on Android, which has no blur to wash. */}
+          <GlassLayer
+            role="panel"
+            dark={dark}
             intensity={44}
-            tint={dark ? "dark" : "light"}
             style={{
               backgroundColor: dark ? "rgba(20,24,31,0.78)" : "rgba(252,250,244,0.72)",
             }}
@@ -565,7 +567,7 @@ export function FilterSheet() {
                 </>
               ) : null}
             </ScrollView>
-          </BlurView>
+          </GlassLayer>
         </View>
       </View>
     </Modal>

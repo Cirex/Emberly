@@ -28,6 +28,12 @@ import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { usePendingEdits } from "@/lib/stores/pending-edits";
 import { useWorkOrderPhotos } from "@/lib/stores/work-order-photos";
 import { useTranslated } from "@/lib/translation/use-translated";
+import {
+  ANDROID_GLASS_ELEVATION,
+  ANDROID_GLASS_HAIRLINE,
+  OPAQUE_GLASS,
+  androidGlassFill,
+} from "@/theme/android-glass";
 import { CALLBACK_TINT, MUTED, NAVY } from "@/theme/tokens";
 import { useAccentPalette } from "@/lib/hooks/use-accent";
 import { statusLabel } from "@/lib/derived/resman-labels";
@@ -439,16 +445,30 @@ export default function WorkOrderDetail() {
             borderRadius: 19,
             overflow: "hidden",
             borderWidth: 1,
-            borderColor: dark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.65)",
+            borderColor: dark
+              ? "rgba(255,255,255,0.16)"
+              : OPAQUE_GLASS
+                ? ANDROID_GLASS_HAIRLINE
+                : "rgba(255,255,255,0.65)",
+            // The blur WAS this bubble's only fill — on Android that left a
+            // borderless ghost over the hero photo. Opaque chrome instead.
+            ...(OPAQUE_GLASS
+              ? {
+                  backgroundColor: androidGlassFill("chrome", dark),
+                  elevation: ANDROID_GLASS_ELEVATION,
+                }
+              : null),
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <BlurView
-            intensity={30}
-            tint={dark ? "dark" : "light"}
-            style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
-          />
+          {OPAQUE_GLASS ? null : (
+            <BlurView
+              intensity={30}
+              tint={dark ? "dark" : "light"}
+              style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+            />
+          )}
           <Ionicons name="close" size={17} color={dark ? "rgba(255,255,255,0.85)" : SLATE} />
         </Pressable>
 
@@ -697,19 +717,31 @@ export default function WorkOrderDetail() {
           borderRadius: 999,
           overflow: "hidden",
           borderWidth: 1,
-          borderColor: dark ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.55)",
-          backgroundColor: dark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.40)",
+          borderColor: dark
+            ? "rgba(255,255,255,0.12)"
+            : OPAQUE_GLASS
+              ? ANDROID_GLASS_HAIRLINE
+              : "rgba(255,255,255,0.55)",
+          backgroundColor: OPAQUE_GLASS
+            ? androidGlassFill("chrome", dark)
+            : dark
+              ? "rgba(255,255,255,0.05)"
+              : "rgba(255,255,255,0.40)",
           shadowColor: "#000",
           shadowOpacity: 0.16,
           shadowRadius: 24,
           shadowOffset: { width: 0, height: 14 },
+          // Android ignores shadow*; the blur that lifted this bar is gone too.
+          ...(OPAQUE_GLASS ? { elevation: ANDROID_GLASS_ELEVATION } : null),
         }}
       >
-        <BlurView
-          intensity={dark ? 30 : 40}
-          tint={dark ? "dark" : "light"}
-          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
-        />
+        {OPAQUE_GLASS ? null : (
+          <BlurView
+            intensity={dark ? 30 : 40}
+            tint={dark ? "dark" : "light"}
+            style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+          />
+        )}
         <View style={{ flex: 1, flexDirection: "row", alignItems: "center", padding: 5, gap: 6 }}>
           <Pressable
             onPress={onShowOnMap}

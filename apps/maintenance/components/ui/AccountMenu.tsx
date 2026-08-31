@@ -11,9 +11,16 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GlassLayer } from "@/components/ui/GlassLayer";
 import { TechBadge } from "@/components/work-orders/rows";
 import { useConfig } from "@/lib/stores/config";
 import { useFieldMode } from "@/lib/stores/settings";
+import {
+  ANDROID_GLASS_ELEVATION,
+  ANDROID_GLASS_HAIRLINE,
+  OPAQUE_GLASS,
+  androidGlassFill,
+} from "@/theme/android-glass";
 import { MUTED, NAVY } from "@/theme/tokens";
 
 const RED = "#D1382E";
@@ -49,16 +56,25 @@ export function AccountMenu() {
 
   // Glass recipe mirrors the tab bar so the chip reads as the same material.
   const glassDark = dark && !field;
-  const glassFill = glassDark
-    ? "rgba(255,255,255,0.06)"
-    : field
-      ? "rgba(255,255,255,0.88)"
-      : "rgba(255,255,255,0.44)";
+  // …including on Android, where that recipe means an opaque fill: BlurView
+  // draws no blur there, and this chip sits over the workspace backdrop and
+  // the map. Field mode already owns its own opaque treatment on both
+  // platforms and is left to it.
+  const androidGlass = OPAQUE_GLASS && !field;
+  const glassFill = androidGlass
+    ? androidGlassFill("chrome", glassDark)
+    : glassDark
+      ? "rgba(255,255,255,0.06)"
+      : field
+        ? "rgba(255,255,255,0.88)"
+        : "rgba(255,255,255,0.44)";
   const glassBorder = glassDark
     ? "rgba(255,255,255,0.12)"
     : field
       ? "rgba(9,27,84,0.24)"
-      : "rgba(255,255,255,0.34)";
+      : androidGlass
+        ? ANDROID_GLASS_HAIRLINE
+        : "rgba(255,255,255,0.34)";
   const glassBlur = field ? 12 : glassDark ? 30 : 42;
   const iconColor = dark ? "rgba(255,255,255,0.86)" : "#42496A";
 
@@ -126,9 +142,15 @@ export function AccountMenu() {
           }}
           accessibilityRole="button"
           accessibilityLabel={`Account menu for ${name}`}
-          style={[styles.chipClip, { borderColor: glassBorder, backgroundColor: glassFill }]}
+          style={[
+            styles.chipClip,
+            { borderColor: glassBorder, backgroundColor: glassFill },
+            // styles.chipShadow on the wrapper is shadow*-only, so Android
+            // drops it. Elevation goes here, on the view holding the fill.
+            androidGlass ? { elevation: ANDROID_GLASS_ELEVATION } : null,
+          ]}
         >
-          {!field ? (
+          {!field && !OPAQUE_GLASS ? (
             <BlurView
               intensity={glassBlur}
               tint={glassDark ? "dark" : "light"}
@@ -163,9 +185,10 @@ export function AccountMenu() {
           ]}
         >
           <View style={[styles.panelClip, dark && { borderColor: "rgba(255,255,255,0.12)" }]}>
-            <BlurView
+            <GlassLayer
+              role="panel"
+              dark={dark}
               intensity={55}
-              tint={dark ? "dark" : "light"}
               style={[styles.panelWash, dark && { backgroundColor: "rgba(27,29,32,0.88)" }]}
             >
               <View style={styles.header}>
@@ -210,7 +233,7 @@ export function AccountMenu() {
                 </View>
                 <Text style={[styles.rowLabel, { color: RED }]}>Sign Out</Text>
               </Pressable>
-            </BlurView>
+            </GlassLayer>
           </View>
         </Animated.View>
       </Modal>

@@ -1,5 +1,26 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const { mock } = require("bun:test");
+
+// The translations delta route pages a table directly rather than through the
+// resource engine, so reaching it needs its auth and client stubbed. Installed
+// before any require so every consumer resolves the fakes; this suite runs in
+// its own process (the package.json `test` script runs each file separately),
+// so the process-global mocks cannot leak into another file.
+const state = { db: null };
+
+mock.module("@/lib/resman-api-auth", () => ({
+  requireResmanApiKey: async () => ({ ok: true, kind: "token", subject: { role: "admin" } }),
+  // Re-exported unchanged: lib/resman-api imports it from here, and a partial
+  // mock would silently strip the real capability check out of listResource.
+  tokenForbiddenForResource: require("../lib/app-role-capabilities").tokenForbiddenForResource,
+}));
+
+mock.module("@/lib/supabase/admin", () => ({
+  createAdminClient: () => state.db,
+  createUntypedAdminClient: () => state.db,
+  getMissingSupabaseAdminEnvVars: () => [],
+}));
 
 const { listResource } = require("../lib/resman-api");
 const {
@@ -8,6 +29,7 @@ const {
   transactionsResource,
   leasesResource,
 } = require("../lib/resman-resources");
+const translationsRoute = require("../app/api/resman/work-orders/translations/route.ts");
 
 /**
  * Every paged list must sort by a TOTAL order, ending in the primary key.
@@ -94,4 +116,125 @@ test("the delta bound does not disturb the ordering", async () => {
     client,
   );
   assert.equal(orders[orders.length - 1].column, workOrdersResource.idColumn);
+});
+
+// ── the translations delta route ────────────────────────────────────────────
+//
+// Same rule, a route that pages a table itself instead of going through the
+// engine above. Its declared sort is updated_at, which is emphatically NOT
+// unique: one translate pass upserts hundreds of rows inside the same
+// millisecond. So the sort has to end on the primary key too.
+
+/**
+ * A client that serves offset pages the way Postgres does: sorted by the
+ * declared .order() keys, with rows that tie on all of them shifted one
+ * position per request. A sort that is not TOTAL therefore returns some rows
+ * twice and others never — the real failure, not a synthetic one.
+ */
+function unstableTranslationsClient(rows) {
+  let request = 0;
+  return {
+    from() {
+      const orders = [];
+      const filters = [];
+      let lo = 0;
+      let hi = Number.MAX_SAFE_INTEGER;
+      const builder = {
+        select: () => builder,
+        eq(column, value) {
+          filters.push((row) => row[column] === value);
+          return builder;
+        },
+        gt(column, value) {
+          filters.push((row) => row[column] > value);
+          return builder;
+        },
+        order(column, opts) {
+          orders.push({ column, ascending: opts?.ascending });
+          return builder;
+        },
+        range(from, to) {
+          lo = from;
+          hi = to;
+          return builder;
+        },
+        // PostgREST builders are thenable and only run on await, which is why
+        // the route can bolt `.gt()` on after `.range()`.
+        then: (resolve, reject) => {
+          const matching = rows.filter((row) => filters.every((keep) => keep(row)));
+          const sorted = [...matching].sort((a, b) => {
+            for (const { column, ascending } of orders) {
+              if (a[column] !== b[column]) {
+                return (a[column] < b[column] ? -1 : 1) * (ascending === false ? -1 : 1);
+              }
+            }
+            return 0;
+          });
+          const shift = request++;
+          const served = [];
+          for (let i = 0; i < sorted.length;) {
+            let end = i + 1;
+            while (
+              end < sorted.length &&
+              orders.every(({ column }) => sorted[end][column] === sorted[i][column])
+            ) {
+              end++;
+            }
+            const tied = sorted.slice(i, end);
+            for (let k = 0; k < tied.length; k++) served.push(tied[(k + shift) % tied.length]);
+            i = end;
+          }
+          return Promise.resolve({ data: served.slice(lo, hi + 1), error: null }).then(
+            resolve,
+            reject,
+          );
+        },
+      };
+      return builder;
+    },
+  };
+}
+
+/** One sync pass: every row stamped within the same millisecond. */
+function sameMillisecondRows(count, lang = "es") {
+  return Array.from({ length: count }, (_, i) => ({
+    source_hash: `h-${String(i).padStart(5, "0")}`,
+    translated_text: `${lang}:${i}`,
+    target_lang: lang,
+    updated_at: "2026-08-30T12:00:00.000Z",
+  }));
+}
+
+async function getTranslations(query) {
+  const response = await translationsRoute.GET(
+    new Request(`https://emberly.test/api/resman/work-orders/translations?${query}`),
+  );
+  return (await response.json()).data;
+}
+
+test("translations: a page boundary inside one timestamp skips no row", async () => {
+  // 1,200 rows over a 1,000-row page, all sharing an updated_at. Sorting by
+  // updated_at alone leaves them all tied, so the second page starts one row
+  // late and that translation never reaches the device — invisibly, because a
+  // content-addressed cache cannot tell a missing key from one it never needed.
+  state.db = unstableTranslationsClient(sameMillisecondRows(1200));
+  const data = await getTranslations("lang=es");
+
+  assert.equal(data.count, 1200);
+  assert.equal(Object.keys(data.entries).length, 1200);
+  assert.equal(data.entries["h-01000"], "es:1000");
+});
+
+test("translations: the incremental pull is stable too", async () => {
+  // `since` narrows the set but does not make the remaining timestamps unique —
+  // a device polling deltas is exactly where a silent gap would persist.
+  const rows = [
+    ...sameMillisecondRows(1200),
+    ...sameMillisecondRows(3, "en"), // wrong language: must stay filtered out
+  ];
+  state.db = unstableTranslationsClient(rows);
+  const data = await getTranslations("lang=es&since=2026-08-30T11:00:00.000Z");
+
+  assert.equal(data.count, 1200);
+  assert.ok(Object.keys(data.entries).every((hash) => data.entries[hash].startsWith("es:")));
 });

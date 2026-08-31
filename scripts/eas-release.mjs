@@ -77,6 +77,29 @@ async function readJson(file) {
   try { return await Bun.file(file).json(); } catch { return null; }
 }
 
+/**
+ * Run a child on THIS terminal, not through a pipe.
+ *
+ * Bun's `$` captures the child's output and re-emits it, so the child is
+ * handed a pipe and `process.stdout.isTTY` is false inside it. EAS keeps
+ * animating its ora spinner anyway, and every frame it writes — sixty a
+ * second through an upload that runs for minutes — arrives as fresh output
+ * instead of overwriting the line before it. The submit step alone scrolled
+ * hundreds of copies of "submission in progress" past.
+ *
+ * Inheriting stdio hands over the real TTY: the spinner overwrites itself the
+ * way it does when you run `eas` by hand, progress bars work, and EAS can
+ * prompt interactively (for credentials, or an ASC 2FA code) instead of
+ * blocking against a pipe nobody is reading.
+ *
+ * Only for children whose output is meant for the user to watch. The env-diff
+ * below still uses `$`.quiet(), because that one is captured and reformatted.
+ */
+async function runAttached(cmd, cwd) {
+  const child = Bun.spawn(cmd, { cwd, stdio: ["inherit", "inherit", "inherit"] });
+  return await child.exited;
+}
+
 async function resolveEas() {
   const found = await $`command -v eas`.nothrow().quiet();
   return found.exitCode === 0 ? ["eas"] : ["bunx", "eas-cli"];
@@ -170,8 +193,8 @@ async function main() {
   if (!opts.skipEnv && existsSync(envFile)) {
     console.log("━━ syncing env ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     const args = [opts.app, "--environments", opts.profile, ...(opts.assumeYes ? ["--yes"] : [])];
-    const sync = await $`bun ${syncScript} ${args}`.cwd(repoRoot).nothrow();
-    if (sync.exitCode !== 0) fail("env sync failed — not building with a half-applied environment");
+    const syncCode = await runAttached(["bun", syncScript, ...args], repoRoot);
+    if (syncCode !== 0) fail("env sync failed — not building with a half-applied environment");
     console.log();
   }
 
@@ -187,8 +210,8 @@ async function main() {
   if (opts.local) {
     console.log("  · local       building on this machine (no EAS build credits spent)");
   }
-  const build = await $`${bin} ${pre} ${buildArgs}`.cwd(appDir).nothrow();
-  if (build.exitCode !== 0) return build.exitCode;
+  const buildCode = await runAttached([bin, ...pre, ...buildArgs], appDir);
+  if (buildCode !== 0) return buildCode;
 
   if (opts.submit) {
     console.log();
@@ -198,8 +221,8 @@ async function main() {
     const submitArgs = ["submit", "--platform", "ios", "--profile", opts.profile,
       ...(opts.local ? ["--path", localOutput] : ["--latest"]),
       ...(opts.assumeYes ? ["--non-interactive"] : [])];
-    const submit = await $`${bin} ${pre} ${submitArgs}`.cwd(appDir).nothrow();
-    if (submit.exitCode !== 0) return submit.exitCode;
+    const submitCode = await runAttached([bin, ...pre, ...submitArgs], appDir);
+    if (submitCode !== 0) return submitCode;
   }
 
   console.log();

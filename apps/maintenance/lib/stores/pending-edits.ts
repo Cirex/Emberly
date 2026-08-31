@@ -50,8 +50,18 @@ interface PendingEditsState {
   flush: (config: StaffConfig) => Promise<void>;
   /** Mark an entry delivered by SOMEONE ELSE's request — the coalesced close
    *  folds a pending edit into its own ResMan write, then acks it here. Only
-   *  lands if the entry still holds exactly the patch that was folded in. */
-  ackDelivered: (workOrderId: string, sent: WorkOrderEditPatch) => void;
+   *  lands if the entry still holds exactly the patch that was folded in.
+   *
+   *  `written` is what that request ACTUALLY wrote, when the folding request
+   *  superseded a field (a close's own note beats folded typed notes). The
+   *  entry is re-based onto it, because an entry acked with a value ResMan
+   *  never received can never be absorbed — and the redeliver clock would
+   *  re-send the superseded value back over the one that landed. */
+  ackDelivered: (
+    workOrderId: string,
+    sent: WorkOrderEditPatch,
+    written?: WorkOrderEditPatch,
+  ) => void;
   /** Drop entries the mirror has caught up with (base row matches every
    *  edited field) or stale ones. */
   prune: (rows: readonly WorkOrder[], nowMs: number) => void;
@@ -81,6 +91,7 @@ function ackIfUnchanged(
   set: (fn: (s: PendingEditsState) => Partial<PendingEditsState>) => void,
   workOrderId: string,
   sent: WorkOrderEditPatch,
+  written?: WorkOrderEditPatch,
 ): void {
   const sentPrint = fingerprint(sent);
   set((s) => {
@@ -89,7 +100,16 @@ function ackIfUnchanged(
     return {
       pending: {
         ...s.pending,
-        [workOrderId]: { ...cur, acked: true, ackedAt: Date.now(), lastError: undefined },
+        [workOrderId]: {
+          ...cur,
+          // Re-base onto what the write actually put in ResMan, so absorption
+          // compares the mirror against a value it can really hold and a
+          // redeliver can only ever re-send what already landed.
+          patch: written ?? cur.patch,
+          acked: true,
+          ackedAt: Date.now(),
+          lastError: undefined,
+        },
       },
     };
   });
@@ -240,8 +260,8 @@ export const usePendingEdits = create<PendingEditsState>()(
         });
       },
 
-      ackDelivered: (workOrderId, sent) => {
-        ackIfUnchanged(set, workOrderId, sent);
+      ackDelivered: (workOrderId, sent, written) => {
+        ackIfUnchanged(set, workOrderId, sent, written);
       },
 
       remove: (workOrderId) => {

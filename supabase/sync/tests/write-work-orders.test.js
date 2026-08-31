@@ -660,6 +660,66 @@ test("verify-only: reports applied when the form already holds every target", as
   assert.equal(posts(transport.calls).length, 0, "verify never POSTs");
 });
 
+test("verify-only: a note ResMan re-rendered with CRLF reads as LANDED, not as a re-POST", async () => {
+  // The reconcile for a POST whose confirming GET timed out. It has no
+  // verifyTargets call — it answers "did our write land?" from mutate() alone
+  // — so when mutate byte-compared free text it disowned its own landed note:
+  // ok:false, and the flush job, whose contract is "NEVER blind-retry a POST
+  // that may have landed", flipped the row back to `queued` and re-POSTed it.
+  const page = withNote(fixture("16305"), "line one\r\nline two\r\n");
+  const transport = makeTransport({ pages: { [EDIT_URL_16305]: page } });
+  const result = await verifyWorkOrderWrite({
+    client: makeClient(transport.fetchImpl),
+    request: {
+      workOrderId: WO_16305,
+      kind: "edit",
+      patch: { completionNotes: "line one\nline two" },
+      expectedUnitId: UNIT_16305,
+    },
+    now: NOW,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.noop, true, "landed — nothing left to change");
+  assert.equal(posts(transport.calls).length, 0, "verify never POSTs");
+
+  // …and it still says NOT landed for a note that genuinely differs, so the
+  // leniency is about line endings, not about calling everything applied.
+  const other = await verifyWorkOrderWrite({
+    client: makeClient(makeTransport({ pages: { [EDIT_URL_16305]: page } }).fetchImpl),
+    request: {
+      workOrderId: WO_16305,
+      kind: "edit",
+      patch: { completionNotes: "line one\nline three" },
+      expectedUnitId: UNIT_16305,
+    },
+    now: NOW,
+  });
+  assert.equal(other.ok, false);
+  assert.match(other.detail, /not present/);
+});
+
+test("apply: a replay of a note the form already holds (CRLF) POSTs nothing", async () => {
+  // Same equality, the other side of the engine: an edit re-sent after a
+  // CRLF round-trip is a no-op, not another full form replay into production.
+  const transport = makeTransport({
+    pages: { [EDIT_URL_16305]: withNote(fixture("16305"), "line one\r\nline two\r\n") },
+  });
+  const result = await applyWorkOrderWrite({
+    client: makeClient(transport.fetchImpl),
+    request: {
+      workOrderId: WO_16305,
+      kind: "edit",
+      patch: { completionNotes: "line one\nline two" },
+      expectedUnitId: UNIT_16305,
+    },
+    now: NOW,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.noop, true);
+  assert.equal(result.detail, "already applied");
+  assert.equal(posts(transport.calls).length, 0, "no redundant write against ResMan");
+});
+
 test("verify-only: reports not-landed when the form still holds the old values", async () => {
   const transport = makeTransport({ pages: { [EDIT_URL_16305]: fixture("16305") } });
   const result = await verifyWorkOrderWrite({

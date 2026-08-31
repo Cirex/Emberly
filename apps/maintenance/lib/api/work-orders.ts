@@ -217,8 +217,18 @@ export async function closeWorkOrder(
     expectedUnitId: null,
   });
   if (result && !result.ok) throw new Error(result.detail);
-  // Close delivered (or refused-consumed); the folded edit went with it.
-  if (folded) usePendingEdits.getState().ackDelivered(id, folded);
+  // Close delivered (or refused-consumed); the folded edit went with it — but
+  // not necessarily every field of it. The engine's close writes its OWN note
+  // over any folded typed notes (`patch.note` wins in mutate()), so acking the
+  // entry with the draft that note superseded leaves a completionNotes ResMan
+  // never received: the mirror can never absorb it, and half an hour later the
+  // redeliver clock un-acks the entry and the next flush re-POSTs the stale
+  // draft OVER the close note. Ack against what the close actually wrote.
+  if (folded) {
+    const written =
+      note && folded.completionNotes !== undefined ? { ...folded, completionNotes: note } : folded;
+    usePendingEdits.getState().ackDelivered(id, folded, written);
+  }
   return { ok: true, queued: false, stub: false };
 }
 

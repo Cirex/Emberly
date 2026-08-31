@@ -2,7 +2,7 @@
   "expo": {
     "name": "Emberly Maintenance",
     "slug": "emberly-maintenance",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "scheme": "com.emberly.maintenance",
     "orientation": "default",
     "icon": "./assets/icon.png",

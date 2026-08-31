@@ -237,3 +237,27 @@ test("resident profile cleanup removes property fields from schema and detail UI
   assert.equal(detailClient.includes("EMBERLY_PROPERTY_NAME"), false);
   assert.equal(detailClient.includes("Emberly Apartments"), false);
 });
+
+test("the purge never puts more than 200 ids in one delete request", async () => {
+  // PostgREST puts `.in(...)` values in the QUERY STRING, so a 1,000-uuid batch
+  // is ~37KB of request line — past what proxies reliably accept, and 5x the
+  // 200 the sync worker settled on for exactly this reason. The paging fix made
+  // large batches reachable for the first time, so the delete must be chunked.
+  const photoRows = Array.from({ length: 450 }, (_, i) => ({
+    id: `photo-${String(i).padStart(4, "0")}`,
+    storage_path: `entry-logs/e/${i}.jpg`,
+  }));
+  const supabase = createFakeCleanupClient({}, { photoRows });
+
+  const result = await runAppDataCleanup(supabase, new Date("2026-06-23T12:00:00.000Z"));
+  assert.equal(result.expiredEntryLogPhotosDeleted, 450);
+
+  const deletes = supabase.calls.filter(
+    (call) => call.table === "entry_log_photos" && call.action === "delete",
+  );
+  assert.ok(deletes.length > 1, "450 ids must be split across more than one delete");
+  for (const call of deletes) {
+    const ids = call.in?.values ?? call.values ?? call.ids ?? [];
+    assert.ok(ids.length <= 200, `delete batch of ${ids.length} exceeds the 200 cap`);
+  }
+});

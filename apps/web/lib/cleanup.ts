@@ -28,6 +28,15 @@ export type CleanupResult = {
 const STORAGE_REMOVE_BATCH_SIZE = 100;
 
 /**
+ * Ids per `.in(...)` delete. PostgREST puts them in the QUERY STRING, so a
+ * batch of 1,000 uuids is ~37 KB of request line — far past what proxies
+ * reliably accept, and 5x the 200 the sync worker settled on for the same
+ * reason (supabase/sync/src/db/client.ts DELETE_BATCH). The select stays large
+ * so the purge still drains quickly; only the delete is chunked.
+ */
+const PHOTO_DELETE_BATCH_SIZE = 200;
+
+/**
  * Rows one PostgREST response returns regardless of what `.limit()` asks for
  * (the server-side `db-max-rows` ceiling). The purge reads a batch this size
  * and loops, because a single read can never see past it.
@@ -101,14 +110,14 @@ async function purgeExpiredEntryLogPhotos(
       if (removeError) throw removeError;
     }
 
-    const { error: deleteError } = await supabase
-      .from("entry_log_photos")
-      .delete()
-      .in(
-        "id",
-        photos.map((photo) => photo.id),
-      );
-    if (deleteError) throw deleteError;
+    const ids = photos.map((photo) => photo.id);
+    for (let start = 0; start < ids.length; start += PHOTO_DELETE_BATCH_SIZE) {
+      const { error: deleteError } = await supabase
+        .from("entry_log_photos")
+        .delete()
+        .in("id", ids.slice(start, start + PHOTO_DELETE_BATCH_SIZE));
+      if (deleteError) throw deleteError;
+    }
 
     deleted += photos.length;
     // A short batch means nothing expired is left behind it.

@@ -7,14 +7,18 @@ import { capture } from "@/lib/analytics";
 import { FilterSheet } from "@/components/work-orders/FilterSheet";
 import { GlassHeader } from "@/components/work-orders/GlassHeader";
 import { AnalyticsOverlayHost } from "@/components/work-orders/analytics/OverlayHost";
-import { ClosedBand, ClosedRow, LoadingMoreFooter } from "@/components/work-orders/closed/ClosedRow";
+import {
+  ClosedBand,
+  ClosedRow,
+  LoadingMoreFooter,
+} from "@/components/work-orders/closed/ClosedRow";
 import {
   buildClosedSections,
   groupsApplyTo,
   singleClosedSection,
 } from "@/lib/derived/closed-sections";
 import type { ClosedWorkOrderRow } from "@/lib/derived/closed-rows";
-import { HotSpots } from "@/components/work-orders/hot-spots/HotSpots";
+import { useHotSpotsBoard, type HotSpotItem } from "@/components/work-orders/hot-spots/HotSpots";
 import { OpenGroupCard } from "@/components/work-orders/open/OpenBoard";
 import { PreventiveBoard } from "@/components/work-orders/preventive/PreventiveBoard";
 import { buildPreventiveScoreCards, pmRoundTotals } from "@/lib/derived/pm-cards";
@@ -37,6 +41,9 @@ function ZoneGap() {
 /** Module scope so the list's keyExtractor identity never changes. */
 const keyOfGroup = (g: { unitNumber: string }) => g.unitNumber;
 const keyOfClosedRow = (r: ClosedWorkOrderRow) => r.id;
+const keyOfHotSpotItem = (i: HotSpotItem) => i.key;
+/** One frozen empty array, so a non-list Hot Spots board never churns `data`. */
+const NO_HOT_SPOT_ITEMS: HotSpotItem[] = [];
 
 /**
  * The Work Orders workspace host, approved D3 rev 2 (artifact 480091ba): a
@@ -183,7 +190,9 @@ export default function WorkOrdersScreen() {
             Loading work orders…
           </Text>
         ) : null}
-        {error ? <Text style={{ color: "#D1382E", fontSize: 12, textAlign: "center" }}>{error}</Text> : null}
+        {error ? (
+          <Text style={{ color: "#D1382E", fontSize: 12, textAlign: "center" }}>{error}</Text>
+        ) : null}
       </View>
     ) : null;
 
@@ -192,7 +201,10 @@ export default function WorkOrdersScreen() {
   // would be a confident lie — it is still counting.
   const emptyState = !snapshot.complete ? (
     <View style={{ alignItems: "center", paddingVertical: 48, gap: 6, paddingHorizontal: pad }}>
-      <Text className="text-muted dark:text-white/60" style={{ fontSize: 12.5, textAlign: "center" }}>
+      <Text
+        className="text-muted dark:text-white/60"
+        style={{ fontSize: 12.5, textAlign: "center" }}
+      >
         {t("workOrders.stillLoading")}
       </Text>
     </View>
@@ -201,7 +213,10 @@ export default function WorkOrdersScreen() {
       <Text className="text-navy dark:text-white" style={{ fontSize: 16, fontWeight: "700" }}>
         Nothing here
       </Text>
-      <Text className="text-muted dark:text-white/60" style={{ fontSize: 12.5, textAlign: "center" }}>
+      <Text
+        className="text-muted dark:text-white/60"
+        style={{ fontSize: 12.5, textAlign: "center" }}
+      >
         {view.debouncedSearch || filterCount > 0
           ? "No work orders match the current search and filters."
           : "No work orders in this view yet."}
@@ -276,6 +291,28 @@ export default function WorkOrdersScreen() {
     ),
     [expandedUnits, toggleUnit, nowMs, pad],
   );
+  // ----- Hot Spots: virtualized rows, not one giant header ---------------
+  // Declared here with the other list props, above the display-mode branches,
+  // for the same reason they are: those branches return early.
+  const hotSpotsBoard = useHotSpotsBoard({
+    enabled: view.displayMode === "hotSpots",
+    rows: snapshot.hotSpotRows,
+    selectedUnit: view.selectedHotSpotUnit,
+    onSelectUnit: view.setSelectedHotSpotUnit,
+    nowMs,
+    width,
+    pad,
+  });
+  // Pulled out so the FlatList's renderItem stays stable: the board object
+  // itself is a fresh literal each render, but the function inside it is
+  // memoized, so depending on the function rather than the board is a real
+  // cutoff instead of a decoration.
+  const boardRenderItem = hotSpotsBoard.kind === "rows" ? hotSpotsBoard.renderItem : null;
+  const renderHotSpotItem = useCallback(
+    ({ item }: { item: HotSpotItem }) => <>{boardRenderItem?.(item) ?? null}</>,
+    [boardRenderItem],
+  );
+
   const renderClosedRow = useCallback(
     ({ item, section }: { item: ClosedWorkOrderRow; section: { key: string } }) => (
       <ClosedRow row={item} today={section.key === "today"} />
@@ -284,7 +321,9 @@ export default function WorkOrdersScreen() {
   );
   const renderClosedBand = useCallback(
     ({ section }: { section: { labelKey: string; count: number } }) =>
-      showBands ? <ClosedBand label={t(`workOrders.closed.band.${section.labelKey}`)} count={section.count} /> : null,
+      showBands ? (
+        <ClosedBand label={t(`workOrders.closed.band.${section.labelKey}`)} count={section.count} />
+      ) : null,
     [showBands, t],
   );
 
@@ -292,6 +331,13 @@ export default function WorkOrdersScreen() {
     return (
       <View style={{ flex: 1 }}>
         <FlatList
+          // Every mode branch returns the same <View><FlatList/>… shape, and
+          // React reconciles by type and position — it knows nothing about
+          // which `return` produced them. Without a key the three FlatList
+          // modes are ONE VirtualizedList instance that keeps its contentOffset
+          // and its ListMetricsAggregator across a mode switch, so Open opens
+          // at the scroll position of a board it has never rendered.
+          key={view.displayMode}
           data={openVisible}
           keyExtractor={keyOfGroup}
           contentContainerStyle={contentStyle}
@@ -304,8 +350,12 @@ export default function WorkOrdersScreen() {
           ListEmptyComponent={emptyState}
           ItemSeparatorComponent={ZoneGap}
           onEndReachedThreshold={0.6}
-          onEndReached={() => setRenderLimit((l) => (l < snapshot.openGroups.length ? l + RENDER_PAGE : l))}
-          ListFooterComponent={<LoadingMoreFooter visible={renderLimit < snapshot.openGroups.length} />}
+          onEndReached={() =>
+            setRenderLimit((l) => (l < snapshot.openGroups.length ? l + RENDER_PAGE : l))
+          }
+          ListFooterComponent={
+            <LoadingMoreFooter visible={renderLimit < snapshot.openGroups.length} />
+          }
           renderItem={renderOpenGroup}
         />
         {header}
@@ -320,6 +370,7 @@ export default function WorkOrdersScreen() {
     return (
       <View style={{ flex: 1 }}>
         <SectionList
+          key={view.displayMode}
           // `closedSections`/`renderClosedRow` are memoized above. Building
           // either inline would hand the list a new reference on every parent
           // render, re-rendering every mounted row — which on a board of
@@ -360,6 +411,7 @@ export default function WorkOrdersScreen() {
     return (
       <View style={{ flex: 1 }}>
         <FlatList
+          key={view.displayMode}
           data={[]}
           renderItem={() => null}
           contentContainerStyle={contentStyle}
@@ -373,7 +425,9 @@ export default function WorkOrdersScreen() {
                     </Text>
                   ) : null}
                   {pmError ? (
-                    <Text style={{ color: "#D1382E", fontSize: 12, textAlign: "center" }}>{pmError}</Text>
+                    <Text style={{ color: "#D1382E", fontSize: 12, textAlign: "center" }}>
+                      {pmError}
+                    </Text>
                   ) : null}
                 </View>
               ) : null}
@@ -395,23 +449,34 @@ export default function WorkOrdersScreen() {
   }
 
   // ----- Hot Spots ------------------------------------------------------
+  // The ranked rows are the list's DATA now, not one un-virtualized slab
+  // handed over as ListHeaderComponent. That slab was ~200 uncapped rows at
+  // ~27 native views each, mounted as a single child of the scroll content
+  // view — and RN's legacy clipping walk then recursed all of it on the main
+  // thread on every commit and every 44pt of scroll. It is the confirmed cause
+  // of an 8.1-8.9s production App Hang (EMBERLY-MAINTENANCE-3, whose stack is
+  // that recursion bottoming out in convertRect:toView:). See HotSpotList.
+  //
+  // Only the phone's ranked view virtualizes. The empty state, the phone
+  // detail pane and the tablet split are small and ride in the header, where
+  // the tablet's inner list also avoids nesting one VirtualizedList in another.
   return (
     <View style={{ flex: 1 }}>
       <FlatList
-        data={[]}
-        renderItem={() => null}
+        key={view.displayMode}
+        data={hotSpotsBoard.kind === "rows" ? hotSpotsBoard.items : NO_HOT_SPOT_ITEMS}
+        keyExtractor={keyOfHotSpotItem}
+        renderItem={renderHotSpotItem}
         contentContainerStyle={contentStyle}
+        windowSize={7}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews
         ListHeaderComponent={
           <View>
             {statusLine}
-            <HotSpots
-              rows={snapshot.hotSpotRows}
-              selectedUnit={view.selectedHotSpotUnit}
-              onSelectUnit={view.setSelectedHotSpotUnit}
-              nowMs={nowMs}
-              width={width}
-              pad={pad}
-            />
+            {hotSpotsBoard.kind === "rows" ? hotSpotsBoard.header : hotSpotsBoard.node}
           </View>
         }
       />

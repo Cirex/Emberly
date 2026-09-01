@@ -1,7 +1,7 @@
 import { useColorScheme } from "nativewind";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useMemo } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
 import { useMapJump } from "@emberly/ui";
@@ -104,9 +104,8 @@ function TrendStrip({ rows, nowMs, pad }: { rows: HotSpotRow[]; nowMs: number; p
 // ── Ranked rows ─────────────────────────────────────────────────────────────
 
 /** 74px risk meter track + tinted numeric score. */
-function RiskMeter({ score, high }: { score: number; high: boolean }) {
+function RiskMeter({ score, high, dark }: { score: number; high: boolean; dark: boolean }) {
   const color = high ? RED : AMBER;
-  const dark = useColorScheme().colorScheme === "dark";
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
       <View
@@ -181,8 +180,17 @@ function Sparkline({ row, nowMs }: { row: HotSpotRow; nowMs: number }) {
   );
 }
 
-function BandHeader({ label, color, pad }: { label: string; color: string; pad: number }) {
-  const dark = useColorScheme().colorScheme === "dark";
+function BandHeader({
+  label,
+  color,
+  pad,
+  dark,
+}: {
+  label: string;
+  color: string;
+  pad: number;
+  dark: boolean;
+}) {
   return (
     <View
       style={{
@@ -210,6 +218,7 @@ function RankRow({
   highlightSelection,
   nowMs,
   pad,
+  dark,
   onPress,
   onShowOnMap,
 }: {
@@ -219,11 +228,17 @@ function RankRow({
   highlightSelection: boolean;
   nowMs: number;
   pad: number;
+  /**
+   * Passed down, never read with nativewind's `useColorScheme()` here.
+   * react-native-css-interop registers each caller's render-phase Effect in a
+   * module-level Set and never removes it on unmount, so a hook per row strands
+   * one dead Effect per row on every mode switch, for the life of the session.
+   */
+  dark: boolean;
   onPress: () => void;
   onShowOnMap: () => void;
 }) {
   const palette = useAccentPalette();
-  const dark = useColorScheme().colorScheme === "dark";
   const { t } = useTranslation();
   const high = row.riskLevel === "High";
   const topTrade = hotSpotTopTrade(row);
@@ -267,7 +282,7 @@ function RankRow({
           </Text>
         ) : null}
         <View style={{ flex: 1 }} />
-        <RiskMeter score={row.score} high={high} />
+        <RiskMeter score={row.score} high={high} dark={dark} />
         <Pressable
           onPress={onShowOnMap}
           hitSlop={8}
@@ -363,12 +378,37 @@ function HotSpotList({
         highlightSelection={highlightSelection}
         nowMs={nowMs}
         pad={pad}
+        dark={dark}
         onPress={() => onSelectUnit(selected ? null : row.unitNumber)}
         onShowOnMap={() => onShowOnMap(row.unitNumber)}
       />
     );
   };
 
+  /**
+   * `removeClippedSubviews` on the band containers is load-bearing, not a
+   * micro-optimization. This list is NOT virtualized (the tablet layout nests
+   * it in a card beside the detail pane, so it cannot own a FlatList without
+   * nesting one VirtualizedList inside another), which means every row's ~27
+   * native views are real children of the enclosing ScrollView's content view.
+   *
+   * RN's legacy clipping walk is live — ReactNativeFeatureFlagsDefaults.h
+   * `enableViewCulling()` returns false — and RCTScrollViewComponentView runs
+   * `_remountChildren` on EVERY mounting transaction (.mm:295) and again every
+   * 44pt of scroll (kClippingLeeway). A subtree whose views do not set
+   * `removeClippedSubviews` falls through RCTViewComponentView.mm:233 to the
+   * default recursion in UIView+ComponentViewProtocol.mm:172, which has no
+   * early-out: it walks every descendant doing a convertRect:toView: at each.
+   *
+   * With ~200 rows that walk is thousands of nodes on the MAIN thread, and it
+   * is the confirmed culprit of an 8.1-8.9s App Hang in production
+   * (EMBERLY-MAINTENANCE-3, whose stack is this exact recursion). Setting the
+   * flag here takes RCTViewComponentView down its pruning branch (.mm:250-260),
+   * which recurses only into rows intersecting the clip rect.
+   *
+   * Safe because rows are fixed-height siblings stacked in a column and nothing
+   * in a row draws outside its own bounds.
+   */
   return (
     <View>
       {high.length > 0 ? (
@@ -376,17 +416,19 @@ function HotSpotList({
           label={t("hotSpots.bandHigh", { count: high.length })}
           color={HIGH_BAND_LABEL}
           pad={pad}
+          dark={dark}
         />
       ) : null}
-      {high.map(renderRow)}
+      <View removeClippedSubviews>{high.map(renderRow)}</View>
       {watch.length > 0 ? (
         <BandHeader
           label={t("hotSpots.bandWatch", { count: watch.length })}
           color={dark ? "rgba(255,255,255,0.72)" : "#4C556F"}
           pad={pad}
+          dark={dark}
         />
       ) : null}
-      {watch.map(renderRow)}
+      <View removeClippedSubviews>{watch.map(renderRow)}</View>
     </View>
   );
 }
@@ -551,7 +593,41 @@ function DetailPane({ row, nowMs }: { row: HotSpotRow; nowMs: number }) {
 
 // ── Board ───────────────────────────────────────────────────────────────────
 
-export function HotSpots({
+/**
+ * One item of the VIRTUALIZED phone board — the ranked rows and the band
+ * headers flattened into a single list, so the host screen can hand them to a
+ * FlatList as `data` instead of mounting the whole board at once.
+ */
+export type HotSpotItem =
+  | { kind: "band"; key: string; label: string; color: string }
+  | { kind: "row"; key: string; row: HotSpotRow };
+
+/**
+ * What the host screen should render for Hot Spots.
+ *
+ * `rows` is the common phone case and the ONLY one that was pathological: the
+ * board used to be handed over whole as a FlatList `ListHeaderComponent` with
+ * `data={[]}`, which meant ~200 uncapped rows at ~27 native views each — some
+ * 4,000-8,000 views — mounted as a single un-virtualized child. See the comment
+ * on HotSpotList for what RN's clipping walk then does with that, on the main
+ * thread, on every commit and every 44pt of scroll.
+ *
+ * `static` covers the empty state, the phone detail pane (one unit) and the
+ * tablet split view. None of those is large, and the tablet layout nests its
+ * list inside a card beside the detail pane, so it cannot own a FlatList
+ * without putting one VirtualizedList inside another.
+ */
+export type HotSpotsBoard =
+  | {
+      kind: "rows";
+      header: ReactNode;
+      items: HotSpotItem[];
+      renderItem: (item: HotSpotItem) => ReactNode;
+    }
+  | { kind: "static"; node: ReactNode };
+
+export function useHotSpotsBoard({
+  enabled,
   rows,
   selectedUnit,
   onSelectUnit,
@@ -559,6 +635,14 @@ export function HotSpots({
   width,
   pad,
 }: {
+  /**
+   * Whether Hot Spots is the board on screen. The host must call this hook
+   * unconditionally — it sits above the display-mode branches, which return
+   * early — but `hotSpotRows` is populated in EVERY mode (buildSnapshot builds
+   * the open, closed and hot-spot sets regardless of `mode`), so without this
+   * the item array would be rebuilt on every render of the Open board too.
+   */
+  enabled: boolean;
   rows: HotSpotRow[];
   selectedUnit: string | null;
   onSelectUnit: (u: string | null) => void;
@@ -566,111 +650,174 @@ export function HotSpots({
   width: number;
   /** Screen edge inset the full-bleed rows use for their content. */
   pad: number;
-}) {
+}): HotSpotsBoard {
   const { t } = useTranslation();
   const dark = useColorScheme().colorScheme === "dark";
   const router = useRouter();
   const tablet = width >= 768;
 
   // Same jump pattern as the work-order detail screen's "show on map".
-  const showOnMap = (unitNumber: string) => {
-    const unit = unitNumber.trim();
-    if (unit.length > 0) {
-      capture("show_on_map_used");
-      useMapJump.getState().request(unit);
-    }
-    router.push("/(tabs)/property-map");
-  };
-
-  if (rows.length === 0) {
-    return (
-      <View style={{ paddingHorizontal: pad }}>
-        <AppCardSurface
-          kind="panel"
-          style={{ paddingVertical: 30, paddingHorizontal: 20, alignItems: "center" }}
-        >
-          <Text className="text-navy dark:text-white" style={{ fontSize: 13, fontWeight: "700" }}>
-            {t("hotSpots.emptyTitle")}
-          </Text>
-          <Text
-            className="text-muted dark:text-white/60"
-            style={{ fontSize: 11, marginTop: 4, textAlign: "center" }}
-          >
-            {t("hotSpots.emptyBody")}
-          </Text>
-        </AppCardSurface>
-      </View>
-    );
-  }
+  const showOnMap = useCallback(
+    (unitNumber: string) => {
+      const unit = unitNumber.trim();
+      if (unit.length > 0) {
+        capture("show_on_map_used");
+        useMapJump.getState().request(unit);
+      }
+      router.push("/(tabs)/property-map");
+    },
+    [router],
+  );
 
   const selectedRow =
     selectedUnit !== null ? (rows.find((r) => r.unitNumber === selectedUnit) ?? null) : null;
+  const listed = enabled && !tablet && rows.length > 0 && selectedRow === null;
 
-  if (!tablet) {
-    if (selectedRow) {
-      return (
-        <View style={{ paddingHorizontal: pad }}>
-          <Pressable
-            onPress={() => onSelectUnit(null)}
-            accessibilityRole="button"
-            hitSlop={8}
-            style={{ alignSelf: "flex-start", marginBottom: 8 }}
-          >
-            <Text
-              style={{
-                fontSize: 12.5,
-                fontWeight: "600",
-                color: dark ? "rgba(255,255,255,0.72)" : "#4C556F",
-              }}
-            >
-              ‹ {t("hotSpots.allHotSpots")}
-            </Text>
-          </Pressable>
-          <DetailPane row={selectedRow} nowMs={nowMs} />
-        </View>
-      );
+  // Bands and rows flattened into one array, with the overall rank carried on
+  // each row so it keeps counting across the band boundary.
+  const items = useMemo<HotSpotItem[]>(() => {
+    if (!listed) return [];
+    const high = rows.filter((r) => r.riskLevel === "High");
+    const watch = rows.filter((r) => r.riskLevel !== "High");
+    const out: HotSpotItem[] = [];
+    if (high.length > 0) {
+      out.push({
+        kind: "band",
+        key: "band:high",
+        label: t("hotSpots.bandHigh", { count: high.length }),
+        color: HIGH_BAND_LABEL,
+      });
     }
-    return (
-      <View>
-        <TrendStrip rows={rows} nowMs={nowMs} pad={pad} />
-        <HotSpotList
-          rows={rows}
-          selectedUnit={selectedUnit}
-          onSelectUnit={onSelectUnit}
-          onShowOnMap={showOnMap}
+    for (const row of high) out.push({ kind: "row", key: row.unitNumber, row });
+    if (watch.length > 0) {
+      out.push({
+        kind: "band",
+        key: "band:watch",
+        label: t("hotSpots.bandWatch", { count: watch.length }),
+        color: dark ? "rgba(255,255,255,0.72)" : "#4C556F",
+      });
+    }
+    for (const row of watch) out.push({ kind: "row", key: row.unitNumber, row });
+    return out;
+  }, [listed, rows, t, dark]);
+
+  const rankOf = useMemo(() => new Map(rows.map((r, i) => [r.unitNumber, i + 1])), [rows]);
+
+  const renderItem = useCallback(
+    (item: HotSpotItem): ReactNode => {
+      if (item.kind === "band") {
+        return <BandHeader label={item.label} color={item.color} pad={pad} dark={dark} />;
+      }
+      const selected = item.row.unitNumber === selectedUnit;
+      return (
+        <RankRow
+          row={item.row}
+          rank={rankOf.get(item.row.unitNumber) ?? 0}
+          selected={selected}
           highlightSelection={false}
           nowMs={nowMs}
           pad={pad}
+          dark={dark}
+          onPress={() => onSelectUnit(selected ? null : item.row.unitNumber)}
+          onShowOnMap={() => showOnMap(item.row.unitNumber)}
         />
-      </View>
-    );
+      );
+    },
+    [pad, dark, selectedUnit, rankOf, nowMs, onSelectUnit, showOnMap],
+  );
+
+  if (rows.length === 0) {
+    return {
+      kind: "static",
+      node: (
+        <View style={{ paddingHorizontal: pad }}>
+          <AppCardSurface
+            kind="panel"
+            style={{ paddingVertical: 30, paddingHorizontal: 20, alignItems: "center" }}
+          >
+            <Text className="text-navy dark:text-white" style={{ fontSize: 13, fontWeight: "700" }}>
+              {t("hotSpots.emptyTitle")}
+            </Text>
+            <Text
+              className="text-muted dark:text-white/60"
+              style={{ fontSize: 11, marginTop: 4, textAlign: "center" }}
+            >
+              {t("hotSpots.emptyBody")}
+            </Text>
+          </AppCardSurface>
+        </View>
+      ),
+    };
+  }
+
+  if (!tablet) {
+    if (selectedRow) {
+      return {
+        kind: "static",
+        node: (
+          <View style={{ paddingHorizontal: pad }}>
+            <Pressable
+              onPress={() => onSelectUnit(null)}
+              accessibilityRole="button"
+              hitSlop={8}
+              style={{ alignSelf: "flex-start", marginBottom: 8 }}
+            >
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: "600",
+                  color: dark ? "rgba(255,255,255,0.72)" : "#4C556F",
+                }}
+              >
+                ‹ {t("hotSpots.allHotSpots")}
+              </Text>
+            </Pressable>
+            <DetailPane row={selectedRow} nowMs={nowMs} />
+          </View>
+        ),
+      };
+    }
+    return {
+      kind: "rows",
+      header: <TrendStrip rows={rows} nowMs={nowMs} pad={pad} />,
+      items,
+      renderItem,
+    };
   }
 
   // Tablet: side-by-side, defaulting to the top-ranked unit.
   const detailRow = selectedRow ?? rows[0];
-  return (
-    <View>
-      <TrendStrip rows={rows} nowMs={nowMs} pad={pad} />
-      <View
-        style={{ flexDirection: "row", gap: 12, alignItems: "flex-start", paddingHorizontal: pad }}
-      >
-        <View style={{ width: 372 }}>
-          <AppCardSurface kind="panel" style={{ overflow: "hidden" }}>
-            <HotSpotList
-              rows={rows}
-              selectedUnit={detailRow.unitNumber}
-              onSelectUnit={onSelectUnit}
-              onShowOnMap={showOnMap}
-              highlightSelection
-              nowMs={nowMs}
-              pad={14}
-            />
-          </AppCardSurface>
-        </View>
-        <View style={{ flex: 1 }}>
-          <DetailPane row={detailRow} nowMs={nowMs} />
+  return {
+    kind: "static",
+    node: (
+      <View>
+        <TrendStrip rows={rows} nowMs={nowMs} pad={pad} />
+        <View
+          style={{
+            flexDirection: "row",
+            gap: 12,
+            alignItems: "flex-start",
+            paddingHorizontal: pad,
+          }}
+        >
+          <View style={{ width: 372 }}>
+            <AppCardSurface kind="panel" style={{ overflow: "hidden" }}>
+              <HotSpotList
+                rows={rows}
+                selectedUnit={detailRow.unitNumber}
+                onSelectUnit={onSelectUnit}
+                onShowOnMap={showOnMap}
+                highlightSelection
+                nowMs={nowMs}
+                pad={14}
+              />
+            </AppCardSurface>
+          </View>
+          <View style={{ flex: 1 }}>
+            <DetailPane row={detailRow} nowMs={nowMs} />
+          </View>
         </View>
       </View>
-    </View>
-  );
+    ),
+  };
 }

@@ -90,11 +90,23 @@ export const GlassHeader = memo(function GlassHeader({
   const strip = cards.slice(1);
 
   const openMenu = () => {
+    // Open immediately; the anchor fills in when the measure lands. The
+    // fallback `top`/`left` below already cover an unmeasured open.
+    //
+    // This used to open inside the measure callback plus an 80ms timer that
+    // re-asserted `setMenuOpen(true)`. `anchor` in that timer was captured from
+    // the render that built the closure, so on the FIRST open of a session it
+    // was always null and the timer always fired — and a mode tapped inside
+    // that window re-presented the modal onto its own in-flight dismissal.
+    // RCTModalHostViewComponentView's ensurePresentedOnlyIfNeeded acts on
+    // `_isPresented` immediately rather than queueing, so a swallowed
+    // transition leaves a transparent full-screen modal window on top with
+    // menuOpen === false in JS — its dismiss-on-tap backdrop then being a
+    // no-op setState. That is a permanent, touch-swallowing freeze.
+    setMenuOpen(true);
     pillRef.current?.measureInWindow((x, y, _w, h) => {
       setAnchor({ top: y + h + 6, left: Math.max(x, 12) });
-      setMenuOpen(true);
     });
-    setTimeout(() => setMenuOpen((v) => (anchor === null ? true : v)), 80);
   };
 
   return (

@@ -319,7 +319,16 @@ const en = {
     },
   },
   makeReady: {
-    modes: { turns: "Turns", schedule: "Schedule", history: "History" },
+    modes: { turns: "Turns", schedule: "Schedule", history: "History", trend: "Trend" },
+    trend: {
+      started: "Started",
+      finished: "Finished",
+      onBoard: "On board",
+      chartA11y:
+        "Turn throughput by month: {{started}} started, {{finished}} finished, {{open}} still on the board.",
+      footnote:
+        "A turn starts at its first reported work order and finishes when all six stages are complete. One turn per unit, so a unit that turned twice counts once.",
+    },
     modeMenuA11y: "Viewing {{mode}}; change mode",
     filters: {
       all: "All",
@@ -957,7 +966,16 @@ const es: typeof en = {
     },
   },
   makeReady: {
-    modes: { turns: "Preparaciones", schedule: "Calendario", history: "Historial" },
+    modes: { turns: "Preparaciones", schedule: "Calendario", history: "Historial", trend: "Tendencia" },
+    trend: {
+      started: "Iniciadas",
+      finished: "Terminadas",
+      onBoard: "En tablero",
+      chartA11y:
+        "Rendimiento de preparaciones por mes: {{started}} iniciadas, {{finished}} terminadas, {{open}} aún en el tablero.",
+      footnote:
+        "Una preparación empieza en su primera orden reportada y termina cuando las seis etapas están completas. Una por unidad, así que una unidad que se preparó dos veces cuenta una vez.",
+    },
     modeMenuA11y: "Viendo {{mode}}; cambiar modo",
     filters: {
       all: "Todas",

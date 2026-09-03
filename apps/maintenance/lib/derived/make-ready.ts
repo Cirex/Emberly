@@ -7,6 +7,7 @@
 export {
   MAKE_READY_STAGES,
   buildMakeReadyGroups,
+  buildTurnThroughput,
   currentStageOf,
   earliestReportedDate,
   isFullyCompletedTurn,
@@ -21,6 +22,7 @@ export {
 } from "@emberly/core";
 export type {
   MakeReadyGroup,
+  TurnThroughputMonth,
   MakeReadyQuickFilter,
   MakeReadyStage,
   MoveInUrgency,

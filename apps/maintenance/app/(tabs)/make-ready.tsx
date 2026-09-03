@@ -9,6 +9,7 @@ import { HistoryList } from "@/components/work-orders/make-ready/HistoryList";
 import { MakeReadyBoard } from "@/components/work-orders/make-ready/MakeReadyBoard";
 import { MakeReadyModePill, type MakeReadyMode } from "@/components/work-orders/make-ready/MakeReadyModePill";
 import { ScheduleList } from "@/components/work-orders/make-ready/ScheduleList";
+import { TurnTrend } from "@/components/work-orders/make-ready/TurnTrend";
 import { isFullyCompletedTurn, unitIsReady } from "@/lib/derived/make-ready";
 import { useDerivedSnapshot } from "@/lib/hooks/use-derived-snapshot";
 import { screenHPad } from "@/theme/tokens";
@@ -70,7 +71,10 @@ export default function MakeReadyScreen() {
       ? snapshot.makeReadyGroups.length
       : mode === "schedule"
         ? scheduledCount
-        : completedTurns.length;
+        : mode === "history"
+          ? completedTurns.length
+          // Trend counts the whole corpus it charts, not a filtered slice.
+          : snapshot.makeReadyGroups.length;
 
   return (
     <View style={{ flex: 1 }}>
@@ -113,8 +117,12 @@ export default function MakeReadyScreen() {
               />
             ) : mode === "schedule" ? (
               <ScheduleList groups={scheduleGroups} nowMs={nowMs} pad={pad} />
-            ) : (
+            ) : mode === "history" ? (
               <HistoryList groups={completedTurns} nowMs={nowMs} pad={pad} />
+            ) : (
+              // The FULL group list, not completedTurns — the trend needs the
+              // unfinished turns to have anything to show as "on the board".
+              <TurnTrend groups={snapshot.makeReadyGroups} nowMs={nowMs} pad={pad} />
             )}
           </View>
         }

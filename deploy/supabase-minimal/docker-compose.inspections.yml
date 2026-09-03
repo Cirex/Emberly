@@ -1,0 +1,382 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# kraken-inspections — minimal Supabase. SEVEN services, down from eight.
+#
+# Inspections is NOT Emberly. It genuinely uses almost the whole platform, so
+# there is far less to cut here. Verified against the source:
+#
+#   auth      19 hits  signInWithPassword / signUp / signInWithOtp / signOut
+#                      + Apple OAuth is configured and enabled
+#   realtime  14 hits  useRealtimeSync.ts, useOrganizationPresence.ts
+#                      (5 tables are in the supabase_realtime publication)
+#   storage    2 hits  createSignedUrl / remove on the photo bucket
+#   rpc        7 hits  PostgREST RPC — no extra service needed
+#   functions  0 hits  edge-runtime is NOT needed
+#
+# ONLY imgproxy is removed: 0 requests in 30 days, 15 total log lines ever.
+# Doing so requires ENABLE_IMAGE_TRANSFORMATION=false (it is currently true),
+# which is a real behaviour change — see the note on `storage` below.
+#
+# ⚠ TWO NON-OBVIOUS FACTS THIS DEPLOYMENT DEPENDS ON — do not "fix" either:
+#
+#   1. POSTGRES LISTENS ON 55322 INSIDE THE CONTAINER, not 5432. Confirmed with
+#      `show port`. Every service connects to db:55322. Change it to 5432 and
+#      the entire stack fails to reach the database.
+#   2. supavisor is the ONLY external path to Postgres (db publishes nothing),
+#      so it is REQUIRED for migrations — `supabase db push --db-url ...`.
+#      It looks idle in pg_stat_activity because migrations connect briefly.
+#
+# THE depends_on RULE: only ever depend on `db`. A depends_on aimed at an
+# optional service means the stack refuses to start the day you disable it —
+# `kong is missing dependency studio` took a gateway down on this very host.
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+
+services:
+  db:
+    image: supabase/postgres:17.6.1.156
+    <<: [*hardening, *logging]
+    mem_limit: 1g
+    # No published port. External access is via supavisor only.
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - "port=${POSTGRES_PORT:-55322}"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_PORT: ${POSTGRES_PORT:-55322}
+      JWT_SECRET: ${JWT_SECRET:?required}
+      JWT_EXP: ${JWT_EXPIRY:-3600}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -h localhost -p ${POSTGRES_PORT:-55322}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  auth:
+    image: supabase/gotrue:v2.189.0
+    <<: [*hardening, *logging]
+    mem_limit: 256m
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL:?e.g. https://db.inspections.krkn.app}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT:-55322}/${POSTGRES_DB:-postgres}
+      GOTRUE_SITE_URL: ${SITE_URL:?e.g. https://inspections.krkn.app}
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS:-}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
+      GOTRUE_JWT_AUD: authenticated
+      # Compose-set in the live stack. Omitting it makes GoTrue mint tokens
+      # with a different `iss`, which can invalidate existing sessions.
+      GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL}/auth/v1
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP:-false}
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      # Live has phone auth ON — do not drop these without checking.
+      GOTRUE_EXTERNAL_PHONE_ENABLED: ${ENABLE_PHONE_SIGNUP:-true}
+      GOTRUE_SMS_AUTOCONFIRM: ${ENABLE_PHONE_AUTOCONFIRM:-true}
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: ${ENABLE_ANONYMOUS_USERS:-false}
+      GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM:-false}
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
+      # ⚠ The live stack points these at host `supabase-mail` with
+      # fake_mail_user / fake_mail_password — and NO such container exists.
+      # Magic-link (signInWithOtp), recovery and confirmation mail are
+      # therefore silently failing today. Point these at a real SMTP relay.
+      GOTRUE_SMTP_HOST: ${SMTP_HOST:?real SMTP host — the old value was a dead stub}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT:-587}
+      GOTRUE_SMTP_USER: ${SMTP_USER:-}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS:-}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL:-}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-}
+      # Apple sign-in — in use (client id krkn.inspections).
+      GOTRUE_EXTERNAL_APPLE_ENABLED: ${APPLE_ENABLED:-true}
+      # ⚠ NOT in the live .env — inline in the live compose instead, so a bare
+      # ${APPLE_CLIENT_ID} renders EMPTY and Apple sign-in breaks silently.
+      GOTRUE_EXTERNAL_APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:?copy from live compose, e.g. krkn.inspections}
+      GOTRUE_EXTERNAL_APPLE_SECRET: ${APPLE_SECRET:?copy from live compose}
+      GOTRUE_EXTERNAL_APPLE_REDIRECT_URI: ${API_EXTERNAL_URL}/auth/v1/callback
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  rest:
+    image: postgrest/postgrest:v14.12
+    <<: [*hardening, *logging]
+    mem_limit: 256m
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT:-55322}/${POSTGRES_DB:-postgres}
+      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS:-public,graphql_public}
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
+      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY:-3600}
+      PGRST_DB_MAX_ROWS: ${PGRST_DB_MAX_ROWS:-1000}
+      PGRST_DB_EXTRA_SEARCH_PATH: ${PGRST_DB_EXTRA_SEARCH_PATH:-public}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  storage:
+    image: supabase/storage-api:v1.60.4
+    <<: [*hardening, *logging]
+    mem_limit: 512m
+    depends_on:
+      db: { condition: service_healthy }
+      # NOT depending on rest or imgproxy — storage reaches rest over the
+      # network at call time, and imgproxy is gone.
+    environment:
+      ANON_KEY: ${ANON_KEY:?required}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY:?required}
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+      POSTGREST_URL: http://rest:3000
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT:-55322}/${POSTGRES_DB:-postgres}
+      FILE_SIZE_LIMIT: ${FILE_SIZE_LIMIT:-52428800}
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      STORAGE_PUBLIC_URL: ${API_EXTERNAL_URL}
+      REQUEST_ALLOW_X_FORWARDED_PATH: "true"
+      # Compose-set live — needed if anything uses storage's S3 endpoint.
+      S3_PROTOCOL_ACCESS_KEY_ID: ${S3_PROTOCOL_ACCESS_KEY_ID:-}
+      S3_PROTOCOL_ACCESS_KEY_SECRET: ${S3_PROTOCOL_ACCESS_KEY_SECRET:-}
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+      # ⚠ CHANGED FROM LIVE. The running stack has this TRUE with
+      # IMGPROXY_URL=http://imgproxy:5001. imgproxy logged 0 requests in 30
+      # days (15 lines total, all boot), so nothing calls /render/image — but
+      # if you ever add a transform, set this back to true and restore the
+      # imgproxy service.
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+    volumes:
+      - storage-data:/var/lib/storage
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  realtime:
+    image: supabase/realtime:v2.102.3
+    <<: [*hardening, *logging]
+    mem_limit: 512m
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: ${POSTGRES_PORT:-55322}
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB:-postgres}
+      DB_AFTER_CONNECT_QUERY: SET search_path TO _realtime
+      DB_ENC_KEY: ${REALTIME_DB_ENC_KEY:?required}
+      API_JWT_SECRET: ${JWT_SECRET}
+      METRICS_JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?required}
+      APP_NAME: realtime
+      SEED_SELF_HOST: "true"
+      RUN_JANITOR: "true"
+      DISABLE_HEALTHCHECK_LOGGING: "true"
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: "10000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sSf http://localhost:4000/api/tenants/realtime-dev/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  supavisor:
+    image: supabase/supavisor:2.9.5
+    <<: [*hardening, *logging]
+    mem_limit: 512m
+    depends_on:
+      db: { condition: service_healthy }
+    # REQUIRED — the only external route to Postgres, and therefore the
+    # migration path (`supabase db push --db-url ...`).
+    ports:
+      - "${POOLER_SESSION_PORT:-55322}:5432"      # session mode — migrations
+      - "${POOLER_TRANSACTION_PORT:-55329}:6543"  # transaction mode
+    environment:
+      PORT: 4000
+      POSTGRES_HOST: db
+      POSTGRES_PORT: ${POSTGRES_PORT:-55322}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # NOTE the `_supabase` database — supavisor keeps its own metadata there.
+      # It already exists on a live volume; a FRESH deploy must create it.
+      DATABASE_URL: ecto://supabase_admin:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT:-55322}/_supabase
+      CLUSTER_POSTGRES: "true"
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      VAULT_ENC_KEY: ${VAULT_ENC_KEY:?required}
+      API_JWT_SECRET: ${JWT_SECRET}
+      METRICS_JWT_SECRET: ${JWT_SECRET}
+      REGION: local
+      POOLER_TENANT_ID: ${POOLER_TENANT_ID:?must match the migration URL username}
+      POOLER_POOL_MODE: transaction
+      POOLER_DEFAULT_POOL_SIZE: ${POOLER_DEFAULT_POOL_SIZE:-20}
+      POOLER_MAX_CLIENT_CONN: ${POOLER_MAX_CLIENT_CONN:-100}
+      DB_POOL_SIZE: ${POOLER_DB_POOL_SIZE:-5}
+      RLIMIT_NOFILE: "100000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sSf http://localhost:4000/api/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  kong:
+    image: kong/kong:3.9.1
+    <<: [*hardening, *logging]
+    mem_limit: 512m
+    depends_on:
+      db: { condition: service_healthy }
+    ports:
+      - "${KONG_HTTP_PORT:-55321}:8000"
+      - "${KONG_HTTPS_PORT:-55764}:8443"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_DNS_NOT_FOUND_TTL: "1"
+      KONG_ROUTER_FLAVOR: expressions
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      # Stock is one worker per core (~346 MiB here). Two is ample.
+      KONG_NGINX_WORKER_PROCESSES: ${KONG_WORKERS:-2}
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+    configs:
+      - source: kong_config
+        target: /home/kong/kong.yml
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+configs:
+  # Inlined so the stack is one file. NOTE this includes the auth-v1 and
+  # realtime-v1 routes that Emberly's kong.yml is missing.
+  kong_config:
+    content: |
+      _format_version: "2.1"
+      _transform: true
+      consumers:
+        - username: anon
+          keyauth_credentials:
+            - key: ${ANON_KEY}
+        - username: service_role
+          keyauth_credentials:
+            - key: ${SERVICE_ROLE_KEY}
+      acls:
+        - consumer: anon
+          group: anon
+        - consumer: service_role
+          group: admin
+      services:
+        - name: auth-v1
+          url: http://auth:9999/
+          routes:
+            - name: auth-v1-route
+              strip_path: true
+              paths: [/auth/v1/]
+          plugins:
+            - name: cors
+        - name: rest-v1
+          url: http://rest:3000/
+          routes:
+            - name: rest-v1-route
+              strip_path: true
+              paths: [/rest/v1/]
+          plugins:
+            - name: cors
+            - name: key-auth
+              config: { hide_credentials: true, key_names: [apikey] }
+            - name: acl
+              config: { hide_groups_header: true, allow: [admin, anon] }
+        - name: storage-v1
+          url: http://storage:5000/
+          routes:
+            - name: storage-v1-route
+              strip_path: true
+              paths: [/storage/v1/]
+          plugins:
+            - name: cors
+        - name: graphql-v1
+          url: http://rest:3000/rpc/graphql
+          routes:
+            - name: graphql-v1-route
+              strip_path: true
+              paths: [/graphql/v1]
+          plugins:
+            - name: cors
+            - name: key-auth
+              config: { hide_credentials: false, key_names: [apikey] }
+            - name: request-transformer
+              config: { replace: { uri: /rpc/graphql } }
+            - name: acl
+              config: { hide_groups_header: true, allow: [admin, anon] }
+        - name: realtime-v1
+          url: http://realtime:4000/socket/
+          protocol: http
+          routes:
+            - name: realtime-v1-route
+              strip_path: true
+              paths: [/realtime/v1/]
+          plugins:
+            - name: cors
+            - name: key-auth
+              config: { hide_credentials: false, key_names: [apikey] }
+            - name: acl
+              config: { hide_groups_header: true, allow: [admin, anon] }
+
+volumes:
+  db-data:
+  storage-data:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DROPPED vs the live stack:  imgproxy only  (0 requests in 30 days)
+# ALREADY GONE:               studio, meta
+# NEVER PRESENT / NOT NEEDED: edge-runtime (0 functions.invoke), analytics
+#
+# EXACT PORTS (defaults match the live deployment):
+#   kong  8000 -> 55321        kong  8443 -> 55764
+#   pool  5432 -> 55322        pool  6543 -> 55329
+#   postgres listens INTERNALLY on 55322 — do not change to 5432
+#
+# For a SECOND instance on this host, override the four *_PORT vars; nothing
+# else collides (no container_name, plain named volumes).
+# ─────────────────────────────────────────────────────────────────────────────

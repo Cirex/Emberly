@@ -37,7 +37,10 @@ export function stagesOf(title: string): MakeReadyStage[] {
   if (t.includes("trash out")) stages.push("trashOut");
   if (t.includes("punch")) stages.push("punch");
   if (t.includes("flooring")) stages.push("flooring");
-  if (t.includes("final unit walk/inspection") || (t.includes("final") && t.includes("inspection"))) {
+  if (
+    t.includes("final unit walk/inspection") ||
+    (t.includes("final") && t.includes("inspection"))
+  ) {
     stages.push("finalInspection");
   }
   if (t.includes("touch up painting") || t.includes("touch up paint") || t.includes("cleaning")) {
@@ -50,12 +53,7 @@ export function stagesOf(title: string): MakeReadyStage[] {
 // ── Urgency ─────────────────────────────────────────────────────────────────
 
 export type MoveInUrgency =
-  | "missingDate"
-  | "overdue"
-  | "today"
-  | "nextSevenDays"
-  | "nextFourteenDays"
-  | "scheduled";
+  "missingDate" | "overdue" | "today" | "nextSevenDays" | "nextFourteenDays" | "scheduled";
 
 /** Bracket the move-in date: signed calendar days from today. */
 export function moveInUrgency(moveInAt: number | null, nowMs: number): MoveInUrgency {
@@ -218,7 +216,12 @@ export function currentStageOf(g: MakeReadyGroup): MakeReadyStage | null {
 
 export type MakeReadyQuickFilter = "all" | "atRisk" | "dueThisWeek" | "incomplete" | "noMoveInDate";
 
-const AT_RISK_URGENCIES = new Set<MoveInUrgency>(["missingDate", "overdue", "today", "nextSevenDays"]);
+const AT_RISK_URGENCIES = new Set<MoveInUrgency>([
+  "missingDate",
+  "overdue",
+  "today",
+  "nextSevenDays",
+]);
 
 export function quickFilterIncludes(f: MakeReadyQuickFilter, g: MakeReadyGroup): boolean {
   switch (f) {
@@ -256,7 +259,10 @@ export function quickFilterCounts(groups: MakeReadyGroup[]): Record<MakeReadyQui
 /** A turn counts as "fully completed" only when every stage slot is claimed
  *  AND completed — five of six done is still an open turn. */
 export function isFullyCompletedTurn(g: MakeReadyGroup): boolean {
-  return MAKE_READY_STAGES.every((stage) => g.stages[stage] !== null) && g.completedStageCount === MAKE_READY_STAGES.length;
+  return (
+    MAKE_READY_STAGES.every((stage) => g.stages[stage] !== null) &&
+    g.completedStageCount === MAKE_READY_STAGES.length
+  );
 }
 
 /** Max completedAt across the stage orders — null if any slot or date is
@@ -279,4 +285,97 @@ export function earliestReportedDate(g: MakeReadyGroup): number | null {
     if (earliest === null || wo.reportedAt < earliest) earliest = wo.reportedAt;
   }
   return earliest;
+}
+
+// ── Throughput ──────────────────────────────────────────────────────────────
+
+/** One month of turn churn: how many turns arrived, how many cleared, and the
+ *  resulting board size at the month's close. */
+export interface TurnThroughputMonth {
+  /** First millisecond of the month, local time. */
+  monthMs: number;
+  /** Turns whose earliest reported date falls in this month. */
+  started: number;
+  /** Turns whose last stage completed in this month. */
+  finished: number;
+  /** started − finished for the month. */
+  net: number;
+  /** Turns started on or before this month's close and not yet finished. */
+  openAtClose: number;
+}
+
+/** Local month index — year*12+month, so month arithmetic never crosses a DST
+ *  or timezone seam the way epoch division would. */
+function monthIndex(ms: number): number {
+  const d = new Date(ms);
+  return d.getFullYear() * 12 + d.getMonth();
+}
+
+function monthStartMs(index: number): number {
+  return new Date(Math.floor(index / 12), index % 12, 1).getTime();
+}
+
+/**
+ * Monthly arrivals and clearances for the make-ready board, ending at the month
+ * containing `nowMs` and running back `months` buckets.
+ *
+ * A turn STARTS at `earliestReportedDate` and FINISHES at `latestCompletedDate`
+ * — the same two primitives the board and history already use, so the trend can
+ * never disagree with the rows a technician is looking at.
+ *
+ * ONE GROUP PER UNIT. `buildMakeReadyGroups` keys on unit number alone, so a
+ * unit that turned twice this year is a single group with one start and one
+ * finish. That undercounts churn slightly on units with repeat turns; it is the
+ * price of staying consistent with the board, and it is the board that people
+ * act on. Do not "fix" it here without changing the grouping itself.
+ *
+ * `openAtClose` is computed from the running balance rather than counted per
+ * month, so it always equals cumulative started − cumulative finished.
+ */
+export function buildTurnThroughput(
+  groups: MakeReadyGroup[],
+  nowMs: number,
+  months = 12,
+): TurnThroughputMonth[] {
+  const endIndex = monthIndex(nowMs);
+  const startIndex = endIndex - (months - 1);
+
+  const started = new Map<number, number>();
+  const finished = new Map<number, number>();
+  // Turns that began BEFORE the window still sit on the board inside it.
+  let openingBalance = 0;
+
+  for (const g of groups) {
+    const startedAt = earliestReportedDate(g);
+    if (startedAt === null) continue;
+    const sIdx = monthIndex(startedAt);
+    const doneAt = isFullyCompletedTurn(g) ? latestCompletedDate(g) : null;
+    const fIdx = doneAt === null ? null : monthIndex(doneAt);
+
+    if (sIdx >= startIndex && sIdx <= endIndex) {
+      started.set(sIdx, (started.get(sIdx) ?? 0) + 1);
+    } else if (sIdx < startIndex && (fIdx === null || fIdx >= startIndex)) {
+      // Started before the window and still open when it opened.
+      openingBalance += 1;
+    }
+    if (fIdx !== null && fIdx >= startIndex && fIdx <= endIndex) {
+      finished.set(fIdx, (finished.get(fIdx) ?? 0) + 1);
+    }
+  }
+
+  const out: TurnThroughputMonth[] = [];
+  let running = openingBalance;
+  for (let i = startIndex; i <= endIndex; i += 1) {
+    const s = started.get(i) ?? 0;
+    const f = finished.get(i) ?? 0;
+    running += s - f;
+    out.push({
+      monthMs: monthStartMs(i),
+      started: s,
+      finished: f,
+      net: s - f,
+      openAtClose: running,
+    });
+  }
+  return out;
 }

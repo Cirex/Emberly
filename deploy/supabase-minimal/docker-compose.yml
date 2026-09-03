@@ -1,0 +1,272 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Supabase — minimal, hardened, multi-tenant-safe. Built for Coolify.
+#
+# FIVE services instead of the stock eleven: db, auth, rest, storage, kong.
+# Dropped: studio, meta, imgproxy, realtime, edge-runtime, supavisor, analytics.
+# Measured on cloud.krkn.app, the stock stack costs ~955-1419 MiB per instance;
+# this lands near ~600 MiB. Every dropped service is listed at the bottom with
+# the one question that tells you whether you need it back.
+#
+# DESIGNED TO BE DEPLOYED MANY TIMES ON ONE HOST:
+#   · No host port publishing at all — nothing to collide. Coolify's proxy
+#     reaches kong over the shared network via SERVICE_FQDN_KONG_8000.
+#   · No container_name anywhere — Coolify namespaces per project. Hardcoding
+#     one makes the second deploy fail with a name conflict.
+#   · Plain named volumes — Coolify prefixes them per project.
+#   · mem_limit on every service, so one tenant cannot starve its neighbours.
+#
+# THE depends_on RULE, learned the hard way: only ever depend on `db`. A
+# depends_on pointing at an OPTIONAL service means the whole stack refuses to
+# start the day you disable that service — `kong is missing dependency studio`
+# took an API gateway down. Nothing here depends on anything optional.
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-logging: &logging
+  # dockerd on this host has grown to ~1.8 GB; unbounded json logs are part of
+  # how that happens. Cap every container.
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+
+services:
+  # ── Postgres ───────────────────────────────────────────────────────────────
+  db:
+    image: supabase/postgres:17.6.1.156
+    <<: [*hardening, *logging]
+    mem_limit: 1g
+    # NO ports: — the database is never reachable from outside the project
+    # network. Reach it with `docker compose exec db psql`, or an SSH tunnel.
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong password}
+      POSTGRES_HOST: /var/run/postgresql
+      POSTGRES_PORT: 5432
+      JWT_SECRET: ${JWT_SECRET:?required}
+      JWT_EXP: ${JWT_EXPIRY:-3600}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    configs:
+      # Sets the JWT GUCs the SQL layer reads. The supabase/postgres image
+      # already creates anon / authenticated / service_role / authenticator /
+      # supabase_auth_admin / supabase_storage_admin, so this is all the extra
+      # bootstrap a minimal stack needs. Runs on FIRST INIT only — an existing
+      # db-data volume skips it (see the adoption note in the README).
+      - source: init_jwt
+        target: /docker-entrypoint-initdb.d/99-jwt.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -h localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── GoTrue (auth) ──────────────────────────────────────────────────────────
+  auth:
+    image: supabase/gotrue:v2.189.0
+    <<: [*hardening, *logging]
+    mem_limit: 256m
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${SERVICE_FQDN_KONG_8000}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      GOTRUE_SITE_URL: ${SITE_URL:-http://localhost:3000}
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS:-}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      # Closed by default. Open it deliberately, per deployment.
+      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP:-true}
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP:-true}
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: ${ENABLE_ANONYMOUS_USERS:-false}
+      GOTRUE_EXTERNAL_PHONE_ENABLED: ${ENABLE_PHONE_SIGNUP:-false}
+      # Leave false in production: autoconfirm lets anyone register an address
+      # they do not control.
+      GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM:-false}
+      GOTRUE_SMTP_HOST: ${SMTP_HOST:-}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT:-587}
+      GOTRUE_SMTP_USER: ${SMTP_USER:-}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS:-}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL:-}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── PostgREST (the data API) ───────────────────────────────────────────────
+  rest:
+    image: postgrest/postgrest:v14.12
+    <<: [*hardening, *logging]
+    mem_limit: 256m
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      # Comma-separated. This is the lever for putting several apps in ONE
+      # instance: give each its own schema and select it client-side with
+      # supabase-js `.schema('name')`. Note they then share auth.users.
+      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS:-public,graphql_public}
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
+      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY:-3600}
+      # Bounds an unfiltered SELECT so one bad query cannot pull the whole table.
+      PGRST_DB_MAX_ROWS: ${PGRST_DB_MAX_ROWS:-1000}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Storage (OPTIONAL — delete this service if you store no files) ─────────
+  storage:
+    image: supabase/storage-api:v1.60.4
+    <<: [*hardening, *logging]
+    mem_limit: 512m
+    depends_on:
+      db: { condition: service_healthy }
+      # Deliberately NOT depending on rest or imgproxy. storage reaches rest
+      # over the network at call time; a startup dependency here is the exact
+      # shape of landmine described at the top of this file.
+    environment:
+      ANON_KEY: ${ANON_KEY:?required}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY:?required}
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      FILE_SIZE_LIMIT: ${FILE_SIZE_LIMIT:-52428800}
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: ${REGION:-local}
+      GLOBAL_S3_BUCKET: ${GLOBAL_S3_BUCKET:-stub}
+      # false is what lets us drop the imgproxy container entirely.
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+    volumes:
+      - storage-data:/var/lib/storage
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Kong (the only ingress) ────────────────────────────────────────────────
+  kong:
+    image: kong/kong:3.9.1
+    <<: [*hardening, *logging]
+    mem_limit: 512m
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      # Coolify reads this and issues the domain + TLS. It is also the only
+      # reason no `ports:` block is needed — which is what makes N copies of
+      # this file coexist on one host.
+      SERVICE_FQDN_KONG_8000: ${SERVICE_FQDN_KONG_8000:-/}
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      # Stock Kong spawns one worker per core (4 here) and lands near 374 MiB.
+      # Two workers is ample for this traffic and roughly halves that.
+      KONG_NGINX_WORKER_PROCESSES: ${KONG_WORKERS:-2}
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+    configs:
+      - source: kong_config
+        target: /home/kong/kong.yml
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+configs:
+  # Inlined so the stack is a SINGLE file — no ./volumes/api/kong.yml to carry
+  # around, which is what makes this repeatable in Coolify.
+  kong_config:
+    content: |
+      _format_version: "2.1"
+      _transform: true
+      consumers:
+        - username: anon
+          keyauth_credentials:
+            - key: ${ANON_KEY}
+        - username: service_role
+          keyauth_credentials:
+            - key: ${SERVICE_ROLE_KEY}
+      acls:
+        - consumer: anon
+          group: anon
+        - consumer: service_role
+          group: admin
+      services:
+        - name: auth-v1
+          url: http://auth:9999/
+          routes:
+            - name: auth-v1-route
+              strip_path: true
+              paths: [/auth/v1/]
+          plugins:
+            - name: cors
+        - name: rest-v1
+          url: http://rest:3000/
+          routes:
+            - name: rest-v1-route
+              strip_path: true
+              paths: [/rest/v1/]
+          plugins:
+            - name: cors
+            - name: key-auth
+              config: { hide_credentials: true, key_names: [apikey] }
+            - name: acl
+              config: { hide_groups_header: true, allow: [admin, anon] }
+        - name: storage-v1
+          url: http://storage:5000/
+          routes:
+            - name: storage-v1-route
+              strip_path: true
+              paths: [/storage/v1/]
+          plugins:
+            - name: cors
+  init_jwt:
+    content: |
+      ALTER DATABASE ${POSTGRES_DB:-postgres} SET "app.settings.jwt_secret" TO '${JWT_SECRET}';
+      ALTER DATABASE ${POSTGRES_DB:-postgres} SET "app.settings.jwt_exp" TO '${JWT_EXPIRY:-3600}';
+
+volumes:
+  db-data:
+  storage-data:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT WAS DROPPED, AND THE QUESTION THAT BRINGS IT BACK
+#
+#   studio      (~161 MiB)  A browser GUI. Do you administer this database from
+#                           a browser 24/7? Run Studio locally instead.
+#   meta        (~57 MiB)   Only exists to serve studio. Goes with it.
+#   realtime    (~55 MiB)   Do you use .channel() / postgres_changes anywhere?
+#   imgproxy    (~13 MiB)   Do you call /render/image transforms? (needs
+#                           ENABLE_IMAGE_TRANSFORMATION=true above)
+#   edge-runtime            Do you deploy Supabase Edge Functions?
+#   supavisor   (~68 MiB)   Do external clients need a POOLED connection
+#                           string? PostgREST pools internally already.
+#   analytics/vector        Logflare. Almost never wanted self-hosted.
+#
+# Add one back by copying its block from the upstream compose — but wire its
+# depends_on to `db` only, never let another service depend on it.
+# ─────────────────────────────────────────────────────────────────────────────

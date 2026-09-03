@@ -8,12 +8,13 @@ import { MUTED, NAVY } from "@/theme/tokens";
 import { useAccentPalette } from "@/lib/hooks/use-accent";
 
 /** The Make Ready screen's view modes (local to the tab, not persisted). */
-export type MakeReadyMode = "turns" | "schedule" | "history";
+export type MakeReadyMode = "turns" | "schedule" | "history" | "trend";
 
 const MODES: { id: MakeReadyMode; labelKey: string; icon: string }[] = [
   { id: "turns", labelKey: "makeReady.modes.turns", icon: "construct-outline" },
   { id: "schedule", labelKey: "makeReady.modes.schedule", icon: "calendar-outline" },
   { id: "history", labelKey: "makeReady.modes.history", icon: "time-outline" },
+  { id: "trend", labelKey: "makeReady.modes.trend", icon: "trending-up-outline" },
 ];
 
 /**

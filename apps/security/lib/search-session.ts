@@ -1,48 +1,73 @@
 /**
  * When a tenant-search counts as a NEW lookup.
  *
- * `unit_lookup_performed` used to fire on one condition only: the search box
- * going empty → non-empty. That undercounts badly, because the box is rarely
- * cleared. A guard who types over the previous unit all shift — select-all,
- * type, read, select-all, type — registers ONE event for the whole shift, and
- * the metric reads as engagement rather than lookups.
+ * `unit_lookup_performed` originally fired on one condition: the search box
+ * going empty → non-empty. The box is rarely cleared, so a guard who works by
+ * typing over the previous unit registered ONE event for an entire shift, and
+ * the metric read as engagement rather than lookups.
  *
- * So a session also ends when the guard stops typing for a while. Two cars,
- * two minutes apart, are two lookups whether or not the box was cleared in
- * between.
+ * A session therefore ends TWO ways, and both need a timeout:
  *
- * NO TIMER, deliberately. A `setTimeout` would be the obvious way to express
- * "idle for N seconds", but React Native throttles and suspends timers while
- * the app is backgrounded — exactly the gap we most want to count as a session
- * break. Comparing timestamps on the next keystroke is immune to that: however
- * long the phone was asleep, the arithmetic is the same when it wakes.
+ *   · IDLE — the box sits untouched past `SEARCH_SESSION_IDLE_MS`. Two cars,
+ *     a while apart, are two lookups whether or not the box was cleared.
+ *   · CLEARED — the box goes blank and STAYS blank past
+ *     `SEARCH_SESSION_REOPEN_MS`.
+ *
+ * That second timeout is not fussiness. Treating a clear as an instant end
+ * double-counts the commonest correction there is: type a wrong digit,
+ * backspace it, type the right one. The box passes through empty in ~200ms,
+ * and without the timeout that single lookup scored as two — measured, not
+ * assumed. Requiring the box to stay empty briefly separates "I mistyped"
+ * from "I'm done with that unit": a deliberate clear is followed by a glance
+ * at the next car, not an instant keystroke.
+ *
+ * NO setTimeout, deliberately. That is the obvious way to express both
+ * thresholds, but React Native throttles and suspends timers while the app is
+ * backgrounded — precisely the gap most worth counting as a break. Comparing
+ * timestamps on the next keystroke is immune: however long the phone slept,
+ * the arithmetic is the same when it wakes.
  */
 
 /**
  * How long the box may sit untouched before the next keystroke opens a new
  * session.
  *
- * Two minutes is a judgement call, tuned to the gate: long enough that a guard
- * reading a result, talking to a driver, then refining the SAME search is not
- * double-counted; short enough that the next car is its own lookup. Capture
- * carries `after_idle` so the split between the two reset paths is measurable —
- * check it before moving this number.
+ * 15s is tuned to the gate: a guard moves car to car quickly, and a pause this
+ * long means the previous interaction is over. It is deliberately tight — the
+ * cost is that reading a result for 15s and then refining the SAME search
+ * scores twice. `after_idle` on the event makes that rate measurable.
  */
-export const SEARCH_SESSION_IDLE_MS = 120_000;
+export const SEARCH_SESSION_IDLE_MS = 15_000;
+
+/**
+ * How long the box must STAY blank for a clear to end the session. Under this,
+ * the blank is treated as mid-edit and the session continues.
+ *
+ * 1s comfortably covers backspace-and-retype (~200-400ms measured) while
+ * staying well under any deliberate clear, which involves looking away from
+ * the screen.
+ */
+export const SEARCH_SESSION_REOPEN_MS = 1_000;
 
 export interface SearchSessionState {
   /** Whether the box held a non-blank query at the last evaluation. */
   active: boolean;
   /** Timestamp of the last non-blank input. 0 before any. */
   lastInputAt: number;
+  /** When the box most recently went blank. 0 when it has never been blank. */
+  emptiedAt: number;
 }
 
-export const EMPTY_SEARCH_SESSION: SearchSessionState = { active: false, lastInputAt: 0 };
+export const EMPTY_SEARCH_SESSION: SearchSessionState = {
+  active: false,
+  lastInputAt: 0,
+  emptiedAt: 0,
+};
 
 export interface SearchSessionStep {
   /** Fire `unit_lookup_performed` for this input. */
   started: boolean;
-  /** True when the session opened because the box went idle rather than empty. */
+  /** True when the session opened on the idle rule rather than a clear. */
   afterIdle: boolean;
   next: SearchSessionState;
 }
@@ -50,33 +75,43 @@ export interface SearchSessionStep {
 /**
  * Fold one input event into the session.
  *
- * Blank counts as empty — `"   "` ends a session exactly as `""` does, so a
- * lingering space cannot hold one open. Clearing the box (ⓧ or backspace) and
- * going idle are the two ways a session ends; they are equivalent here, and
- * only `afterIdle` distinguishes them for reporting.
+ * Blank counts as empty — `"   "` behaves exactly as `""`, so a lingering space
+ * can neither hold a session open nor start one. ⓧ and backspace are
+ * indistinguishable here by design: both only drive the value to empty.
  */
 export function advanceSearchSession(
   prev: SearchSessionState,
   rawQuery: string,
   nowMs: number,
   idleMs: number = SEARCH_SESSION_IDLE_MS,
+  reopenMs: number = SEARCH_SESSION_REOPEN_MS,
 ): SearchSessionStep {
   const hasQuery = rawQuery.trim().length > 0;
 
   if (!hasQuery) {
-    // Session over. `lastInputAt` is kept rather than zeroed: it is only ever
-    // read alongside `active`, and preserving it keeps this a pure fold.
     return {
       started: false,
       afterIdle: false,
-      next: { active: false, lastInputAt: prev.lastInputAt },
+      next: {
+        active: false,
+        lastInputAt: prev.lastInputAt,
+        // Stamped only on the TRANSITION into blank. Re-stamping on every
+        // blank keystroke would keep pushing the clock forward and hold a
+        // cleared session open forever.
+        emptiedAt: prev.active ? nowMs : prev.emptiedAt,
+      },
     };
   }
 
+  // Typed straight through a long pause, box never cleared.
   const afterIdle = prev.active && nowMs - prev.lastInputAt >= idleMs;
+  // Re-opened after a blank that lasted. `emptiedAt === 0` is the first ever
+  // input, which is always a new session rather than a resumption.
+  const afterClear = !prev.active && (prev.emptiedAt === 0 || nowMs - prev.emptiedAt >= reopenMs);
+
   return {
-    started: !prev.active || afterIdle,
+    started: afterIdle || afterClear,
     afterIdle,
-    next: { active: true, lastInputAt: nowMs },
+    next: { active: true, lastInputAt: nowMs, emptiedAt: 0 },
   };
 }

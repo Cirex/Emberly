@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   EMPTY_SEARCH_SESSION,
   SEARCH_SESSION_IDLE_MS,
+  SEARCH_SESSION_REOPEN_MS,
   advanceSearchSession,
   type SearchSessionState,
 } from "@/lib/search-session";
@@ -10,11 +11,15 @@ import {
  * The behaviour these lock down, in the guard's terms:
  *
  *   · Typing a unit number is ONE lookup, not one per keystroke.
- *   · Typing over the previous unit after a pause is a NEW lookup — this is
- *     the case the old empty→non-empty rule missed entirely, and the reason
- *     the metric read as engagement rather than lookups.
- *   · Typing over it immediately is still the SAME lookup.
- *   · Clearing the box (ⓧ or backspace, they are identical) also ends it.
+ *   · Typing over the previous unit after a pause is a NEW lookup — the case
+ *     the old empty→non-empty rule missed entirely, and the reason the metric
+ *     read as engagement rather than lookups.
+ *   · Typing over it within the idle window is still the SAME lookup.
+ *   · Clearing the box ends it — but only if the box STAYS blank. Correcting
+ *     a mistyped digit passes through empty in ~200ms and must not score
+ *     twice; that regression shipped once and these tests exist to keep it
+ *     from shipping again.
+ *   · ⓧ and backspace are indistinguishable: both only drive the value empty.
  */
 
 const T0 = 1_770_000_000_000; // fixed epoch — no wall clock in tests
@@ -43,15 +48,51 @@ describe("advanceSearchSession", () => {
     expect(fired[0].afterIdle).toBe(false);
   });
 
-  test("typing over the previous unit right away is the SAME lookup", () => {
+  test("a deliberate clear, then a new unit, is two lookups", () => {
     const { fired } = run([
       ["3692", T0],
-      ["", T0 + 1_000], // select-all + type replaces in one step for RN inputs,
-      ["1715", T0 + 1_001], // but backspace-to-empty is the same path
+      ["", T0 + 2_000],
+      ["1715", T0 + 2_000 + SEARCH_SESSION_REOPEN_MS], // blank long enough to count
     ]);
-    // The clear is what starts the second one, not the idle rule.
-    expect(fired).toHaveLength(2);
-    expect(fired[1].afterIdle).toBe(false);
+    expect(fired.map((f) => f.query)).toEqual(["3692", "1715"]);
+    expect(fired[1].afterIdle).toBe(false); // ended by the clear, not by idle
+  });
+
+  test("BACKSPACE-AND-RETYPE IS ONE LOOKUP, not two", () => {
+    // The regression that shipped and had to be fixed: the box passes through
+    // empty in ~200ms while correcting a mistyped digit, and treating a clear
+    // as an instant session end scored that single lookup twice.
+    const { fired } = run([
+      ["3", T0], // wrong digit
+      ["", T0 + 180], // backspaced out
+      ["1", T0 + 360], // right one
+      ["17", T0 + 500],
+      ["171", T0 + 640],
+      ["1715", T0 + 780],
+    ]);
+    expect(fired.map((f) => f.query)).toEqual(["3"]);
+  });
+
+  test("the blank must LAST — one millisecond under the window is still mid-edit", () => {
+    const { fired } = run([
+      ["3692", T0],
+      ["", T0 + 100],
+      ["1715", T0 + 100 + SEARCH_SESSION_REOPEN_MS - 1],
+    ]);
+    expect(fired).toHaveLength(1);
+  });
+
+  test("a long blank does not keep re-arming itself into never reopening", () => {
+    // emptiedAt is stamped on the TRANSITION only. If every blank keystroke
+    // re-stamped it, this sequence would never reopen.
+    const { fired } = run([
+      ["3692", T0],
+      ["", T0 + 100],
+      ["  ", T0 + 200],
+      ["", T0 + 300],
+      ["1715", T0 + 100 + SEARCH_SESSION_REOPEN_MS],
+    ]);
+    expect(fired.map((f) => f.query)).toEqual(["3692", "1715"]);
   });
 
   test("typing over it WITHOUT clearing, after the idle window, is a NEW lookup", () => {
@@ -85,11 +126,11 @@ describe("advanceSearchSession", () => {
     expect(fired).toHaveLength(1);
   });
 
-  test("blank is empty — a lingering space cannot hold a session open", () => {
+  test('blank is empty — whitespace ends a session exactly as "" does', () => {
     const { fired, state } = run([
       ["3692", T0],
       ["   ", T0 + 500],
-      ["1715", T0 + 600],
+      ["1715", T0 + 500 + SEARCH_SESSION_REOPEN_MS],
     ]);
     expect(fired.map((f) => f.query)).toEqual(["3692", "1715"]);
     expect(state.active).toBe(true);
@@ -120,6 +161,17 @@ describe("advanceSearchSession", () => {
     expect(fired[0].afterIdle).toBe(false);
   });
 
+  test("works on a clock that starts near zero, not just epoch millis", () => {
+    // With `emptiedAt` at 0, `nowMs - 0` happens to exceed the reopen window
+    // for any epoch timestamp — so the explicit `emptiedAt === 0` escape looks
+    // redundant and is not exercised by the other cases. It stops being
+    // redundant the moment someone passes a relative clock (performance.now(),
+    // a fake timer), where the first input would otherwise never fire.
+    const step = advanceSearchSession(EMPTY_SEARCH_SESSION, "3692", 500);
+    expect(step.started).toBe(true);
+    expect(step.afterIdle).toBe(false);
+  });
+
   test("a full shift of type-over lookups is counted, not collapsed to one", () => {
     const gap = SEARCH_SESSION_IDLE_MS + 60_000;
     const { fired } = run([
@@ -133,10 +185,10 @@ describe("advanceSearchSession", () => {
   });
 
   test("is a pure fold — the same input twice yields the same result", () => {
-    const prev: SearchSessionState = { active: true, lastInputAt: T0 };
+    const prev: SearchSessionState = { active: true, lastInputAt: T0, emptiedAt: 0 };
     const a = advanceSearchSession(prev, "3692", T0 + 5_000);
     const b = advanceSearchSession(prev, "3692", T0 + 5_000);
     expect(a).toEqual(b);
-    expect(prev).toEqual({ active: true, lastInputAt: T0 }); // not mutated
+    expect(prev).toEqual({ active: true, lastInputAt: T0, emptiedAt: 0 }); // not mutated
   });
 });

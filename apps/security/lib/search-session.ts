@@ -6,12 +6,12 @@
  * typing over the previous unit registered ONE event for an entire shift, and
  * the metric read as engagement rather than lookups.
  *
- * A session therefore ends TWO ways, and both need a timeout:
+ * A session therefore ends after a period of no typing, reached two ways:
  *
  *   · IDLE — the box sits untouched past `SEARCH_SESSION_IDLE_MS`. Two cars,
  *     a while apart, are two lookups whether or not the box was cleared.
  *   · CLEARED — the box goes blank and STAYS blank past
- *     `SEARCH_SESSION_REOPEN_MS`.
+ *     `SEARCH_SESSION_REOPEN_MS`, currently the same value.
  *
  * That second timeout is not fussiness. Treating a clear as an instant end
  * double-counts the commonest correction there is: type a wrong digit,
@@ -32,22 +32,32 @@
  * How long the box may sit untouched before the next keystroke opens a new
  * session.
  *
- * 15s is tuned to the gate: a guard moves car to car quickly, and a pause this
- * long means the previous interaction is over. It is deliberately tight — the
- * cost is that reading a result for 15s and then refining the SAME search
- * scores twice. `after_idle` on the event makes that rate measurable.
+ * 10s is tuned to the gate: a guard moves car to car quickly, and a pause this
+ * long means the previous interaction is over. It is deliberately tight, and
+ * the cost is real — reading a result for 10s and then refining the SAME
+ * search scores twice. `after_idle` on the event is what makes that rate
+ * measurable: if it climbs toward most of the traffic, the window is too
+ * short and this is the number to raise.
+ *
+ * History: 120s originally, then 15s, now 10s.
  */
-export const SEARCH_SESSION_IDLE_MS = 15_000;
+export const SEARCH_SESSION_IDLE_MS = 10_000;
 
 /**
  * How long the box must STAY blank for a clear to end the session. Under this,
  * the blank is treated as mid-edit and the session continues.
  *
- * 1s comfortably covers backspace-and-retype (~200-400ms measured) while
- * staying well under any deliberate clear, which involves looking away from
- * the screen.
+ * Held equal to the idle window on purpose, which collapses the whole model to
+ * one sentence: A SESSION ENDS AFTER 10s OF NO TYPING. Clearing carries no
+ * special meaning — it is just another edit, and backspace-and-retype stays
+ * one lookup because the gap is milliseconds, not seconds.
+ *
+ * The cost of equality, stated plainly: a guard who clears deliberately and
+ * types a DIFFERENT unit within 10s is now scored as one lookup, not two.
+ * That is a real undercount, traded for immunity to typo-correction
+ * over-counting. Drop this to ~1s to recover those at the cost of the trade.
  */
-export const SEARCH_SESSION_REOPEN_MS = 1_000;
+export const SEARCH_SESSION_REOPEN_MS = SEARCH_SESSION_IDLE_MS;
 
 export interface SearchSessionState {
   /** Whether the box held a non-blank query at the last evaluation. */

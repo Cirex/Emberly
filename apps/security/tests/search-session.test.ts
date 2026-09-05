@@ -161,6 +161,30 @@ describe("advanceSearchSession", () => {
     expect(fired[0].afterIdle).toBe(false);
   });
 
+  test("ACCEPTED UNDERCOUNT: clear then a different unit inside the window is ONE lookup", () => {
+    // Consequence of holding the reopen window equal to the idle window. A
+    // guard who clears deliberately and types a different unit within 10s is
+    // scored once, not twice. This is a deliberate trade for immunity to
+    // typo-correction over-counting, NOT an oversight — if this test starts
+    // failing, someone shortened SEARCH_SESSION_REOPEN_MS and should have
+    // weighed the trade before doing so.
+    const { fired } = run([
+      ["3692", T0],
+      ["", T0 + 2_000], // deliberate clear
+      ["1715", T0 + 5_000], // different unit, 3s later
+    ]);
+    expect(fired.map((f) => f.query)).toEqual(["3692"]);
+  });
+
+  test("the same clear, past the window, IS two lookups", () => {
+    const { fired } = run([
+      ["3692", T0],
+      ["", T0 + 2_000],
+      ["1715", T0 + 2_000 + SEARCH_SESSION_REOPEN_MS],
+    ]);
+    expect(fired.map((f) => f.query)).toEqual(["3692", "1715"]);
+  });
+
   test("works on a clock that starts near zero, not just epoch millis", () => {
     // With `emptiedAt` at 0, `nowMs - 0` happens to exceed the reopen window
     // for any epoch timestamp — so the explicit `emptiedAt === 0` escape looks

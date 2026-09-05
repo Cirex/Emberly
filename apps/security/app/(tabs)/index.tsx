@@ -3,9 +3,23 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState, useRef } from "react";
-import { FlatList, Modal, Pressable, RefreshControl, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import {
+  FlatList,
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { capture } from "@/lib/analytics";
+import {
+  EMPTY_SEARCH_SESSION,
+  advanceSearchSession,
+  type SearchSessionState,
+} from "@/lib/search-session";
 import { TenantDetailCard, TenantDetailEmptyCard } from "@/components/tenants/TenantDetailCard";
 import { AppCardSurface } from "@/components/ui/AppCardSurface";
 import { AppFilterChip } from "@/components/ui/AppFilterChip";
@@ -91,9 +105,17 @@ function RowTagChips({
         <Pressable
           onPress={onExpand}
           hitSlop={8}
-          style={{ paddingVertical: 2, paddingHorizontal: 8, borderRadius: 999, backgroundColor: "rgba(9,27,84,0.07)" }}
+          style={{
+            paddingVertical: 2,
+            paddingHorizontal: 8,
+            borderRadius: 999,
+            backgroundColor: "rgba(9,27,84,0.07)",
+          }}
         >
-          <Text className="text-slate dark:text-white/60" style={{ fontSize: 10.5, fontWeight: "700" }}>
+          <Text
+            className="text-slate dark:text-white/60"
+            style={{ fontSize: 10.5, fontWeight: "700" }}
+          >
             +{hidden}
           </Text>
         </Pressable>
@@ -146,10 +168,16 @@ const TenantRow = memo(function TenantRow({
             className="items-center justify-center rounded-full"
             style={{ width: 58, height: 58, backgroundColor: "#E9E6D1" }}
           >
-            <Text style={{ color: "#848F0D", fontSize: 20, fontWeight: "700" }}>{unitInitials(unit)}</Text>
+            <Text style={{ color: "#848F0D", fontSize: 20, fontWeight: "700" }}>
+              {unitInitials(unit)}
+            </Text>
           </View>
           <View className="flex-1">
-            <Text className="text-navy dark:text-white" style={{ fontSize: 17, fontWeight: "700" }} numberOfLines={1}>
+            <Text
+              className="text-navy dark:text-white"
+              style={{ fontSize: 17, fontWeight: "700" }}
+              numberOfLines={1}
+            >
               {unitPrimaryName(unit)}
             </Text>
             <Text
@@ -203,12 +231,17 @@ export default function TenantsScreen() {
   const entriesGuestsToday = useMetrics((s) => s.entriesGuestsToday);
   const vehicleCount = useMetrics((s) => s.vehicleCount);
 
-  // One event per search session: fires when the box goes empty → non-empty.
-  const hadQuery = useRef(false);
+  // One event per search SESSION. A session ends when the box is cleared OR
+  // when it sits untouched past the idle window — see lib/search-session.
+  // Without the idle rule a guard who types over the previous unit all shift
+  // registered a single event for the whole shift.
+  const session = useRef<SearchSessionState>(EMPTY_SEARCH_SESSION);
   useEffect(() => {
-    const has = search.trim().length > 0;
-    if (has && !hadQuery.current) capture("unit_lookup_performed");
-    hadQuery.current = has;
+    const step = advanceSearchSession(session.current, search, Date.now());
+    session.current = step.next;
+    // `after_idle` splits the two reset paths so the window can be tuned on
+    // evidence rather than guesswork.
+    if (step.started) capture("unit_lookup_performed", { after_idle: step.afterIdle });
   }, [search]);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -222,7 +255,10 @@ export default function TenantsScreen() {
   const tagsByUnit = useTags((s) => s.byUnit);
   const tagsHydrated = useTags((s) => s.hydrated);
   const hydrateTags = useTags((s) => s.hydrate);
-  const tagsFor = useCallback((unitNumber: string) => tagsByUnit[unitNumber] ?? EMPTY_TAGS, [tagsByUnit]);
+  const tagsFor = useCallback(
+    (unitNumber: string) => tagsByUnit[unitNumber] ?? EMPTY_TAGS,
+    [tagsByUnit],
+  );
   // Rows show at most two tag chips; tapping "+N" expands that row's chips.
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set());
   const expandTags = useCallback(
@@ -402,7 +438,10 @@ export default function TenantsScreen() {
               unitsError ? (
                 <AppCardSurface kind="row">
                   <View style={{ padding: 16, gap: 6 }}>
-                    <Text className="text-status-blocked" style={{ fontSize: 15, fontWeight: "700" }}>
+                    <Text
+                      className="text-status-blocked"
+                      style={{ fontSize: 15, fontWeight: "700" }}
+                    >
                       Couldn&apos;t load units
                     </Text>
                     <Text className="text-muted" style={{ fontSize: 14 }}>
@@ -411,7 +450,10 @@ export default function TenantsScreen() {
                   </View>
                 </AppCardSurface>
               ) : loadingAll ? null : (
-                <Text className="text-muted" style={{ fontSize: 14, paddingHorizontal: 4, paddingTop: 8 }}>
+                <Text
+                  className="text-muted"
+                  style={{ fontSize: 14, paddingHorizontal: 4, paddingTop: 8 }}
+                >
                   {allUnits.length === 0 && pageUnits.length === 0
                     ? "No units synced yet."
                     : "No units match this view."}
@@ -495,19 +537,40 @@ export default function TenantsScreen() {
       <View
         pointerEvents="box-none"
         onLayout={(e) => setChromeHeight(e.nativeEvent.layout.height)}
-        style={{ position: "absolute", top: 0, left: 0, right: 0, paddingTop: insets.top + 26, paddingHorizontal: hPad, paddingBottom: 18 }}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          paddingTop: insets.top + 26,
+          paddingHorizontal: hPad,
+          paddingBottom: 18,
+        }}
       >
         <AppScreenHeader
           title="Tenants"
           subtitle="View and manage residents with secure building access."
           trailing={
             <>
-              <AppSearchField value={search} onChangeText={setSearch} placeholder="Search tenants" width={240} />
+              <AppSearchField
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search tenants"
+                width={240}
+              />
               <Pressable
                 onPress={openSettings}
                 accessibilityLabel="Device setup"
                 className="bg-white dark:bg-white/10"
-                style={{ width: 44, height: 44, borderRadius: 999, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(9,27,84,0.12)" }}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 999,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderWidth: 1,
+                  borderColor: "rgba(9,27,84,0.12)",
+                }}
               >
                 <Ionicons name="settings-outline" size={20} color="#4C556F" />
               </Pressable>
@@ -520,7 +583,11 @@ export default function TenantsScreen() {
             so the two sides read as misaligned. Out here both columns start with
             a card on the same line, and the filters stay put while the list
             scrolls. */}
-        <View pointerEvents="box-none" className="flex-row flex-wrap" style={{ gap: 8, marginTop: 18 }}>
+        <View
+          pointerEvents="box-none"
+          className="flex-row flex-wrap"
+          style={{ gap: 8, marginTop: 18 }}
+        >
           {FILTERS.map((f) => (
             <AppFilterChip
               key={f.key}
@@ -541,16 +608,24 @@ export default function TenantsScreen() {
         >
           <View className="flex-1 bg-paper-top dark:bg-night-top">
             <View className="flex-row items-center justify-between" style={{ padding: 18 }}>
-              <Text className="text-navy dark:text-white" style={{ fontSize: 20, fontWeight: "700" }}>
+              <Text
+                className="text-navy dark:text-white"
+                style={{ fontSize: 20, fontWeight: "700" }}
+              >
                 Tenant
               </Text>
               <Pressable onPress={() => setSelectedId(null)} hitSlop={10}>
-                <Text className="text-slate dark:text-white/70" style={{ fontSize: 16, fontWeight: "600" }}>
+                <Text
+                  className="text-slate dark:text-white/70"
+                  style={{ fontSize: 16, fontWeight: "600" }}
+                >
                   Done
                 </Text>
               </Pressable>
             </View>
-            <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 32 }}>{detailCard}</ScrollView>
+            <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 32 }}>
+              {detailCard}
+            </ScrollView>
           </View>
         </Modal>
       ) : null}

@@ -142,21 +142,55 @@ export function acquireLock(
 }
 
 /**
+ * Take the lock, waiting up to `waitMs` for the holder to finish.
+ *
+ * Skipping outright is right for a long scrape, but wrong for a short job that
+ * happens to share a tick with another short job. `sync-core` (every 15 min,
+ * ~26s) and `sync-work-orders` (every 10 min) meet at :00 and :30, and an
+ * immediate skip dropped 386 of 1,008 work-order runs in a week — so the
+ * mirror techs read from went 20 minutes stale twice an hour. A bounded wait
+ * lets the short job run a few seconds late instead of ten minutes late.
+ */
+async function acquireWithin(
+  name: LockName,
+  job: string,
+  waitMs: number,
+  pollMs: number,
+  env?: NodeJS.ProcessEnv,
+): Promise<AcquireResult> {
+  const deadline = Date.now() + waitMs;
+  let result = acquireLock(name, job, env);
+  while (!result.ok && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+    result = acquireLock(name, job, env);
+  }
+  return result;
+}
+
+/**
  * Run `fn` while holding the portal lock, or skip.
  *
  * Returns the runner's exit code: 0 when the work ran, and 0 when it was
  * skipped — see the header on why skipping is not a failure. Release is wired
  * to normal return, throw, and SIGINT/SIGTERM, because Coolify's task timeout
  * terminates rather than letting the process finish.
+ *
+ * `waitMs` (default 0: skip at once) bounds how long to wait for a holder
+ * before skipping. Keep it well under the task's Coolify timeout.
  */
 export async function withLock(
   name: LockName,
   job: string,
   fn: () => Promise<void>,
-  opts: { log?: (message: string) => void; env?: NodeJS.ProcessEnv } = {},
+  opts: {
+    log?: (message: string) => void;
+    env?: NodeJS.ProcessEnv;
+    waitMs?: number;
+    pollMs?: number;
+  } = {},
 ): Promise<number> {
   const log = opts.log ?? ((m: string) => console.log(m));
-  const result = acquireLock(name, job, opts.env);
+  const result = await acquireWithin(name, job, opts.waitMs ?? 0, opts.pollMs ?? 2_000, opts.env);
 
   if (!result.ok) {
     const held = result.heldBy!;

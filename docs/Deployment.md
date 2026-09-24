@@ -299,13 +299,17 @@ live **only** in Coolify's secret store — never in the web env, never in the i
 
    | Name | Command | Frequency (UTC) | Local | Timeout |
    | --- | --- | --- | --- | --- |
-   | `sync-core` | `bun run src/run-units.ts && bun run src/run-unit-info.ts && bun run src/run-available-units.ts && bun run src/run-delinquency.ts` | `13 * * * *` | hourly | 600 |
-   | `sync-work-orders` | `bun run src/run-work-orders.ts && bun run src/run-translate-work-orders.ts` | `*/15 * * * *` | every 15 min | 300 |
+   | `sync-core` | `bun run src/run-units.ts && bun run src/run-unit-info.ts && bun run src/run-available-units.ts && bun run src/run-delinquency.ts` | `*/15 * * * *` | every 15 min | 600 |
+   | `sync-work-orders` | `bun run src/run-work-orders.ts && bun run src/run-translate-work-orders.ts` | `*/10 * * * *` | every 10 min | 300 |
    | `flush-work-order-writes` | `bun run src/run-flush-work-order-writes.ts` | `*/2 * * * *` | every 2 min | 120 |
    | `sync-unit-details` | `sh -c 'set -o pipefail; bun run src/run-unit-details.ts 2>&1 \| tee /proc/1/fd/1'` | `11 5,17 * * *` | 12:11 AM, 12:11 PM | — |
    | `sync-lease-details` | `sh -c 'set -o pipefail; bun run src/run-lease-details.ts 2>&1 \| tee /proc/1/fd/1'` | `23 6,18 * * *` | 1:23 AM, 1:23 PM | — |
    | `sync-mlgw` | `sh -c 'set -o pipefail; { bun run src/run-mlgw-bills.ts && bun run src/run-mlgw-payments.ts; } 2>&1 \| tee /proc/1/fd/1'` | `23 7 * * *` | 2:23 AM | 14400 |
    | `sync-derived` | `bun run src/run-pm-generate.ts && bun run src/run-manager-alerts.ts && bun run src/run-snapshots.ts && bun run src/run-unit-snapshots.ts` | `31 14 * * *` | 9:31 AM | 900 |
+
+   `sync-core` and `sync-work-orders` meet at :00 and :30. Both take the one ResMan lock
+   (`src/shared/run-lock.ts`), so `run-work-orders` waits up to 90s for `sync-core`
+   (~26s) instead of skipping — a skip there leaves the work-order mirror 20 minutes stale.
 
    `flush-work-order-writes` drains queued work-order edits/closes into ResMan
    (`maintenance_work_order_edits` → the form-replay writer). The maintenance

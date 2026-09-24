@@ -132,3 +132,34 @@ test("lockDir honours SYNC_LOCK_DIR and otherwise falls back to tmp", () => {
   assert.equal(lockDir({ SYNC_LOCK_DIR: "/custom/locks" }), "/custom/locks");
   assert.equal(lockDir({}), path.join(os.tmpdir(), "emberly-sync-locks"));
 });
+
+test("withLock waits out a short holder instead of skipping, when asked to", async () => {
+  // sync-core and sync-work-orders share the :00/:30 ticks; an immediate skip
+  // made the work-order mirror 20 minutes stale twice an hour.
+  const env = tmpEnv();
+  const held = acquireLock("resman", "run-units", env);
+  setTimeout(() => held.lock.release(), 60);
+
+  let ran = 0;
+  const lines = [];
+  const code = await withLock("resman", "run-work-orders", async () => { ran += 1; },
+    { env, waitMs: 2_000, pollMs: 10, log: (m) => lines.push(m) });
+
+  assert.equal(code, 0);
+  assert.equal(ran, 1, "the job runs once the holder lets go");
+  assert.equal(lines.length, 0, "and nothing is logged as skipped");
+});
+
+test("withLock still skips when the holder outlasts the wait", async () => {
+  const env = tmpEnv();
+  acquireLock("resman", "run-lease-details", env);
+
+  let ran = 0;
+  const lines = [];
+  const code = await withLock("resman", "run-work-orders", async () => { ran += 1; },
+    { env, waitMs: 50, pollMs: 10, log: (m) => lines.push(m) });
+
+  assert.equal(code, 0, "a skip is still exit 0");
+  assert.equal(ran, 0);
+  assert.match(lines.join("\n"), /SKIPPED/);
+});

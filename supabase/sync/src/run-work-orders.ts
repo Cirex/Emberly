@@ -42,7 +42,12 @@ async function main(): Promise<void> {
 
 // One RESMAN scraper at a time — the request ceiling is per process,
 // so a second concurrent run doubles it. See shared/run-lock.ts.
-withLock("resman", "run-work-orders", main)
+//
+// Waits up to 90s rather than skipping: this runs every 10 minutes and meets
+// sync-core (~26s) at :00 and :30, and a skip there left the work-order mirror
+// 20 minutes stale. 90s clears sync-core with room to spare and stays far
+// inside the task's 300s timeout; a genuinely long holder still skips.
+withLock("resman", "run-work-orders", main, { waitMs: 90_000 })
   .then((code) => process.exit(code))
   .catch((error) => {
     console.error("[run-work-orders] failed:", error);

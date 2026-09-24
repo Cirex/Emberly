@@ -19,6 +19,7 @@ import { WorkspaceBackdrop } from "@/components/ui/WorkspaceBackdrop";
 import { posthog } from "@/lib/analytics";
 import { useEmergencyNotificationResponses } from "@/lib/push";
 import { useResManSession } from "@/lib/resman/session";
+import { isScreenshotMode } from "@/lib/screenshot-mode";
 import { isSignedIn, useConfig } from "@/lib/stores/config";
 import { useSettings } from "@/lib/stores/settings";
 import { accentVars } from "@/theme/tokens";
@@ -94,6 +95,10 @@ function RootLayout() {
     if (
       hydrated &&
       signedIn &&
+      // Screenshot builds present as signed in with no ResMan credentials at
+      // all, so the session always reads "expired" — kicking there pushed the
+      // sign-in screen over the fixtures a beat after launch.
+      !isScreenshotMode() &&
       resmanStatus === "expired" &&
       !resmanCanRenew &&
       !kickedRef.current &&

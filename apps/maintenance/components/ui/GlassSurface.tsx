@@ -3,6 +3,7 @@ import { useColorScheme } from "nativewind";
 import type { ReactNode } from "react";
 import { View, type ViewProps } from "react-native";
 import { useFieldMode } from "@/lib/stores/settings";
+import { GLASS } from "@/theme/glass";
 import {
   ANDROID_GLASS_ELEVATION,
   ANDROID_GLASS_HAIRLINE,
@@ -57,12 +58,12 @@ export function GlassSurface({
         borderRadius: r,
         borderWidth: field ? 1.4 : 1,
         borderColor: dark
-          ? "rgba(255,255,255,0.10)"
+          ? GLASS.dark.border
           : field
             ? "rgba(9,27,84,0.28)"
             : androidGlass
               ? ANDROID_GLASS_HAIRLINE
-              : "rgba(255,255,255,0.30)",
+              : GLASS.light.border,
         // The blur used to supply the visual lift on iOS; with it gone, a
         // small elevation keeps the surface off whatever it floats over. It
         // sits HERE rather than on the clipping parent because Android casts
@@ -72,15 +73,15 @@ export function GlassSurface({
           ? androidGlassFill("chrome", dark, active)
           : active
             ? dark
-              ? "rgba(255,255,255,0.14)"
+              ? GLASS.dark.fillActive
               : field
                 ? "rgba(255,255,255,0.92)"
-                : "rgba(255,255,255,0.55)"
+                : GLASS.light.fillActive
             : dark
-              ? "rgba(255,255,255,0.05)"
+              ? GLASS.dark.fill
               : field
                 ? "rgba(255,255,255,0.85)"
-                : "rgba(255,255,255,0.40)",
+                : GLASS.light.fill,
       }}
     >
       {children}
@@ -93,7 +94,7 @@ export function GlassSurface({
         inner
       ) : (
         <BlurView
-          intensity={field ? 12 : dark ? 30 : 40}
+          intensity={field ? 12 : dark ? GLASS.dark.blur : GLASS.light.blur}
           tint={dark ? "dark" : "light"}
           style={{ borderRadius: r }}
         >

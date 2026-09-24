@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
+import { GLASS } from "@/theme/glass";
 import { ACCENT_THEMES, NAVY } from "@/theme/tokens";
 import { useAccentHex, useAccentPalette } from "@/lib/hooks/use-accent";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Keyboard,
   Pressable,
@@ -91,6 +93,7 @@ const SHADOW = {
  * When a screen has no search, the capsule springs out to take the whole row.
  */
 export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBarProps) {
+  const { t } = useTranslation();
   const palette = useAccentPalette();
   const insets = useSafeAreaInsets();
   const dark = useColorScheme().colorScheme === "dark";
@@ -130,18 +133,18 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
   const glassFill = androidGlass
     ? androidGlassFill("chrome", glassDark)
     : glassDark
-      ? "rgba(255,255,255,0.05)"
+      ? GLASS.dark.fill
       : field
         ? "rgba(255,255,255,0.85)"
-        : "rgba(255,255,255,0.40)";
+        : GLASS.light.fill;
   const glassBorder = glassDark
-    ? "rgba(255,255,255,0.10)"
+    ? GLASS.dark.border
     : field
       ? "rgba(9,27,84,0.28)"
       : androidGlass
         ? ANDROID_GLASS_HAIRLINE
-        : "rgba(255,255,255,0.30)";
-  const glassBlur = field ? 12 : glassDark ? 30 : 40;
+        : GLASS.light.border;
+  const glassBlur = field ? 12 : glassDark ? GLASS.dark.blur : GLASS.light.blur;
   // The selected lozenge is white-on-glass: over an OPAQUE white capsule it
   // would be a 1.15:1 ghost, and it cannot be lifted with an elevation
   // without drawing over its own icon and label. On Android it takes a
@@ -150,7 +153,9 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
   const lozengeFill = androidGlass
     ? ANDROID_LOZENGE_FILL[glassDark ? "dark" : "light"]
     : dark
-      ? "rgba(255,255,255,0.14)"
+      ? // One step above the capsule's own tint, or the selection vanishes
+        // into the brighter dark glass.
+        "rgba(255,255,255,0.22)"
       : "rgba(255,255,255,0.82)";
 
   /**
@@ -196,7 +201,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
   const mapSetQuery = useMapSearch((s) => s.setQuery);
   const search = onMap ? mapQuery : woSearch;
   const setSearch = onMap ? mapSetQuery : woSetSearch;
-  const placeholder = onMap ? "Unit, resident, or street" : "Work orders, units, technicians…";
+  const placeholder = t(onMap ? "tabBar.searchMapPlaceholder" : "tabBar.searchWorkOrdersPlaceholder");
   const [searchOpen, setSearchOpen] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
@@ -467,7 +472,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
               <Pressable
                 onPress={() => toggleSearch(false)}
                 accessibilityRole="button"
-                accessibilityLabel="Show tabs"
+                accessibilityLabel={t("tabBar.showTabs")}
                 style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
               >
                 <Ionicons name="grid" size={22} color={accent} />
@@ -505,7 +510,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: FloatingTabBa
               disabled={searchOpen || !searchable}
               onPress={() => toggleSearch(true)}
               accessibilityRole="button"
-              accessibilityLabel={onMap ? "Search units" : "Search work orders"}
+              accessibilityLabel={t(onMap ? "tabBar.searchMap" : "tabBar.searchWorkOrders")}
               style={{ width: "100%", height: "100%" }}
             >
               {/* Closed face: the magnifier truly centered in the circle —

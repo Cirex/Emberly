@@ -16,6 +16,7 @@ import {
   OPAQUE_GLASS,
   androidGlassFill,
 } from "@/theme/android-glass";
+import { GLASS } from "@/theme/glass";
 import { HAIRLINE, HEADER_TOP_PAD, MUTED, NAVY, screenHPad } from "@/theme/tokens";
 import { useAccentPalette } from "@/lib/hooks/use-accent";
 
@@ -171,9 +172,11 @@ export const GlassHeader = memo(function GlassHeader({
               paddingLeft: 9,
               paddingRight: 13,
               borderRadius: 999,
-              backgroundColor: dark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.60)",
+              // No blur behind this pill, so dark mode takes the glass tint
+              // and rim straight — a 6% wash read as no surface at all.
+              backgroundColor: dark ? GLASS.dark.fill : "rgba(255,255,255,0.60)",
               borderWidth: 1,
-              borderColor: dark ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.78)",
+              borderColor: dark ? GLASS.dark.border : "rgba(255,255,255,0.78)",
               shadowColor: dark ? "#000000" : NAVY,
               shadowOpacity: dark ? 0.3 : 0.12,
               shadowRadius: 9,

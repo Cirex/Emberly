@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useColorScheme } from "nativewind";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { EmberlyBrandLogo } from "@emberly/ui";
 import { GlassSurface } from "@/components/ui/GlassSurface";
@@ -20,6 +21,7 @@ import { signInWithResman } from "@/lib/api/auth";
 import { registerForEmergencyPush } from "@/lib/push";
 import { useResManSession } from "@/lib/resman/session";
 import { useConfig } from "@/lib/stores/config";
+import { useFieldMode } from "@/lib/stores/settings";
 
 const REVEAL_HIT_WIDTH = 24;
 
@@ -39,6 +41,11 @@ export default function SignIn() {
   const { t } = useTranslation();
   const config = useConfig();
   const palette = useAccentPalette();
+  // The card is dark glass in dark mode (and near-white in field mode, where
+  // the navy lockup is right). Navy-on-dark made the wordmark all but vanish.
+  const scheme = useColorScheme().colorScheme;
+  const field = useFieldMode();
+  const darkCard = scheme === "dark" && !field;
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [revealed, setRevealed] = useState(false);
@@ -127,7 +134,7 @@ export default function SignIn() {
                   gap: 22,
                 }}
               >
-                <EmberlyBrandLogo variant="full" size={128} />
+                <EmberlyBrandLogo variant={darkCard ? "reversed" : "full"} size={128} />
 
                 <View style={{ width: "100%", gap: 10 }}>
                   <View

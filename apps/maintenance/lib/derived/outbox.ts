@@ -27,7 +27,7 @@ export type OutboxKind = "close" | "photo" | "edit";
 export type OutboxState = "blocked" | "sending" | "queued" | "retrying" | "sent";
 
 /** An edited field, as a stable key the screen localizes. */
-export type EditField = "notes" | "description" | "assignment";
+export type EditField = "notes" | "description" | "assignment" | "schedule";
 
 export interface OutboxItem {
   /** Stable per row, so a list key never collides across kinds. */
@@ -53,11 +53,15 @@ export function editFields(patch: WorkOrderEditPatch): EditField[] {
   if (patch.completionNotes !== undefined) fields.push("notes");
   if (patch.description !== undefined) fields.push("description");
   if (patch.technician !== undefined) fields.push("assignment");
+  // Without this a date-only edit had no fields and the screen fell back to
+  // the close title — a rescheduled job read as "Marked complete".
+  if (patch.scheduledAt !== undefined) fields.push("schedule");
   return fields;
 }
 
 function closeState(c: PendingClose): OutboxState {
   if (c.acked) return "sent";
+  if (c.blockedReason !== undefined) return "blocked";
   return (c.attempts ?? 1) > 1 ? "retrying" : "queued";
 }
 
@@ -101,7 +105,7 @@ export function buildOutbox(input: OutboxInput): OutboxItem[] {
       state: closeState(c),
       attempts: c.attempts ?? 1,
       queuedAt: c.queuedAt,
-      lastError: c.acked ? undefined : c.lastError,
+      lastError: c.blockedReason ?? c.lastError,
     });
   }
 

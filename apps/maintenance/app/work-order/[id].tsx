@@ -26,6 +26,7 @@ import { JobTimeCard } from "@/components/work-orders/JobTimeCard";
 import { useJobTime } from "@/lib/stores/job-time";
 import { usePendingCloses } from "@/lib/stores/pending-closes";
 import { usePendingEdits } from "@/lib/stores/pending-edits";
+import { useWorkOrders } from "@/lib/stores/work-orders";
 import { useWorkOrderPhotos } from "@/lib/stores/work-order-photos";
 import { useTranslated } from "@/lib/translation/use-translated";
 import {
@@ -73,6 +74,12 @@ export default function WorkOrderDetail() {
   const pendingEdits = usePendingEdits((s) => s.pending);
   const queueEdit = usePendingEdits((s) => s.queueEdit);
   const requestJump = useMapJump((s) => s.request);
+  // The MIRROR's own completion date, before the pending-close overlay. The
+  // snapshot row already shows a queued close as Completed; whether that close
+  // can still be taken back depends on what the mirror has, not on the overlay.
+  const mirrorCompleted = useWorkOrders(
+    (s) => s.workOrders.find((r) => r.resman_work_order_id === id)?.date_completed ?? null,
+  );
 
   // Which editor is up: the technician picker or one of the text editors.
   const [editing, setEditing] = useState<null | "technician" | "description" | "completionNotes">(
@@ -203,14 +210,17 @@ export default function WorkOrderDetail() {
   // the only close this screen is entitled to take back. Once acked the close
   // is verified in ResMan; retracting it locally would only desync the app.
   const closeIsLocalOnly =
-    closeEntry !== undefined && closeEntry.acked !== true && wo.completedAt === null;
+    closeEntry !== undefined && closeEntry.acked !== true && !mirrorCompleted;
+  // ResMan REFUSED the close: nothing was written, so the work order is still
+  // open and can be closed again — the outbox carries the reason.
+  const closeBlocked = closeEntry?.blockedReason !== undefined;
 
   // Status alone decides openness: ResMan KEEPS the old CompletedDate when a
   // ticket is reopened (field-verified on a WO sitting at In Progress with a
   // stale completion date), so gating on completedAt hid Mark Complete on
   // genuinely open, reopened tickets.
   const isOpen = !/^(completed|closed|canceled)$/i.test(wo.status);
-  const pendingClose = closeEntry !== undefined;
+  const pendingClose = closeEntry !== undefined && !closeBlocked;
   const closeDelivered = closeEntry?.acked === true;
   const canClose = isOpen && !pendingClose;
 
@@ -404,6 +414,14 @@ export default function WorkOrderDetail() {
                 label={t("workOrders.detail.chips.duplicate")}
                 color={DUPLICATE_TINT}
                 icon="content-duplicate"
+                emphasized
+              />
+            ) : null}
+            {closeBlocked ? (
+              <Chip
+                label={t("workOrders.detail.chips.closeRefused")}
+                color="#B3261E"
+                icon="alert-circle-outline"
                 emphasized
               />
             ) : null}

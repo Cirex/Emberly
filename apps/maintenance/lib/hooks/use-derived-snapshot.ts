@@ -1,10 +1,10 @@
 import { useMemo } from "react";
 import { buildSnapshot, type DerivedSnapshot } from "@/lib/derived/snapshot";
 import type { DisplayMode } from "@/lib/derived/types";
+import { useOverlaidWorkOrders } from "@/lib/hooks/use-overlaid-work-orders";
 import { useParsedMirror, unitsVersionOf } from "@/lib/hooks/use-parsed-mirror";
 import { useSettings } from "@/lib/stores/settings";
 import { useUnits } from "@/lib/stores/units";
-import { useWorkOrders } from "@/lib/stores/work-orders";
 import { useWorkOrdersView } from "@/lib/stores/work-orders-view";
 
 /**
@@ -22,8 +22,8 @@ import { useWorkOrdersView } from "@/lib/stores/work-orders-view";
  */
 export function useDerivedSnapshot(modeOverride?: DisplayMode): DerivedSnapshot {
   const language = useSettings((s) => s.language);
-  const workOrders = useWorkOrders((s) => s.workOrders);
-  const dataVersion = useWorkOrders((s) => s.dataVersion);
+  // Same overlaid rows (and version) useParsedMirror reads — see there.
+  const { workOrders, dataVersion } = useOverlaidWorkOrders();
   const units = useUnits((s) => s.allUnits);
   const storeMode = useWorkOrdersView((s) => s.displayMode);
   // "preventive" is a board mode, not a derived-engine mode (the PM board

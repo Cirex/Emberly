@@ -122,7 +122,11 @@ describe("closeWorkOrder acks the folded edit only when it was delivered", () =>
     scripted = async () => {
       throw new WorkOrderWriteRefused("Description is locked by ResMan on this work order");
     };
-    await closeWorkOrder(WO_A, "Done", config);
+    // The refusal reaches the caller, so the close itself can go BLOCKED
+    // instead of being acked as delivered.
+    await expect(closeWorkOrder(WO_A, "Done", config)).rejects.toBeInstanceOf(
+      WorkOrderWriteRefused,
+    );
     // The close folded the edit in (so the loss is real if it acks)…
     expect(scriptedCalls[0].patch.completionNotes).toBe(FOLDED.completionNotes);
     // …but nothing was POSTed, so the edit must still be waiting for its own
@@ -171,7 +175,9 @@ describe("closeWorkOrder acks the folded edit only when it was delivered", () =>
     scripted = async () => {
       throw new WorkOrderWriteRefused(LOCKED);
     };
-    await closeWorkOrder(WO_A, "Done", config);
+    await expect(closeWorkOrder(WO_A, "Done", config)).rejects.toBeInstanceOf(
+      WorkOrderWriteRefused,
+    );
     expect(usePendingEdits.getState().pending[WO_A].acked).toBe(false);
 
     // The sync tick re-sends the merged patch as its own edit. Same guard,

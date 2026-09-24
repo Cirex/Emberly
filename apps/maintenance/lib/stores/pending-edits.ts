@@ -1,6 +1,7 @@
 import {
   WorkOrderWriteRefused,
   normalizeResManFreeText,
+  parseDate,
   sanitizeDescription,
   technicianDisplayName,
 } from "@emberly/core";
@@ -11,15 +12,15 @@ import { editWorkOrder, type WorkOrder, type WorkOrderEditPatch } from "@/lib/ap
 import type { StaffConfig } from "@/lib/stores/config";
 
 /**
- * Optimistic "edited, pending ResMan" overlay — the sibling of pending-closes
- * for the detail screen's edits (technician reassignment, description,
- * technician notes). The server queues each edit durably and the sync worker
- * replays it into ResMan minutes later, so this store is the app's memory of
- * what the technician changed in the meantime. The detail screen renders
- * overlay values over the base row; entries retire on their own once the sync
- * mirror reports the base row absorbed every edited field (or after the stale
- * window, so an entry whose write failed server-side can't shadow reality
- * forever).
+ * Optimistic "edited, pending the mirror" overlay — the sibling of
+ * pending-closes for the detail screen's edits (technician reassignment,
+ * description, technician notes, scheduled date). The device writes each edit
+ * straight into ResMan (verified), but the mirror only sees it on the next
+ * server scrape, so this store is the app's memory of what the technician
+ * changed in the meantime. Every screen renders it through
+ * lib/derived/pending-overlay; entries retire once the mirror absorbs every
+ * edited field (or after the stale window, so an entry that never landed
+ * can't shadow reality forever).
  */
 
 export interface PendingEdit {
@@ -63,6 +64,13 @@ const STALE_MS = 7 * 24 * 60 * 60 * 1000;
  *  ack whose write silently failed to stick). Idempotent: an edit that
  *  landed re-acks as a no-op on one GET. */
 const REDELIVER_MS = 30 * 60 * 1000;
+
+/**
+ * Slack for comparing the server's `synced_at` against the device's `ackedAt`:
+ * clock skew, plus a scrape that READ ResMan just before our write and stamped
+ * the row just after it.
+ */
+const MIRROR_SKEW_MS = 2 * 60 * 1000;
 
 interface PendingEditsState {
   pending: Record<string, PendingEdit>;
@@ -175,15 +183,32 @@ function blockIfUnchanged(
   });
 }
 
-/** Same instant, whatever format each side spells it in. */
-function sameMoment(a: string | null | undefined, b: string | null | undefined): boolean {
-  if (a == null || a === "") return b == null || b === "";
-  if (b == null || b === "") return false;
-  const ta = Date.parse(a);
-  const tb = Date.parse(b);
+/**
+ * Same calendar day, whatever format each side spells it in.
+ *
+ * The mirror's `date_scheduled` is a Postgres `date` ("2026-09-24") while the
+ * edit carries the full instant the tech picked ("2026-09-24T19:30:00.000Z").
+ * Comparing instants meant a scheduled-date edit could NEVER absorb: its
+ * overlay lingered the full stale window and the redeliver clock re-wrote it
+ * into ResMan every half hour. The day is the most the mirror can confirm, so
+ * the day is what is compared — in LOCAL time, the way parseDate reads the
+ * mirror's date-only strings and the way ResMan records the date.
+ */
+function sameDay(mirror: string | null | undefined, picked: string | null | undefined): boolean {
+  if (mirror == null || mirror === "") return picked == null || picked === "";
+  if (picked == null || picked === "") return false;
+  const a = parseDate(mirror);
+  const b = parseDate(picked);
   // Unparseable on either side falls back to an exact string match rather than
-  // reporting two NaNs equal, which would retire an edit that never landed.
-  return Number.isNaN(ta) || Number.isNaN(tb) ? a === b : ta === tb;
+  // reporting two nulls equal, which would retire an edit that never landed.
+  if (a === null || b === null) return mirror === picked;
+  const da = new Date(a);
+  const db = new Date(b);
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
 }
 
 /** ResMan round-trips free text with \r\n line endings and can pad edges;
@@ -223,9 +248,9 @@ function absorbed(row: WorkOrder, patch: WorkOrderEditPatch): boolean {
   ) {
     return false;
   }
-  // ResMan may echo the date back in a different format than we sent, so this
-  // compares instants — a string match would keep the overlay alive forever.
-  if (patch.scheduledAt !== undefined && !sameMoment(row.date_scheduled, patch.scheduledAt)) {
+  // The mirror holds only the day (see sameDay) — a string or instant match
+  // would keep the overlay alive forever.
+  if (patch.scheduledAt !== undefined && !sameDay(row.date_scheduled, patch.scheduledAt)) {
     return false;
   }
   return true;
@@ -329,7 +354,17 @@ export const usePendingEdits = create<PendingEditsState>()(
             const retire =
               nowMs - entry.editedAt > STALE_MS ||
               (row !== undefined && absorbed(row, entry.patch));
-            if (retire) {
+            // The mirror re-scraped this row AFTER our verified write and it
+            // still disagrees: someone else (the office) changed the field
+            // since. Their value is the newer one — stand down rather than let
+            // the redeliver clock write ours back over it.
+            const seen = row?.synced_at ? Date.parse(row.synced_at) : NaN;
+            const overtaken =
+              entry.acked &&
+              entry.ackedAt !== undefined &&
+              !Number.isNaN(seen) &&
+              seen > entry.ackedAt + MIRROR_SKEW_MS;
+            if (retire || overtaken) {
               changed = true;
             } else if (entry.acked && nowMs - (entry.ackedAt ?? 0) > REDELIVER_MS) {
               // Acked but never absorbed — redeliver (see REDELIVER_MS).

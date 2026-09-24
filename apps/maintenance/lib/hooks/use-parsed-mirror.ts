@@ -7,7 +7,7 @@ import {
   type ParsedMirror,
 } from "@/lib/derived/snapshot";
 import { useUnits } from "@/lib/stores/units";
-import { useWorkOrders } from "@/lib/stores/work-orders";
+import { useOverlaidWorkOrders } from "@/lib/hooks/use-overlaid-work-orders";
 
 /**
  * The parsed mirror, in two stages: open work first, everything after.
@@ -66,8 +66,9 @@ function announceCompletion(): void {
 }
 
 export function useParsedMirror(): ParsedMirror {
-  const workOrders = useWorkOrders((s) => s.workOrders);
-  const dataVersion = useWorkOrders((s) => s.dataVersion);
+  // The mirror WITH the device's pending edits and closes applied, so every
+  // screen agrees about who a work order belongs to and whether it is open.
+  const { workOrders, dataVersion } = useOverlaidWorkOrders();
   const units = useUnits((s) => s.allUnits);
   const unitsVersion = unitsVersionOf(units);
   const key = mirrorKeyOf({ workOrders, units, dataVersion, unitsVersion });

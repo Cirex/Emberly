@@ -117,9 +117,9 @@ export default function Outbox() {
     // so a photo's work order exists on the server before its bytes arrive.
     await usePendingCloses
       .getState()
-      .flush(config)
+      .flush(config, { includeBlocked: true })
       .catch(() => {});
-    // A manual "Sync now" retries edits ResMan refused too. The automatic
+    // A manual "Sync now" retries closes and edits ResMan refused too. The automatic
     // flush skips them (the same bytes get the same verdict), but the guards
     // read ResMan-side state the office can change — so the one moment worth
     // asking again is when a human deliberately asks.

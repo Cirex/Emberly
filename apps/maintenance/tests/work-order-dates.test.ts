@@ -177,22 +177,34 @@ describe("stamping a scheduled date", () => {
     return usePendingEdits;
   };
 
-  test("the overlay retires once the mirror carries the same instant", async () => {
-    const usePendingEdits = await seed({ scheduledAt: "2026-07-30T14:00:00.000Z" });
-    // ResMan hands the date back in its own format — same moment, other spelling.
-    usePendingEdits.getState().prune([row("2026-07-30T14:00:00+00:00")], 2000);
+  // What the tech picks: a full instant (2:00 PM local on July 30th).
+  const PICKED = new Date(2026, 6, 30, 14, 0).toISOString();
+
+  test("the overlay retires once the mirror carries the same DAY", async () => {
+    // date_scheduled is a Postgres `date`: the mirror can only ever echo the
+    // day back ("2026-07-30"), never the instant. Comparing instants meant a
+    // scheduled-date edit could never absorb and was re-written into ResMan
+    // every 30 minutes for a week.
+    const usePendingEdits = await seed({ scheduledAt: PICKED });
+    usePendingEdits.getState().prune([row("2026-07-30")], 2000);
+    expect(usePendingEdits.getState().pending["wo-9"]).toBeUndefined();
+  });
+
+  test("a full timestamp on the mirror side still compares by day", async () => {
+    const usePendingEdits = await seed({ scheduledAt: PICKED });
+    usePendingEdits.getState().prune([row(new Date(2026, 6, 30, 9, 0).toISOString())], 2000);
     expect(usePendingEdits.getState().pending["wo-9"]).toBeUndefined();
   });
 
   test("the overlay survives while the mirror still shows the old date", async () => {
-    const usePendingEdits = await seed({ scheduledAt: "2026-07-30T14:00:00.000Z" });
-    usePendingEdits.getState().prune([row("2026-07-24T09:00:00.000Z")], 2000);
+    const usePendingEdits = await seed({ scheduledAt: PICKED });
+    usePendingEdits.getState().prune([row("2026-07-24")], 2000);
     expect(usePendingEdits.getState().pending["wo-9"]).toBeDefined();
   });
 
   test("clearing the date retires only once the mirror is empty too", async () => {
     const stillSet = await seed({ scheduledAt: null });
-    stillSet.getState().prune([row("2026-07-30T14:00:00.000Z")], 2000);
+    stillSet.getState().prune([row("2026-07-30")], 2000);
     expect(stillSet.getState().pending["wo-9"]).toBeDefined();
 
     const cleared = await seed({ scheduledAt: null });
@@ -201,7 +213,7 @@ describe("stamping a scheduled date", () => {
   });
 
   test("an unparseable date on either side falls back to an exact match", async () => {
-    const mismatch = await seed({ scheduledAt: "2026-07-30T14:00:00.000Z" });
+    const mismatch = await seed({ scheduledAt: PICKED });
     mismatch.getState().prune([row("not a date")], 2000);
     expect(mismatch.getState().pending["wo-9"]).toBeDefined();
   });

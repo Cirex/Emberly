@@ -23,6 +23,13 @@ const en = {
     makeReady: "Make Ready",
     map: "Map",
   },
+  tabBar: {
+    showTabs: "Show tabs",
+    searchMap: "Search units",
+    searchWorkOrders: "Search work orders",
+    searchMapPlaceholder: "Unit, resident, or street",
+    searchWorkOrdersPlaceholder: "Work orders, units, technicians…",
+  },
   signIn: {
     username: "Username",
     password: "Password",
@@ -104,7 +111,12 @@ const en = {
       photos_one: "{{count}} completion photo",
       photos_other: "{{count}} completion photos",
     },
-    field: { notes: "technician notes", description: "description", assignment: "assignment" },
+    field: {
+      notes: "technician notes",
+      description: "description",
+      assignment: "assignment",
+      schedule: "scheduled date",
+    },
   },
   /**
    * ResMan's fixed vocabularies. Reviewed Spanish rather than machine
@@ -206,6 +218,7 @@ const en = {
         duplicate: "Duplicate",
         closePending: "Close pending",
         closeSaved: "Closed — saved",
+        closeRefused: "Close refused — see Outbox",
       },
       sections: {
         progress: "Progress",
@@ -680,6 +693,13 @@ const es: typeof en = {
     makeReady: "Preparación",
     map: "Mapa",
   },
+  tabBar: {
+    showTabs: "Mostrar pestañas",
+    searchMap: "Buscar unidades",
+    searchWorkOrders: "Buscar órdenes de trabajo",
+    searchMapPlaceholder: "Unidad, residente o calle",
+    searchWorkOrdersPlaceholder: "Órdenes, unidades, técnicos…",
+  },
   signIn: {
     username: "Usuario",
     password: "Contraseña",
@@ -762,7 +782,12 @@ const es: typeof en = {
       photos_one: "{{count}} foto de finalización",
       photos_other: "{{count}} fotos de finalización",
     },
-    field: { notes: "notas del técnico", description: "descripción", assignment: "asignación" },
+    field: {
+      notes: "notas del técnico",
+      description: "descripción",
+      assignment: "asignación",
+      schedule: "fecha programada",
+    },
   },
   resman: RESMAN_LABELS.es,
   workOrders: {
@@ -856,6 +881,7 @@ const es: typeof en = {
         duplicate: "Duplicada",
         closePending: "Cierre pendiente",
         closeSaved: "Cerrada — guardada",
+        closeRefused: "Cierre rechazado — ver Bandeja de salida",
       },
       sections: {
         progress: "Progreso",

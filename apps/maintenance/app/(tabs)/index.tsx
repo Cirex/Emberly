@@ -102,7 +102,16 @@ export default function MyDayScreen() {
   const { parsed, byId } = useParsedMirror();
   const openAll = useMemo(() => parsed.filter((wo) => matchesDisplayMode(wo, "open")), [parsed]);
 
-  const pendingIds = useMemo(() => new Set(Object.keys(pending)), [pending]);
+  // A close ResMan REFUSED did not happen — the work is still the tech's.
+  const pendingIds = useMemo(
+    () =>
+      new Set(
+        Object.values(pending)
+          .filter((c) => c.blockedReason === undefined)
+          .map((c) => c.workOrderId),
+      ),
+    [pending],
+  );
 
   // Reconcile the path against the live mirror on every data/pending change.
   useEffect(() => {

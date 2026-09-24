@@ -196,12 +196,16 @@ export async function editWorkOrder(
  * not always now: a tech closing out Friday's job on Monday morning needs the
  * record to say Friday. Omitted means "now", the moment they tapped.
  *
- * A refusal is consumed HERE (the close entry stops retrying) rather than
- * rethrown: several close-only guards — a bad `completedAt`, `refusing to
- * write Status=…` — say nothing about whether the folded EDIT could land, so
- * the edit is left un-acked to get its own verdict from its own flush. Expired
- * sessions and offline failures throw, keeping the entry queued for the next
- * tick.
+ * A refusal is RETHROWN as `WorkOrderWriteRefused`, so the pending-closes
+ * store can mark the close BLOCKED — the same contract as `editWorkOrder`. It
+ * used to be consumed here and reported as ok, which acked a close that never
+ * happened: the outbox called it saved, the overlay painted the work order
+ * Completed, and every 30 minutes the redeliver clock re-ran it into the same
+ * refusal. The folded EDIT is unaffected either way: several close-only guards
+ * (a bad `completedAt`, `refusing to write Status=…`) say nothing about whether
+ * it could land, so it stays un-acked for its own verdict from its own flush.
+ * Expired sessions and offline failures throw too, keeping the entry queued
+ * for the next tick.
  */
 export async function closeWorkOrder(
   id: string,
@@ -259,6 +263,8 @@ export async function closeWorkOrder(
       note && folded.completionNotes !== undefined ? { ...folded, completionNotes: note } : folded;
     usePendingEdits.getState().ackDelivered(id, folded, written);
   }
+  // Refused = nothing was written. Never report that as ok.
+  if (outcome.refused) throw new WorkOrderWriteRefused(outcome.reason);
   return { ok: true, queued: false, stub: false };
 }
 

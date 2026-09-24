@@ -94,13 +94,20 @@ function useServerSync() {
             .flush(config)
             .then(() => useWorkOrderPhotos.getState().flush(config))
             .then(() => useWorkOrderPhotos.getState().prune(Date.now()));
+          const rows = useWorkOrders.getState().workOrders;
           const closedIds = new Set(
-            useWorkOrders
-              .getState()
-              .workOrders.filter((wo) => CLOSED.has(wo.status))
-              .map((wo) => wo.resman_work_order_id),
+            rows.filter((wo) => CLOSED.has(wo.status)).map((wo) => wo.resman_work_order_id),
           );
-          closes.prune(closedIds, Date.now());
+          // When the server last scraped each PENDING row — how prune tells
+          // "the mirror has not looked yet" from "the office reopened it".
+          const pendingIds = closes.pending;
+          const syncedAt = new Map<string, number>();
+          for (const wo of rows) {
+            if (!(wo.resman_work_order_id in pendingIds) || !wo.synced_at) continue;
+            const ms = Date.parse(wo.synced_at);
+            if (!Number.isNaN(ms)) syncedAt.set(wo.resman_work_order_id, ms);
+          }
+          closes.prune(closedIds, Date.now(), syncedAt);
           // A work order the mirror reports closed has been submitted, so the
           // untouched originals of its marked-up photos can retire — the marked
           // copy is what was uploaded and what stands. Safe every tick; the

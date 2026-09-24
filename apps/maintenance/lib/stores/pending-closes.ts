@@ -1,3 +1,4 @@
+import { WorkOrderWriteRefused } from "@emberly/core";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { persistedStorage } from "@/lib/stores/persisted-storage";
@@ -6,13 +7,13 @@ import { closeWorkOrder } from "@/lib/api/work-orders";
 import type { StaffConfig } from "@/lib/stores/config";
 
 /**
- * Optimistic "closed, pending ResMan" overlay. The server queues each close
- * durably and the sync worker replays it into ResMan minutes later, so this
- * store is the app's memory of which work orders the technician has closed
- * in the meantime. Screens consult it to render those rows as closed; entries
- * retire on their own once the sync mirror reports the base row actually
- * closed (or after the stale window, so an entry whose write failed
- * server-side can't shadow reality forever).
+ * Optimistic "closed, pending the mirror" overlay. The device writes each close
+ * straight into ResMan (verified), but the mirror every screen reads only sees
+ * it on the next server scrape, up to ten minutes later — so this store is the
+ * app's memory of what the technician closed in the meantime. Every screen
+ * renders those rows as closed through lib/derived/pending-overlay; entries
+ * retire once the mirror reports the row closed (or after the stale window, so
+ * an entry that never landed can't shadow reality forever).
  */
 
 export interface PendingClose {
@@ -41,6 +42,15 @@ export interface PendingClose {
    *  from HERE, never from queuedAt — an age-based clock made every entry
    *  older than the window oscillate acked→unacked on each prune tick. */
   ackedAt?: number;
+  /**
+   * Why ResMan REFUSED this close (the ticket was Cancelled, form drift, a bad
+   * completion date) — a verdict on these bytes, not a transport failure. The
+   * same contract as PendingEdit.blockedReason: NOT an ack, because nothing was
+   * written; the automatic flush skips it; the outbox shows the reason; and the
+   * overlay does not paint the work order Completed. A manual "Sync now" asks
+   * once more, since the guards read ResMan-side state the office can change.
+   */
+  blockedReason?: string;
 }
 
 /** A pending close older than this is dropped at hydrate/prune — a close the
@@ -57,6 +67,13 @@ const STALE_MS = 7 * 24 * 60 * 60 * 1000;
  */
 const REDELIVER_MS = 30 * 60 * 1000;
 
+/**
+ * Slack for comparing the server's `synced_at` against the device's `ackedAt`:
+ * clock skew, plus a scrape that READ ResMan just before our write and stamped
+ * the row just after it.
+ */
+const MIRROR_SKEW_MS = 2 * 60 * 1000;
+
 interface PendingClosesState {
   pending: Record<string, PendingClose>;
   /** Optimistically mark closed and tell the server. Resolves ok even when the
@@ -68,10 +85,21 @@ interface PendingClosesState {
     config: StaffConfig,
     completedAt?: number,
   ) => Promise<void>;
-  /** Retry any un-acked entries (called from the sync tick). */
-  flush: (config: StaffConfig) => Promise<void>;
-  /** Drop entries the mirror has caught up with (base row closed) or stale ones. */
-  prune: (closedIds: ReadonlySet<string>, nowMs: number) => void;
+  /** Retry un-acked entries (called from the sync tick). Blocked ones are
+   *  skipped unless `includeBlocked` — the outbox's manual "Sync now". */
+  flush: (config: StaffConfig, opts?: { includeBlocked?: boolean }) => Promise<void>;
+  /**
+   * Drop entries the mirror has caught up with (base row closed) or stale ones.
+   * `mirrorSyncedAt` maps a work order to when the server last scraped it
+   * (epoch ms): an acked close whose row was re-scraped AFTER the ack and still
+   * reads open was reopened by someone else, so it retires rather than being
+   * redelivered over them.
+   */
+  prune: (
+    closedIds: ReadonlySet<string>,
+    nowMs: number,
+    mirrorSyncedAt?: ReadonlyMap<string, number>,
+  ) => void;
   remove: (workOrderId: string) => void;
 }
 
@@ -105,6 +133,7 @@ function ackIfUnchanged(
           acked: true,
           ackedAt: Date.now(),
           lastError: undefined,
+          blockedReason: undefined,
           ...(attempts === undefined ? {} : { attempts }),
         },
       },
@@ -124,6 +153,38 @@ function errorText(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 300);
 }
 
+/**
+ * Record a REFUSAL: terminal but undelivered. Same fingerprint discipline as
+ * `ackIfUnchanged` — a re-close with a corrected note while the request was in
+ * flight is a different close that has never been offered to ResMan.
+ */
+function blockIfUnchanged(
+  set: (fn: (s: PendingClosesState) => Partial<PendingClosesState>) => void,
+  workOrderId: string,
+  sentNote: string,
+  sentCompletedAt: number | undefined,
+  reason: string,
+  attempts?: number,
+): void {
+  set((s) => {
+    const cur = s.pending[workOrderId];
+    if (!cur || cur.acked || cur.note !== sentNote || cur.completedAt !== sentCompletedAt) {
+      return s;
+    }
+    return {
+      pending: {
+        ...s.pending,
+        [workOrderId]: {
+          ...cur,
+          blockedReason: errorText(reason),
+          lastError: undefined,
+          ...(attempts === undefined ? {} : { attempts }),
+        },
+      },
+    };
+  });
+}
+
 function recordError(
   set: (fn: (s: PendingClosesState) => Partial<PendingClosesState>) => void,
   workOrderId: string,
@@ -132,7 +193,13 @@ function recordError(
   set((s) => {
     const cur = s.pending[workOrderId];
     if (!cur || cur.acked) return s;
-    return { pending: { ...s.pending, [workOrderId]: { ...cur, lastError: errorText(error) } } };
+    // A transport failure is not a verdict: back on the automatic clock.
+    return {
+      pending: {
+        ...s.pending,
+        [workOrderId]: { ...cur, lastError: errorText(error), blockedReason: undefined },
+      },
+    };
   });
 }
 
@@ -162,12 +229,16 @@ export const usePendingCloses = create<PendingClosesState>()(
           await closeWorkOrder(workOrderId, note, config, isoOrUndefined(completedAt));
           ackIfUnchanged(set, workOrderId, note, completedAt);
         } catch (error) {
-          // Keep it un-acked; flush() retries on the next sync tick.
-          recordError(set, workOrderId, error);
+          if (error instanceof WorkOrderWriteRefused) {
+            blockIfUnchanged(set, workOrderId, note, completedAt, error.message);
+          } else {
+            // Keep it un-acked; flush() retries on the next sync tick.
+            recordError(set, workOrderId, error);
+          }
         }
       },
 
-      flush: async (config) => {
+      flush: async (config, opts) => {
         // Re-entrancy guard. flush() is driven by the 60s sync tick AND by
         // AppState going active, and a slow request outlives the interval — so
         // two flushes overlapped routinely, each re-sending the same un-acked
@@ -177,7 +248,10 @@ export const usePendingCloses = create<PendingClosesState>()(
         if (flushing) return;
         flushing = true;
         try {
-          const unacked = Object.values(get().pending).filter((p) => !p.acked);
+          const retryBlocked = opts?.includeBlocked ?? false;
+          const unacked = Object.values(get().pending).filter(
+            (p) => !p.acked && (retryBlocked || p.blockedReason === undefined),
+          );
           for (const entry of unacked) {
             // This flush try is one more attempt on top of whatever the entry
             // has already made (missing = the immediate try in queueClose).
@@ -207,6 +281,17 @@ export const usePendingCloses = create<PendingClosesState>()(
                 });
               }
             } catch (error) {
+              if (error instanceof WorkOrderWriteRefused) {
+                blockIfUnchanged(
+                  set,
+                  entry.workOrderId,
+                  entry.note,
+                  entry.completedAt,
+                  error.message,
+                  attempts,
+                );
+                continue;
+              }
               // Still failing — persist the attempt count and the reason.
               set((s) => {
                 const cur = s.pending[entry.workOrderId];
@@ -214,7 +299,12 @@ export const usePendingCloses = create<PendingClosesState>()(
                 return {
                   pending: {
                     ...s.pending,
-                    [entry.workOrderId]: { ...cur, attempts, lastError: errorText(error) },
+                    [entry.workOrderId]: {
+                      ...cur,
+                      attempts,
+                      lastError: errorText(error),
+                      blockedReason: undefined,
+                    },
                   },
                 };
               });
@@ -225,7 +315,7 @@ export const usePendingCloses = create<PendingClosesState>()(
         }
       },
 
-      prune: (closedIds, nowMs) => {
+      prune: (closedIds, nowMs, mirrorSyncedAt) => {
         set((s) => {
           const next: Record<string, PendingClose> = {};
           let changed = false;
@@ -236,6 +326,19 @@ export const usePendingCloses = create<PendingClosesState>()(
             }
             // Clock from the last ack; a stub-era entry persisted without
             // ackedAt reads as never-delivered and redelivers immediately.
+            // The mirror re-scraped this row AFTER our verified close and it
+            // still reads open: the office reopened it. Stand down — a
+            // redeliver would silently re-close their work order.
+            const seen = mirrorSyncedAt?.get(id);
+            if (
+              entry.acked &&
+              entry.ackedAt !== undefined &&
+              seen !== undefined &&
+              seen > entry.ackedAt + MIRROR_SKEW_MS
+            ) {
+              changed = true;
+              continue;
+            }
             if (entry.acked && nowMs - (entry.ackedAt ?? 0) > REDELIVER_MS) {
               // The mirror never confirmed this ack — redeliver (see
               // REDELIVER_MS). Verify-first delivery makes this a no-op when
